@@ -1,0 +1,192 @@
+#pragma once
+
+#include "types.h"
+
+#include <unordered_map> // TODO: remove once no longer needed
+
+class Var;
+
+class _VarMap
+{
+    typedef std::unordered_map<std::string, Var> _Map;
+public:
+    typedef _Map::const_iterator Iterator;
+
+    _VarMap();
+    ~_VarMap();
+    void merge(const _VarMap& o);
+    void clear();
+    inline bool empty() const { return _storage.empty(); }
+    _VarMap *clone() const;
+    inline size_t size() const { return _storage.size(); }
+
+          Var *get(const char *key);
+    const Var *get(const char *key) const;
+          Var* get(const char* kbegin, size_t klen); // for keys not terminated with \0
+    const Var *get(const char* kbegin, size_t klen) const;
+    inline       Var& operator[](const char *key); // return existing or insert new
+
+    void emplace(const char *kbegin, size_t klen, Var&& x);
+
+    inline Iterator begin() const { return _storage.begin(); }
+    inline Iterator end() const { return _storage.end(); }
+
+private: // disabled ops until we actually need them
+    _VarMap(const _VarMap&) = delete;
+    _VarMap& operator=(const _VarMap& o) = delete;
+
+    // TODO: replace this with a custom impl that is not inefficient af (and uses a string pool)
+    _Map _storage;
+
+public:
+    u64 expirytime;
+};
+
+/* A small variant type that encapsulates all primitives available in JSON:
+- Atom types:      (null), (number), bool, string
+- Compunt types:   array, object/map 
+With the following adjustment to the in-memory representation:
+- Distinction between float and int types
+- null is represented as a string type where the pointer is NULL
+*/
+class Var
+{
+public:
+    Var();
+    ~Var();
+    Var(Var&& v) noexcept;
+    Var(const Var& o);
+
+    enum Type
+    {
+        TYPE_NULL,
+        TYPE_BOOL,
+        TYPE_INT,
+        TYPE_UINT,
+        TYPE_FLOAT,
+        TYPE_STRING,
+        TYPE_ARRAY,
+        TYPE_MAP
+    };
+
+    enum Topbits
+    {
+        BITS_OTHER  = 0, // 00
+        BITS_STRING = 1, // 01
+        BITS_ARRAY  = 2, // 10
+        BITS_MAP    = 3  // 11
+    };
+
+    /* Encoding:
+    <- highest bit ---- lowest bit ->
+    0?xxx... = object is atom
+    1?xxx... = object is compound type aka has external data (string, array, map)
+    10xxx... = object is array        (lower bits: size)
+    11xxx... = object is map          (lower bits ignored)
+    01xxx... = object is string       (lower bits: length)
+    00xxx... = meta is one of the remaining enum Types (can just switch() over those since the high bits are 0)
+    */
+    size_t meta;
+
+    typedef _VarMap Map;
+
+    // either the value or pointer to value
+    union
+    {
+        char* s;    // when string
+        Var *a;     // when array; entries in a[0..N), N is the lower bits of meta
+        Map *m;
+        
+        s64 i;      // when signed integer type
+        u64 ui;     // ... or unsigned
+        double f;   // when float type
+    } u;
+
+    enum Priv : size_t
+    {
+        SHIFT_TOPBIT = (sizeof(meta) * CHAR_BIT) - 1u,
+        SHIFT_TOP2BITS = SHIFT_TOPBIT - 1u,
+        SIZE_MASK = size_t(-1) >> 2u // upper 2 bits 0, rest 1
+    };
+
+    void _settop(Topbits top, size_t size);
+    void _transmute(size_t newmeta);
+    inline Topbits _topbits() const { return Topbits(meta >> SHIFT_TOP2BITS); }
+    inline bool isCompound() const { return meta >> SHIFT_TOPBIT; } // highest bit set?
+    inline bool isAtom()     const { return !isCompound(); }
+    inline size_t _size()  const { return meta & SIZE_MASK; } // valid for string and array (but not map)
+    size_t size() const;
+
+    void clear(); // sets to null and clears memory
+
+    void cloneInto(Var& v) const;
+
+    Type type() const;
+
+    // transmute into type (does not lose data if the type is not changed)
+    bool setBool(bool x);
+    s64 setInt(s64 x);
+    u64 setUint(u64 x);
+    double setFloat(double x);
+    const char *setStr(const char *x);
+    const char *setStr(const char* x, size_t len);
+    Var *makeArray(size_t n);
+    Map *makeMap();
+
+    // value extration (get pointer to value if valid or NULL if not possible/wrong type). no asserts.
+    bool isNull() const { return meta == TYPE_NULL; }
+    const s64 *asInt() const;
+    const u64 *asUint() const;
+    const char *asString() const; // (does not convert to string)
+    const double *asFloat() const;
+
+    // convert to string
+    struct Buf { char b[64]; }; 
+    // returns pointer to tmp or to internal space.
+    // (user has to pass in tmp space so that we don't have to do an allocation)
+    // TODO: think harder about this: what to do with array or map. NULL return seems best for non-trivial types (aka atomToString)
+    // ... could also serialize as json string but that seems entirely stupid to do here...
+    //const char *toString(Buf& tmp); 
+
+    // operators
+    Var& operator=(const Var& o);
+    Var& operator=(Var&& o) noexcept;
+
+    // value assignment
+    inline Var& operator=(nullptr_t)     { clear();     return *this; }
+    inline Var& operator=(bool x)        { setBool(x);  return *this; }
+    inline Var& operator=(s64 x)         { setInt(x);   return *this; }
+    inline Var& operator=(u64 x)         { setUint(x);  return *this; }
+    inline Var& operator=(double x)      { setFloat(x); return *this; }
+    inline Var& operator=(const char *s) { setStr(s);   return *this; }
+
+    // array ops
+    inline       Var* array()       { return _topbits() == BITS_ARRAY ? u.a : 0; } // checked, returns Var[], NULL if not array
+    inline const Var* array() const { return _topbits() == BITS_ARRAY ? u.a : 0; }
+          Var *array_unsafe();   // unchecked, asserts that it's array but not in release mode
+    const Var *array_unsafe() const;
+          Var *at(size_t n);            // checked access, NULL if not array or invalid index
+    const Var *at(size_t n) const;
+    inline       Var& operator[](size_t i); // unchecked, asserts that it's an array and that the index is valid
+    inline const Var& operator[](size_t i) const;
+
+    // map ops
+    inline       Var::Map* map()       { return _topbits() == BITS_MAP ? u.m : 0; }
+    inline const Var::Map* map() const { return _topbits() == BITS_MAP ? u.m : 0; }
+          Var::Map* map_unsafe();    // asserts that map
+    const Var::Map* map_unsafe() const;
+          Var* lookup(const char* key);     // NULL if not map or no such key
+    const Var* lookup(const char* key) const;
+          Var* lookup(const char* kbegin, size_t klen);
+    const Var* lookup(const char* kbegin, size_t klen) const;
+    inline Var& operator[](const char *key); // asserts that it's a map, creates key if not present
+
+    // instantiate from types
+    inline Var(nullptr_t) : Var() {}
+    Var(bool x);
+    Var(s64 x);
+    Var(u64 x);
+    Var(double x);
+    Var(const char* s);
+    Var(const char* s, size_t len);
+};
