@@ -32,6 +32,7 @@ static const unsigned ParseFlagsDestructive = 0
 // Must not store any own data since this struct is re-created on every parse() call!
 struct JsonLoader
 {
+    // A frame is pushed onto the frame stack whenever a map or array begins
     struct Frame
     {
         Frame(const Frame&) = delete; // Because Var isn't default-copyable either
@@ -41,17 +42,29 @@ struct JsonLoader
             o.m = 0;
             o.lastkey = 0;
         }
-        Frame(TreeMem& mem, bool ismap)
-            : v(), m(ismap ? v.makeMap(mem) : 0), lastkey(0), _mem(mem) {}
+        Frame(TreeMem& mem)
+            : v(), m(0), lastkey(0), _mem(mem) {}
+        void makemap(TreeMem& mem) // if this isn't called, it's an array
+        {
+            assert(v.isNull());
+            m = v.makeMap(mem);
+        }
         ~Frame()
+        {
+            clear();
+        }
+        void clear()
         {
             v.clear(_mem);
             // don't touch m as it's already cleared when v is a map
             if(const size_t n = vals.size())
                 for(size_t i = 0; i < n; ++i)
                     vals[i].clear(_mem);
+            vals.clear();
             if(lastkey)
                 _mem.freeS(lastkey);
+            m = 0;
+            lastkey = 0;
         }
         Var v;
         Var::Map * m; // NULL if array
@@ -81,12 +94,13 @@ struct JsonLoader
     }
     bool StartObject()
     {
-        frames.emplace_back(Frame(_mem, true));
+        _pushframe(true);
         return true;
     }
     bool Key(const char* str, size_t length, bool copy)
     {
-        Frame& f = frames.back();
+        Frame& f = _topframe();
+        assert(f.m);
         assert(!f.lastkey);
         f.lastkey = _mem.putNoRefcount(str, length); // the refcount is increased by emplace() in _emit()
         assert(f.lastkey);
@@ -95,29 +109,26 @@ struct JsonLoader
     bool EndObject(size_t memberCount)
     {
         // FIXME: make sure this is caught in rapidjson and can't crash here
-        assert(frames.size());
-        assert(frames.back().m);
+        assert(_topframe().m);
         return _emit(_popframe());
     }
     bool StartArray()
     {
-        frames.emplace_back(Frame(_mem, false));
+        _pushframe(false);
         return true;
     }
     bool EndArray(size_t elementCount)
     {
-        assert(frames.size());
-        assert(!frames.back().m);
+        assert(!_topframe().m);
         return _emit(_popframe());
     }
 
 // ---- end rapidjson stuff -----
 
-    std::vector<Frame> frames;
     Var root;
     TreeMem& _mem;
 
-    JsonLoader(TreeMem& mem) : _mem(mem) {}
+    JsonLoader(TreeMem& mem) : _mem(mem), frameidx(0) {}
     ~JsonLoader()
     {
         root.clear(_mem); // in case we failed to load and there's leftover crap
@@ -125,14 +136,20 @@ struct JsonLoader
 
     bool parseDestructive(BufferedReadStream& stream);
     bool _emit(Var&& x);
+    Frame& _pushframe(bool ismap);
     Var _popframe();
+    Frame& _topframe() { assert(frameidx); return frames[frameidx - 1]; }
+
+private:
+    std::vector<Frame> frames;
+    size_t frameidx;
 };
 
 bool JsonLoader::_emit(Var&& x)
 {
-    if(frames.size())
+    if(frameidx)
     {
-        Frame& f = frames.back();
+        Frame& f = _topframe();
         if(f.m)
         {
             assert(f.lastkey);
@@ -140,14 +157,29 @@ bool JsonLoader::_emit(Var&& x)
             f.lastkey = 0;
         }
         else
+        {
+            if(!f.vals.capacity())
+                f.vals.reserve(32); // semi-educated guess to reduce allocations for small arrays
             f.vals.emplace_back(std::move(x));
+        }
     }
     else
     {
-        assert(root.type() == Var::TYPE_NULL);
+        assert(root.isNull());
         root = std::move(x);
     }
     return true;
+}
+
+JsonLoader::Frame& JsonLoader::_pushframe(bool ismap)
+{
+    if(frames.size() <= frameidx)
+        frames.emplace_back(Frame(_mem));
+
+    Frame& f = frames[frameidx++];
+    if(ismap)
+        f.makemap(_mem);
+    return f;
 }
 
 
@@ -156,7 +188,8 @@ bool JsonLoader::_emit(Var&& x)
 Var JsonLoader::_popframe()
 {
     assert(frames.size());
-    Frame& f = frames.back();
+    assert(frameidx);
+    Frame& f = _topframe();
 
     Var tmp;
     if(f.m) // move values over if it's an array
@@ -169,7 +202,8 @@ Var JsonLoader::_popframe()
         f.vals.clear();
     }
 
-    frames.pop_back(); // done with this frame; this also clears everything
+    f.clear();
+    --frameidx;
     return tmp;
 }
 
