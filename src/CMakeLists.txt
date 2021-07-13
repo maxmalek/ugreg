@@ -25,7 +25,11 @@ set(src
     subproc.cpp
     subproc.h
     treeiter.h
+    jsonstreamwrapper.cpp
     jsonstreamwrapper.h
+    treemem.cpp
+    treemem.h
+    mem.h
 )
 
 add_executable(ugreg ${src})

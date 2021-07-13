@@ -1,29 +1,30 @@
 #pragma once
 
 #include "variant.h"
+#include "treemem.h"
 
 class Accessor;
 
-
-// TODO, once Var memory optimizations are in:
-// this should be a construct of memory storage, allocator, and then the Var tree itself.
-// for memory, we can even do things like string interning and so on.
-class DataTree
+// Root of tree with memory pool
+class DataTree : public TreeMem
 {
 public:
     // TODO: tree managemeent goes in here
+    ~DataTree();
 
+    VarRef  root();
+    VarCRef root() const;
 
     // Use type-safe accessor
-          Var *subtree(const Accessor& a);
-    const Var *subtree(const Accessor& a) const;
+    VarRef  subtree(const Accessor& a);
+    VarCRef subtree(const Accessor& a) const;
 
     // Use stringly typed JSON pointer (returns NULL for malformed json pointers)
     // See https://rapidjson.org/md_doc_pointer.html#JsonPointer
     // and https://datatracker.ietf.org/doc/html/rfc6901
-          Var *subtree(const char *path);
-    const Var *subtree(const char* path) const;
+    VarRef  subtree(const char *path);
+    VarCRef subtree(const char* path) const;
 
 
-    Var root;
+    Var _root;
 };

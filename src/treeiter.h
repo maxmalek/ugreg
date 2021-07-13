@@ -9,7 +9,7 @@ struct WriterFunctor
 {
     // Var was encountered. Return true to recurse (eventually End*() will be called).
     // Return false not to recurse (End*() will not be called)
-    bool operator()(const Var& v) {}         
+    bool operator()(VarCRef v) {}         
 
     void EndArray() {}       // finished iterating over array
     void EndObject() {}      // finished iterating over map
@@ -21,8 +21,10 @@ struct WriterFunctor
 // Return true from functor to recurse into object/array,
 // return false to not recurse.
 template<typename Functor>
-void treeIter_T(Functor& func, const Var& src)
+void treeIter_T(Functor& func, const VarCRef src)
 {
+    assert(src.v);
+
     // Early-out if it's a single element
     if (!func(src))
         return;
@@ -58,7 +60,7 @@ void treeIter_T(Functor& func, const Var& src)
     // - If a container ends up in the stack, it's not empty
     std::vector<State> stk;
 
-    State s(src);
+    State s(*src.v);
     goto next;
 
     while (!stk.empty())
@@ -77,7 +79,7 @@ void treeIter_T(Functor& func, const Var& src)
                 {
                     const Var& vv = a[s.it.array];
                     ++s.it.array;
-                    if (func(vv))
+                    if (func(VarCRef(src.mem, &vv)))
                     {
                         stk.emplace_back(s); // resume it later
                         s = std::move(State(vv));
@@ -94,10 +96,11 @@ void treeIter_T(Functor& func, const Var& src)
                 Var::Map::Iterator end = m->end();
                 while (s.it.map != end)
                 {
-                    func.Key(s.it.map->first.c_str(), s.it.map->first.size());
+                    PoolStr k = src.mem.getSL(s.it.map->first);
+                    func.Key(k.s, k.len);
                     const Var& vv = s.it.map->second;
                     ++s.it.map;
-                    if (func(vv))
+                    if (func(VarCRef(src.mem, &vv)))
                     {
                         stk.emplace_back(s); // resume it later
                         s = std::move(State(vv));

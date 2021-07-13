@@ -1,10 +1,38 @@
 #include <stdlib.h>
 #include <assert.h>
-#include <string.h>
-#include <stdlib.h>
 #include <utility>
 #include <limits>
 #include "variant.h"
+#include "treemem.h"
+#include "mem.h"
+
+static _VarMap*_NewMap(TreeMem& mem, size_t prealloc)
+{
+    (void)prealloc; // TODO: use this
+    void *p = mem.Alloc(sizeof(_VarMap));
+    return _X_PLACEMENT_NEW(p) _VarMap(mem);
+}
+// ... use m->destroy(mem) to delete it
+
+static Var *_NewArray(TreeMem& mem, size_t n)
+{
+    Var* p = (Var*)mem.Alloc(sizeof(Var) * n);
+    mem_construct_default(p, p + n);
+    return p;
+}
+
+static void _DeleteArray(TreeMem& mem, Var *p, size_t n)
+{
+    assert(!p == !n);
+    if(p)
+    {
+        for(size_t i = 0; i < n; ++i)
+            p[i].clear(mem);
+        mem_destruct(p, p + n);
+        mem.Free(p, sizeof(*p) * n);
+    }
+}
+
 
 Var::Var()
     : meta(TYPE_NULL)
@@ -15,25 +43,20 @@ Var::Var()
 
 Var::~Var()
 {
-    clear();
+    // We can't get a TreeMem at this point. Since we don't store it either,
+    // we're screwed if there's still some leftover memory in the dtor.
+    // Means if we have a ref to an external block of memory, we have no other
+    // choice than to leak it.
+    // Practically it will be clared when the TreeMem is destroyed, but
+    // that may not happen until process exit, at which point it doesn't matter anyway.
+    // TL;DR if this blows, did you forget to clear()?
+    assert(!meta && "Var not cleared!");
 }
 
 Var::Var(Var&& v) noexcept
     : meta(v.meta), u(v.u)
 {
     v.meta = TYPE_NULL;
-}
-
-Var::Var(const Var& o)
-    : Var()
-{
-    o.cloneInto(*this);
-}
-
-Var& Var::operator=(const Var& o)
-{
-    o.cloneInto(*this);
-    return *this;
 }
 
 Var& Var::operator=(Var&& o) noexcept
@@ -68,37 +91,37 @@ Var::Var(double x)
     u.f = x;
 }
 
-Var::Var(const char* s)
+Var::Var(TreeMem& mem, const char* s)
     : Var()
 {
-    setStr(s);
+    setStr(mem, s);
 }
 
-Var::Var(const char* s, size_t len)
+Var::Var(TreeMem& mem, const char* s, size_t len)
     : Var()
 {
-    setStr(s, len);
+    setStr(mem, s, len);
 }
 
-void Var::_settop(Topbits top, size_t size)
+void Var::_settop(TreeMem& mem, Topbits top, size_t size)
 {
     assert(size <= SIZE_MASK);
     assert(top != BITS_OTHER);
-    _transmute((size_t(top) << SHIFT_TOP2BITS) | size);
+    _transmute(mem, (size_t(top) << SHIFT_TOP2BITS) | size);
 }
 
-void Var::_transmute(size_t newmeta)
+void Var::_transmute(TreeMem& mem, size_t newmeta)
 {
     switch(_topbits())
     {
         case BITS_STRING:
-            free(u.s); // TODO: string pool?
+            mem.freeS(u.s);
             break;
         case BITS_ARRAY:
-            delete [] u.a;
+            _DeleteArray(mem, u.a, _size());
             break;
         case BITS_MAP:
-            delete u.m;
+            u.m->destroy(mem);
             break;
         case BITS_OTHER: ; // nothing to do
     }
@@ -106,52 +129,56 @@ void Var::_transmute(size_t newmeta)
     meta = newmeta;
 }
 
-void Var::clear()
+void Var::clear(TreeMem& mem)
 {
-    _transmute(TYPE_NULL);
+    _transmute(mem, TYPE_NULL);
 }
 
-void Var::cloneInto(Var& v) const
+Var Var::clone(TreeMem &dstmem, const TreeMem& srcmem) const
 {
-    v.clear();
-    v.meta = this->meta;
+    Var dst;
+    dst.meta = this->meta;
     switch(_topbits())
     {
     case BITS_STRING:
-        v.u.s = _strdup(u.s);
+    {
+        PoolStr ps = srcmem.getSL(u.s);
+        dst.u.s = dstmem.put(ps.s, ps.len);
         break;
+    }
     case BITS_ARRAY:
     {
         const size_t N = _size();
-        Var * const a = new Var[N];
+        Var * const a = _NewArray(dstmem, N);
         for(size_t i = 0; i < N; ++i)
-            u.a[i].cloneInto(a[i]);
-        v.u.a = a;
+            a[i] = std::move(u.a[i].clone(dstmem, srcmem));
+        dst.u.a = a;
         break;
     }
     case BITS_MAP:
-        v.u.m = u.m->clone();
+        dst.u.m = u.m->clone(dstmem, srcmem);
         break;
     case BITS_OTHER:
-        v.u = this->u;
+        dst.u = this->u;
         break;
     }
+    return dst;
 }
 
-Var * Var::makeArray(size_t n)
+Var * Var::makeArray(TreeMem& mem, size_t n)
 {
     if(_topbits() == BITS_ARRAY)
         return u.a;
-    _settop(BITS_ARRAY, n);
-    return (( u.a = new Var[n] ));
+    _settop(mem, BITS_ARRAY, n);
+    return (( u.a = _NewArray(mem, n) ));
 }
 
-Var::Map *Var::makeMap()
+Var::Map *Var::makeMap(TreeMem& mem, size_t prealloc)
 {
     if (_topbits() == BITS_MAP)
         return u.m;
-    _settop(BITS_MAP, 0);
-    return (( u.m = new Map ));
+    _settop(mem, BITS_MAP, 0);
+    return (( u.m = _NewMap(mem, prealloc) ));
 }
 
 const s64 *Var::asInt() const
@@ -187,9 +214,21 @@ const double *Var::asFloat() const
     return meta == TYPE_FLOAT ? &u.f : NULL;
 }
 
-const char* Var::asString() const
+PoolStr Var::asString(const TreeMem& mem) const
 {
-    return _topbits() == BITS_STRING ? u.s : NULL;
+    PoolStr ps { NULL, 0 };
+    if(_topbits() == BITS_STRING)
+    {
+        ps.s = mem.getS(u.s);
+        ps.len = _size();
+        assert(ps.len == mem.getL(u.s));
+    }
+    return ps;
+}
+
+const char* Var::asCString(const TreeMem& mem) const
+{
+    return _topbits() == BITS_STRING ? mem.getS(u.s) : NULL;
 }
 
 const Var *Var::at(size_t idx) const
@@ -240,12 +279,23 @@ const Var::Map *Var::map_unsafe() const
     return u.m;
 }
 
-Var* Var::lookup(const char* key)
+Var* Var::lookup(StrRef k)
+{
+    return _topbits() == BITS_MAP ? u.m->get(k) : NULL;
+}
+
+const Var* Var::lookup(StrRef k) const
+{
+    return _topbits() == BITS_MAP ? u.m->get(k) : NULL;
+}
+
+
+/*Var* Var::lookup(const TreeMem& mem, const char* key)
 {
     return _topbits() == BITS_MAP ? u.m->get(key) : NULL;
 }
 
-const Var* Var::lookup(const char* key) const
+const Var* Var::lookup(const TreeMem& mem, const char* key) const
 {
     return _topbits() == BITS_MAP ? u.m->get(key) : NULL;
 }
@@ -263,7 +313,7 @@ const Var* Var::lookup(const char* kbegin, size_t klen) const
 inline Var& Var::operator[](const char* key)
 {
     return (*map_unsafe())[key];
-}
+}*/
 
 Var::Type Var::type() const
 {
@@ -285,86 +335,142 @@ size_t Var::size() const
     }
 }
 
-bool Var::setBool(bool x)
+bool Var::setBool(TreeMem& mem, bool x)
 {
-    _transmute(TYPE_BOOL);
+    _transmute(mem, TYPE_BOOL);
     return (( u.ui = x ));
 }
 
-s64 Var::setInt(s64 x)
+s64 Var::setInt(TreeMem& mem, s64 x)
 {
-    _transmute(TYPE_INT);
+    _transmute(mem, TYPE_INT);
     return (( u.i = x ));
 }
 
-u64 Var::setUint(u64 x)
+u64 Var::setUint(TreeMem& mem, u64 x)
 {
-    _transmute(TYPE_UINT);
+    _transmute(mem, TYPE_UINT);
     return ((u.ui = x));
 }
 
-double Var::setFloat(double x)
+double Var::setFloat(TreeMem& mem, double x)
 {
-    _transmute(TYPE_FLOAT);
+    _transmute(mem, TYPE_FLOAT);
     return (( u.f = x ));
 }
 
-const char* Var::setStr(const char* x)
+StrRef Var::setStr(TreeMem& mem, const char* x)
 {
-    return setStr(x, strlen(x));
+    return setStr(mem, x, strlen(x));
 }
 
-const char* Var::setStr(const char* x, size_t len)
+StrRef Var::setStr(TreeMem& mem, const char* x, size_t len)
 {
-    char *s = (char*)malloc(len + 1);
+    StrRef s = mem.put(x, len);
     if(s)
-    {
-        memcpy(s, x, len);
-        s[len] = 0;
-        _settop(BITS_STRING, len);
-    }
+        _settop(mem, BITS_STRING, len);
     else
         meta = 0;
     return (( u.s = s ));
 }
 
+void _VarMap::_checkmem(const TreeMem& m) const
+{
+#ifdef _DEBUG
+    assert(_mymem == &m && "Allocator mismatch!");
+#endif
+}
 
-_VarMap::_VarMap()
+_VarMap::_VarMap(TreeMem& mem)
     : expirytime(0)
+#ifdef _DEBUG
+    , _mymem(&mem)
+#endif
 {
 }
 
 _VarMap::~_VarMap()
 {
+    assert(_storage.empty()); // Same thing as in ~Var()
 }
 
-// TODO: if we don't need a copying merge, make this a consuming merge that moves stuff
-void _VarMap::merge(const _VarMap& o)
+void _VarMap::destroy(TreeMem& mem)
 {
+    _checkmem(mem);
+    clear(mem);
+    this->~_VarMap();
+    mem.Free(this, sizeof(*this));
+}
+
+Var& _VarMap::_InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k)
+{
+    // Create key/value if it's not there yet
+    _Map::iterator f = storage.find(k);
+    if (f == storage.end())
+    {
+        dstmem.increfS(k); // ... and refcount it if newly inserted
+        f = storage.emplace_hint(f, k, Var());
+        //return storage[k]; // this is fine too but the above should be faster
+    }
+    return f->second;
+}
+
+
+// TODO: if we don't need a copying merge, make this a consuming merge that moves stuff
+void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem)
+{
+    _checkmem(dstmem);
     for(_Map::const_iterator it = o._storage.begin(); it != o._storage.end(); ++it)
     {
-        Var& dst = _storage[it->first]; // Create key/value if it's not there yet
+        PoolStr ps = srcmem.getSL(it->first);
+        StrRef k = dstmem.putNoRefcount(ps.s, ps.len);
+        Var& dst = _InsertAndRefcount(dstmem, _storage, k);
 
         if(dst.type() == Var::TYPE_MAP && it->second.type() == Var::TYPE_MAP)
             // Both are maps, merge recursively
-            dst.u.m->merge(*it->second.u.m);
+            dst.u.m->merge(dstmem, *it->second.u.m, srcmem);
         else // One entry replaces the other entirely
-            dst = it->second;
+            dst = it->second.clone(dstmem, srcmem); // TODO: optimize if srcmem==dstmem
     }
 }
 
-void _VarMap::clear()
+void _VarMap::clear(TreeMem& mem)
 {
+    _checkmem(mem);
+    for (_Map::iterator it = _storage.begin(); it != _storage.end(); ++it)
+    {
+        mem.freeS(it->first);
+        it->second.clear(mem);
+    }
     _storage.clear();
 }
 
-_VarMap* _VarMap::clone() const
+_VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
 {
-    _VarMap *cp = new _VarMap;
-    cp->_storage = _storage;
+    _checkmem(srcmem);
+    _VarMap *cp = _NewMap(dstmem, size());
+    cp->expirytime = expirytime;
+    for(Iterator it = _storage.begin(); it != _storage.end(); ++it)
+    {
+        PoolStr k = srcmem.getSL(it->first);
+        cp->_storage[dstmem.put(k.s, k.len)] = it->second.clone(dstmem, srcmem);
+    }
     return cp;
 }
 
+Var* _VarMap::get(StrRef k)
+{
+    _Map::iterator it = _storage.find(k);
+    return it != _storage.end() ? &it->second : NULL;
+}
+
+const Var* _VarMap::get(StrRef k) const
+{
+    _Map::const_iterator it = _storage.find(k);
+    return it != _storage.end() ? &it->second : NULL;
+}
+
+/*
 Var* _VarMap::get(const char* key)
 {
     _Map::iterator it = _storage.find(key);
@@ -394,11 +500,14 @@ inline Var& _VarMap::operator[](const char* key)
     return _storage[key];
 }
 
-void _VarMap::emplace(const char* kbegin, size_t klen, Var&& x)
-{
-    _storage.insert(std::make_pair(std::string(kbegin, klen), std::move(x)));
-}
+*/
 
+void _VarMap::emplace(TreeMem& mem, StrRef k, Var&& x)
+{
+    _checkmem(mem);
+    if(_storage.insert(std::make_pair(k, std::move(x))).second)
+        mem.increfS(k);
+}
 // TODO: make it so that Var doesn't operate on the global heap
 // but instead uses an allocator inside its container (eg. DataTree)
 // (that needs to be passed in where appropriate to avoid storing an extra pointer per Var)

@@ -15,36 +15,41 @@ TreeHandler::TreeHandler(size_t skipFromRequest)
     
     {
         char json[] = " { \"a\":[1, 2, 3, [], {}, [0]], \"b\":null, \"c\":123.45 } ";
+        //char json[] = " { \"a\":[1, 2, 3, [], {}, [0]] } ";
         char json2[] = "{ \"b\":\"BBB\", \"c\":[0], \"d\":[{}, 987.123] }";
         InplaceStringStream jsonss(&json[0], sizeof(json));
         InplaceStringStream jsonss2(&json2[0], sizeof(json2));
 
         DataTree extra;
-        bool ok2 = loadJsonDestructive(extra.root, jsonss2);
+        puts("---load 1---");
+        bool ok2 = loadJsonDestructive(extra.root(), jsonss2);
         assert(ok2);
 
-
-        bool ok = loadJsonDestructive(tree.root, jsonss);
+        puts("---load 2---");
+        bool ok = loadJsonDestructive(tree.root(), jsonss);
         assert(ok);
 
-        tree.root.u.m->merge(*extra.root.u.m);
+        // FIXME: improve API!!
+        puts("---merge begin---");
+        tree.root().v->map()->merge(tree, *extra.root().v->u.m, extra);
+        puts("---merge end---");
     }
 
     {
         rapidjson::StringBuffer sb;
-        writeJson(sb, tree.root, false);
+        writeJson(sb, tree.root(), false);
         sb.Flush();
         puts(sb.GetString());
     }
 
-    Accessor acc("d", 1);
-    const double* v = tree.subtree(acc)->asFloat();
+    /*Accessor acc(tree, "d", 1);
+    const double* v = tree.subtree(acc).asFloat();
     printf("acc: json.d.1 = %f\n", *v);
 
-    v = tree.subtree("/d/1")->asFloat();
-    printf("ptr: /d/1 = %f\n", *v);
+    v = tree.subtree("/d/1").asFloat();
+    printf("ptr: /d/1 = %f\n", *v);*/
 
-    tree.root.clear();
+    tree.root().clear();
 
     puts("Loading file");
 
@@ -53,8 +58,9 @@ TreeHandler::TreeHandler(size_t skipFromRequest)
     {
         char buf[4096];
         BufferedFILEStream fs(f, buf, sizeof(buf));
-        bool ok = loadJsonDestructive(tree.root, fs);
+        bool ok = loadJsonDestructive(tree.root(), fs);
         assert(ok);
+        fclose(f);
     }
 
     puts("Ready!");
@@ -86,8 +92,8 @@ int TreeHandler::onRequest(mg_connection* conn)
     std::string out = os.str();
     printf("q = [%s]\n", out.c_str());
 
-    Var *sub = tree.subtree(q);
-    printf("sub = %p\n", sub);
+    VarCRef sub = tree.subtree(q);
+    printf("sub = %p\n", sub.v);
     if(!sub)
     {
         mg_send_http_error(conn, 404, "");
@@ -95,7 +101,7 @@ int TreeHandler::onRequest(mg_connection* conn)
     }
 
     rapidjson::StringBuffer sb;
-    writeJson(sb, *sub, false);
+    writeJson(sb, sub, false);
     mg_send_http_ok(conn, "text/json", sb.GetLength());
     mg_write(conn, sb.GetString(), sb.GetLength());
 

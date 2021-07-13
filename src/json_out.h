@@ -13,28 +13,34 @@ namespace json_out { // private namespace
 // returns false if object was emitted and is finished, true if it's a container
 // and objects inside must be looked at
 template<typename Wr>
-bool emit(Wr& writer, const Var& v)
+bool emit(Wr& writer, VarCRef v)
 {
     bool recurse = false;
+    const Var& vv = *v.v;
     switch(v.type())
     {
         case Var::TYPE_NULL:   writer.Null(); break;
-        case Var::TYPE_BOOL:   writer.Bool(!!v.u.ui); break;
-        case Var::TYPE_INT:    writer.Int64(v.u.i); break;
-        case Var::TYPE_UINT:   writer.Uint64(v.u.i); break;
-        case Var::TYPE_FLOAT:  writer.Double(v.u.f); break;
-        case Var::TYPE_STRING: writer.String(v.u.s, v._size()); break;
+        case Var::TYPE_BOOL:   writer.Bool(!!vv.u.ui); break;
+        case Var::TYPE_INT:    writer.Int64(vv.u.i); break;
+        case Var::TYPE_UINT:   writer.Uint64(vv.u.ui); break;
+        case Var::TYPE_FLOAT:  writer.Double(vv.u.f); break;
+        case Var::TYPE_STRING:
+        {
+            PoolStr ps = v.asString();
+            writer.String(ps.s, ps.len);
+            break;
+        }
 
         case Var::TYPE_MAP:
             writer.StartObject();
-            recurse = !v.u.m->empty();
+            recurse = !vv.u.m->empty();
             if(!recurse)
                 writer.EndObject();
             break;
 
         case Var::TYPE_ARRAY:
             writer.StartArray();
-            recurse = !!v._size();
+            recurse = !!vv._size();
             if(!recurse)
                 writer.EndArray();
             break;
@@ -50,7 +56,7 @@ struct WriterFunctor
 {
     Wr& wr;
     WriterFunctor(Wr& wr) : wr(wr) {}
-    inline bool operator()(const Var& v)
+    inline bool operator()(VarCRef v)
     {
         return json_out::emit(wr, v);
     }
@@ -64,7 +70,7 @@ struct WriterFunctor
 
 
 template<typename Output>
-void writeJson(Output& out, const Var& src, bool pretty)
+void writeJson(Output& out, const VarCRef src, bool pretty)
 {
     if(pretty)
     {

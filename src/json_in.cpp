@@ -34,13 +34,30 @@ struct JsonLoader
 {
     struct Frame
     {
-        Frame(bool ismap)
-            : v(), m(ismap ? v.makeMap() : 0), haskey(false) {}
+        Frame(const Frame&) = delete; // Because Var isn't default-copyable either
+        Frame(Frame&& o)
+            : v(std::move(o.v)), m(o.m), vals(std::move(o.vals)), lastkey(o.lastkey), _mem(o._mem)
+        {
+            o.m = 0;
+            o.lastkey = 0;
+        }
+        Frame(TreeMem& mem, bool ismap)
+            : v(), m(ismap ? v.makeMap(mem) : 0), lastkey(0), _mem(mem) {}
+        ~Frame()
+        {
+            v.clear(_mem);
+            // don't touch m as it's already cleared when v is a map
+            if(const size_t n = vals.size())
+                for(size_t i = 0; i < n; ++i)
+                    vals[i].clear(_mem);
+            if(lastkey)
+                _mem.freeS(lastkey);
+        }
         Var v;
-        Var::Map * const m; // NULL if array
+        Var::Map * m; // NULL if array
         std::vector<Var> vals; // only used if array (aka m == NULL)
-        bool haskey;
-        std::string lastkey;
+        StrRef lastkey;
+        TreeMem& _mem;
     };
 
 
@@ -60,19 +77,19 @@ struct JsonLoader
     }
     bool String(const char* str, size_t length, bool copy)
     {
-        return _emit(Var(str, length));
+        return _emit(Var(_mem, str, length));
     }
     bool StartObject()
     {
-        frames.emplace_back(Frame(true));
+        frames.emplace_back(Frame(_mem, true));
         return true;
     }
     bool Key(const char* str, size_t length, bool copy)
     {
         Frame& f = frames.back();
-        assert(!f.haskey);
-        f.lastkey = std::string(str, length);
-        f.haskey = true;
+        assert(!f.lastkey);
+        f.lastkey = _mem.putNoRefcount(str, length); // the refcount is increased by emplace() in _emit()
+        assert(f.lastkey);
         return true;
     }
     bool EndObject(size_t memberCount)
@@ -84,7 +101,7 @@ struct JsonLoader
     }
     bool StartArray()
     {
-        frames.emplace_back(Frame(false));
+        frames.emplace_back(Frame(_mem, false));
         return true;
     }
     bool EndArray(size_t elementCount)
@@ -98,6 +115,13 @@ struct JsonLoader
 
     std::vector<Frame> frames;
     Var root;
+    TreeMem& _mem;
+
+    JsonLoader(TreeMem& mem) : _mem(mem) {}
+    ~JsonLoader()
+    {
+        root.clear(_mem); // in case we failed to load and there's leftover crap
+    }
 
     bool parseDestructive(BufferedReadStream& stream);
     bool _emit(Var&& x);
@@ -111,9 +135,9 @@ bool JsonLoader::_emit(Var&& x)
         Frame& f = frames.back();
         if(f.m)
         {
-            assert(f.haskey);
-            f.m->emplace(f.lastkey.c_str(), f.lastkey.length(), std::move(x));
-            f.haskey = false;
+            assert(f.lastkey);
+            f.m->emplace(_mem, f.lastkey, std::move(x));
+            f.lastkey = 0;
         }
         else
             f.vals.emplace_back(std::move(x));
@@ -126,6 +150,9 @@ bool JsonLoader::_emit(Var&& x)
     return true;
 }
 
+
+// TODO: this function is too slow and needs to be optimized.
+// Consider re-using frames instead of just deleting them
 Var JsonLoader::_popframe()
 {
     assert(frames.size());
@@ -137,8 +164,9 @@ Var JsonLoader::_popframe()
     else
     {
         assert(tmp.type() == Var::TYPE_NULL);
-        Var *a = tmp.makeArray(f.vals.size());
+        Var *a = tmp.makeArray(_mem, f.vals.size());
         std::move(f.vals.begin(), f.vals.end(), a); // move range
+        f.vals.clear();
     }
 
     frames.pop_back(); // done with this frame; this also clears everything
@@ -152,13 +180,13 @@ bool JsonLoader::parseDestructive(BufferedReadStream& stream)
     return rd.Parse<ParseFlagsDestructive>(stream, *this);
 }
 
-bool loadJsonDestructive(Var& dst, BufferedReadStream& stream)
+bool loadJsonDestructive(VarRef& dst, BufferedReadStream& stream)
 {
     stream.init();
-    JsonLoader ld;
+    JsonLoader ld(dst.mem);
     if(!ld.parseDestructive(stream))
         return false;
 
-    dst = std::move(ld.root);
+    *dst.v = std::move(ld.root);
     return true;
 }

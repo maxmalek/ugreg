@@ -12,6 +12,8 @@ set(src
     civetweb/civetweb.c
     civetweb/civetweb.h
     subprocess.h
+    strpool.h
+    impls.cpp
 )
 
 add_library(alldeps ${src})
