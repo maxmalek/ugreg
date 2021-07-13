@@ -21,18 +21,13 @@ TreeHandler::TreeHandler(size_t skipFromRequest)
         InplaceStringStream jsonss2(&json2[0], sizeof(json2));
 
         DataTree extra;
-        puts("---load 1---");
         bool ok2 = loadJsonDestructive(extra.root(), jsonss2);
         assert(ok2);
 
-        puts("---load 2---");
         bool ok = loadJsonDestructive(tree.root(), jsonss);
         assert(ok);
 
-        // FIXME: improve API!!
-        puts("---merge begin---");
-        tree.root().v->map()->merge(tree, *extra.root().v->u.m, extra);
-        puts("---merge end---");
+        tree.root().merge(extra.root(), true);
     }
 
     {
@@ -42,12 +37,12 @@ TreeHandler::TreeHandler(size_t skipFromRequest)
         puts(sb.GetString());
     }
 
-    /*Accessor acc(tree, "d", 1);
+    Accessor acc(tree, "d", 1);
     const double* v = tree.subtree(acc).asFloat();
     printf("acc: json.d.1 = %f\n", *v);
 
     v = tree.subtree("/d/1").asFloat();
-    printf("ptr: /d/1 = %f\n", *v);*/
+    printf("ptr: /d/1 = %f\n", *v);
 
     tree.root().clear();
 

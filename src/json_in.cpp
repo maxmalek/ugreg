@@ -182,9 +182,6 @@ JsonLoader::Frame& JsonLoader::_pushframe(bool ismap)
     return f;
 }
 
-
-// TODO: this function is too slow and needs to be optimized.
-// Consider re-using frames instead of just deleting them
 Var JsonLoader::_popframe()
 {
     assert(frames.size());
@@ -202,6 +199,7 @@ Var JsonLoader::_popframe()
         f.vals.clear();
     }
 
+    // Don't actually pop the stack; clear and re-use f later.
     f.clear();
     --frameidx;
     return tmp;

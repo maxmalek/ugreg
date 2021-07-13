@@ -8,12 +8,12 @@
 
 VarCRef DataTree::subtree(const Accessor& a) const
 {
-    return VarCRef(*this, const_cast<DataTree*>(this)->subtree(a));
+    return VarCRef(const_cast<DataTree*>(this)->subtree(a));
 }
 
 VarCRef DataTree::subtree(const char *path) const
 {
-    return VarCRef(*this, const_cast<DataTree*>(this)->subtree(path));
+    return VarCRef(const_cast<DataTree*>(this)->subtree(path));
 }
 
 

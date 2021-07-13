@@ -61,6 +61,7 @@ Var::Var(Var&& v) noexcept
 
 Var& Var::operator=(Var&& o) noexcept
 {
+    assert(meta == TYPE_NULL); // Forgot to clear() first?
     meta = o.meta;
     u = o.u;
     o.meta = TYPE_NULL;
@@ -417,7 +418,7 @@ Var& _VarMap::_InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k)
 
 
 // TODO: if we don't need a copying merge, make this a consuming merge that moves stuff
-void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem)
+void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, bool recursive)
 {
     _checkmem(dstmem);
     for(_Map::const_iterator it = o._storage.begin(); it != o._storage.end(); ++it)
@@ -426,11 +427,14 @@ void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem)
         StrRef k = dstmem.putNoRefcount(ps.s, ps.len);
         Var& dst = _InsertAndRefcount(dstmem, _storage, k);
 
-        if(dst.type() == Var::TYPE_MAP && it->second.type() == Var::TYPE_MAP)
+        if(recursive && dst.type() == Var::TYPE_MAP && it->second.type() == Var::TYPE_MAP)
             // Both are maps, merge recursively
-            dst.u.m->merge(dstmem, *it->second.u.m, srcmem);
+            dst.u.m->merge(dstmem, *it->second.u.m, srcmem, recursive);
         else // One entry replaces the other entirely
-            dst = it->second.clone(dstmem, srcmem); // TODO: optimize if srcmem==dstmem
+        {
+            dst.clear(dstmem);
+            dst = std::move(it->second.clone(dstmem, srcmem)); // TODO: optimize if srcmem==dstmem?
+        }
     }
 }
 
@@ -508,7 +512,22 @@ void _VarMap::emplace(TreeMem& mem, StrRef k, Var&& x)
     if(_storage.insert(std::make_pair(k, std::move(x))).second)
         mem.increfS(k);
 }
-// TODO: make it so that Var doesn't operate on the global heap
-// but instead uses an allocator inside its container (eg. DataTree)
-// (that needs to be passed in where appropriate to avoid storing an extra pointer per Var)
-// -> remove new, strdup, malloc, etc
+
+bool VarRef::merge(const VarCRef& o, bool recursive)
+{
+    assert(v && o.v);
+    if(o.type() != Var::TYPE_MAP)
+        return false;
+
+    const Var::Map& om = *o.v->map_unsafe();
+    v->makeMap(mem, om.size())->merge(mem, om, o.mem, recursive);
+    return true;
+}
+
+void VarRef::replace(const VarCRef& o)
+{
+    assert(v && o.v);
+    v->clear(mem);
+    *v = std::move(o.v->clone(mem, o.mem));
+}
+

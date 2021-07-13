@@ -18,7 +18,7 @@ public:
     void destroy(TreeMem& mem); // deletes self
     _VarMap(TreeMem& mem);
 
-    void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem);
+    void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, bool recursive);
     void clear(TreeMem& mem);
     inline bool empty() const { return _storage.empty(); }
     _VarMap *clone(TreeMem& dstmem, const TreeMem& srcmem) const;
@@ -211,9 +211,14 @@ public:
     Var(TreeMem& mem, const char* s, size_t len);
 };
 
+class VarRef;
+class VarCRef;
 
 // Note: v can be NULL!
 // This class is intended to be passed by value and constructed on the fly as needed.
+// Check for validity via:
+// VarRef r = ...;
+// if(r) { all good; }
 class VarRef
 {
 public:
@@ -232,6 +237,16 @@ public:
     PoolStr asString() const { return v->asString(mem); } // (does not convert to string)
     const char* asCString() const { return v->asCString(mem); }
     const double* asFloat() const { return v->asFloat(); };
+
+    // Returns false if o is not a map.
+    // Turns own node into map if it is not already, then merges in o, then returns true.
+    // If not recursive, simply assign keys and replace the values of keys that are overwritten.
+    // If recursive, merge all maps recursively (all other values are replaced);
+    //  merging only applies if both values are maps. If one of them is not, one simply replaces the other.
+    bool merge(const VarCRef& o, bool recursive);
+
+    // Replaces own contents with o's contents.
+    void replace(const VarCRef& o);
 
     // value assignment
     void clear() { v->clear(mem); }
