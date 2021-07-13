@@ -219,6 +219,7 @@ bool loadJsonDestructive(VarRef& dst, BufferedReadStream& stream)
     if(!ld.parseDestructive(stream))
         return false;
 
+    dst.v->clear(dst.mem);
     *dst.v = std::move(ld.root);
     return true;
 }

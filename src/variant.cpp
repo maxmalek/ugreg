@@ -427,9 +427,8 @@ void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, bo
         StrRef k = dstmem.putNoRefcount(ps.s, ps.len);
         Var& dst = _InsertAndRefcount(dstmem, _storage, k);
 
-        if(recursive && dst.type() == Var::TYPE_MAP && it->second.type() == Var::TYPE_MAP)
-            // Both are maps, merge recursively
-            dst.u.m->merge(dstmem, *it->second.u.m, srcmem, recursive);
+        if(recursive && it->second.type() == Var::TYPE_MAP)
+            dst.makeMap(dstmem)->merge(dstmem, *it->second.u.m, srcmem, recursive);
         else // One entry replaces the other entirely
         {
             dst.clear(dstmem);
@@ -506,11 +505,36 @@ inline Var& _VarMap::operator[](const char* key)
 
 */
 
+Var& _VarMap::getOrCreate(TreeMem& mem, StrRef key)
+{
+    return _InsertAndRefcount(mem, _storage, key);
+}
+
 void _VarMap::emplace(TreeMem& mem, StrRef k, Var&& x)
 {
     _checkmem(mem);
     if(_storage.insert(std::make_pair(k, std::move(x))).second)
         mem.increfS(k);
+}
+
+VarRef& VarRef::makeMap()
+{
+    v->makeMap(mem);
+    return *this;
+}
+
+VarRef& VarRef::makeArray(size_t n)
+{
+    v->makeArray(mem, n);
+    return *this;
+}
+
+VarRef VarRef::operator[](const char* key)
+{
+    makeMap();
+    StrRef k = mem.putNoRefcount(key, strlen(key));
+    Var& sub = v->map_unsafe()->getOrCreate(mem, k);
+    return VarRef(mem, &sub);
 }
 
 bool VarRef::merge(const VarCRef& o, bool recursive)

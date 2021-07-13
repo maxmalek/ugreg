@@ -9,6 +9,14 @@
 #include "accessor.h"
 #include "jsonstreamwrapper.h"
 
+static void jsonout(VarCRef ref)
+{
+    rapidjson::StringBuffer sb;
+    writeJson(sb, ref, false);
+    sb.Flush();
+    puts(sb.GetString());
+}
+
 TreeHandler::TreeHandler(size_t skipFromRequest)
     : _skipFromRequest(skipFromRequest)
 {
@@ -27,14 +35,15 @@ TreeHandler::TreeHandler(size_t skipFromRequest)
         bool ok = loadJsonDestructive(tree.root(), jsonss);
         assert(ok);
 
-        tree.root().merge(extra.root(), true);
-    }
+        extra.root()["e"]["first"] = "<---";
+        tree.root()["e"]["second"] = "--->";
 
-    {
-        rapidjson::StringBuffer sb;
-        writeJson(sb, tree.root(), false);
-        sb.Flush();
-        puts(sb.GetString());
+        jsonout(tree.root());
+        jsonout(extra.root());
+
+
+        tree.root().merge(extra.root(), true);
+        jsonout(tree.root());
     }
 
     Accessor acc(tree, "d", 1);

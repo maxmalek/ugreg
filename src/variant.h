@@ -24,11 +24,11 @@ public:
     _VarMap *clone(TreeMem& dstmem, const TreeMem& srcmem) const;
     inline size_t size() const { return _storage.size(); }
 
+    Var& getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
           Var *get(StrRef key);
     const Var *get(StrRef key) const;
     //      Var* get(const char* kbegin, size_t klen); // for keys not terminated with \0
     //const Var *get(const char* kbegin, size_t klen) const;
-    //inline       Var& operator[](StrRef key); // return existing or insert new
 
     void emplace(TreeMem& mem, StrRef k,  Var&& x); // increases refcount if new key stored
 
@@ -70,8 +70,11 @@ but the actual management is done via a TreeMem structure that takes care of
 string deduplication and also takes the role of a specialized allocator.
 
 That also means that any time a Var possibly touches memory, the method takes a TreeMem.
+Be careful not to mix up Vars created with different memory allocators.
+There are neither checks nor protection against this and everything will go horribly wrong if you do mix things up.
 
-For passing a Var around and do stuff more comfortably, use a VarRef -- that class has all the nice operators.
+For passing a Var around and do stuff more comfortably, use a VarRef -- that class has all the nice operators
+and makes sure that the memory allocators are handled correctly.
 */
 class Var
 {
@@ -171,7 +174,7 @@ public:
     const double *asFloat() const;
 
     // convert to string
-    struct Buf { char b[64]; }; 
+    //struct Buf { char b[64]; }; 
     // returns pointer to tmp or to internal space.
     // (user has to pass in tmp space so that we don't have to do an allocation)
     // TODO: think harder about this: what to do with array or map. NULL return seems best for non-trivial types (aka atomToString)
@@ -197,9 +200,6 @@ public:
     const Var::Map* map_unsafe() const;
           Var* lookup(StrRef s);     // NULL if not map or no such key
     const Var* lookup(StrRef s) const;
-    //      Var* lookup(const char* kbegin, size_t klen);
-    //const Var* lookup(const char* kbegin, size_t klen) const;
-    //inline Var& operator[](const char *key); // asserts that it's a map, creates key if not present
 
     // instantiate from types
     inline Var(nullptr_t) : Var() {}
@@ -216,6 +216,7 @@ class VarCRef;
 
 // Note: v can be NULL!
 // This class is intended to be passed by value and constructed on the fly as needed.
+// Don't store it in data structures! If the underlying memory goes away, the VarRef will contain a dangling pointer.
 // Check for validity via:
 // VarRef r = ...;
 // if(r) { all good; }
@@ -238,6 +239,18 @@ public:
     const char* asCString() const { return v->asCString(mem); }
     const double* asFloat() const { return v->asFloat(); };
 
+    // Returns this, transmuted to a different type. If the type is changed, old values are lost.
+    VarRef& makeMap();
+    VarRef& makeArray(size_t n);
+
+    // converts into a map, creates key if not present, so that a construction like this:
+    // VarRef ref = ...;
+    // ref.clear();
+    // ref["hello"]["world"] = 42; creates the following JSON: { "hello":{"world":42}}
+    // The VarRef returned from this is always valid & safe, but if a new key was created it will be of TYPE_NULL.
+    VarRef operator[](const char *key);
+
+
     // Returns false if o is not a map.
     // Turns own node into map if it is not already, then merges in o, then returns true.
     // If not recursive, simply assign keys and replace the values of keys that are overwritten.
@@ -247,6 +260,9 @@ public:
 
     // Replaces own contents with o's contents.
     void replace(const VarCRef& o);
+
+    // TODO: op=(copy) and op=(move) ?
+    // TODO: also optimize related code paths for this->mem == o.mem
 
     // value assignment
     void clear() { v->clear(mem); }
