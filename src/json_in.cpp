@@ -61,8 +61,10 @@ struct JsonLoader
                 for(size_t i = 0; i < n; ++i)
                     vals[i].clear(_mem);
             vals.clear();
-            if(lastkey)
-                _mem.freeS(lastkey);
+            // FIXME: fixup the refcounting here. this causes issues with errorneous json.
+            //       for now, this is a harmless leak. the string stays in the pool and will be re-used in future.
+            //if(lastkey)
+            //    _mem.freeS(lastkey);
             m = 0;
             lastkey = 0;
         }

@@ -1,3 +1,6 @@
+// FIXME: change this to use own streaming interface
+// so that we don't have to buffer the entire output in memory
+
 #pragma once
 
 #include <assert.h>

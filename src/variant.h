@@ -56,10 +56,10 @@ private:
 };
 
 /* A small variant type that encapsulates all primitives available in JSON:
-- Atom types:      (null), (number), bool, string
-- Compound types:   array, object/map, string
+- Atom types:      null, number aka int/float, bool, string
+- Compound types:   array, object aka map, string
 - Maps have strings as keys, and and Var as value
-With the following adjustment to the in-memory representation (vs. "normal" JSON:
+With the following adjustment to the in-memory representation (vs. "normal" JSON):
 - Distinction between float and int types (json only knows 'number')
 
 Note that Var may or may not form a deeply nested tree structure.
@@ -70,7 +70,7 @@ but the actual management is done via a TreeMem structure that takes care of
 string deduplication and also takes the role of a specialized allocator.
 
 That also means that any time a Var possibly touches memory, the method takes a TreeMem.
-Be careful not to mix up Vars created with different memory allocators.
+Be careful not to mix up Vars created with different memory allocators, and to always pass the correct allocator.
 There are neither checks nor protection against this and everything will go horribly wrong if you do mix things up.
 
 For passing a Var around and do stuff more comfortably, use a VarRef -- that class has all the nice operators
@@ -84,7 +84,10 @@ public:
     ~Var();
     Var(Var&& v) noexcept;
 
-    // simply copying is forbidden
+    // simply copying is forbidden. 2 reasons:
+    // 1) when copying, we likely want a different allocator for the target. the copy ctor is unable to do that.
+    // 2) enforcing move semantics unless an explicit copy is made is just so much better than accidentally
+    //    copying a large tree
     Var(const Var& o) = delete;
     Var& operator=(const Var& o) = delete;
 
@@ -149,7 +152,7 @@ public:
     inline size_t _size()  const { return meta & SIZE_MASK; } // valid for string and array (but not map)
     size_t size() const;
 
-    void clear(TreeMem& mem); // sets to null and clears memory
+    void clear(TreeMem& mem); // sets to null and clears memory. call this before it goes out of scope.
 
     Var clone(TreeMem& dstmem, const TreeMem& srcmem) const;
 

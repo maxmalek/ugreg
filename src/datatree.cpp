@@ -17,6 +17,10 @@ VarCRef DataTree::subtree(const char *path) const
 }
 
 
+DataTree::DataTree()
+{
+}
+
 DataTree::~DataTree()
 {
     _root.clear(*this);

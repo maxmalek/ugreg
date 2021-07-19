@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <utility>
 #include "variant.h"
 #include "treemem.h"
 
@@ -9,29 +10,27 @@ class Accessor
 {
 private:
     std::vector<Var> a;
+    TreeMem& mem;
     struct _Priv {}; // marker
 public:
-
-    template<typename ...T>
-    Accessor(TreeMem& mem, T... args)
-        : Accessor(Pack(mem, args...))
+    ~Accessor()
     {
+        for(size_t i = 0; i < a.size(); ++i)
+            a[i].clear(mem);
     }
 
     template<typename ...T>
-    static Accessor Pack(TreeMem& mem, T... args)
+    Accessor(TreeMem& mem, T... args)
+        : a(sizeof...(T)), mem(mem)
     {
-        constexpr size_t n = sizeof...(T);
-        Accessor acc(n, _Priv());
-        _pack(mem, acc.a.data(), args...);
-        return acc;
+        _pack(mem, a.data(), args...);
     }
 
     inline size_t size() const { return a.size(); }
     inline const Var& operator[](size_t i) const { return a[i]; }
 
 private:
-    inline Accessor(size_t n, _Priv) : a(n) {}
+    inline Accessor(TreeMem& mem, size_t n, _Priv) : a(n), mem(mem) {}
 
     // only make this work for strings and ints
     static inline Var _makevar(TreeMem&    , u64 x) { return Var(x); }

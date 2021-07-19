@@ -8,7 +8,11 @@ class Accessor;
 // Root of tree with memory pool
 class DataTree : public TreeMem
 {
+    DataTree(const DataTree&) = delete;
+    DataTree& operator=(const DataTree&) = delete;
+
 public:
+    DataTree();
     ~DataTree();
 
     VarRef  root();
