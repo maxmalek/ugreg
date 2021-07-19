@@ -2,9 +2,9 @@
 #include <stdio.h>
 #include <assert.h>
 
-BufferedReadStream::BufferedReadStream(ReadFunc rf, IsEofFunc eoff, char* buf, size_t bufsz)
+BufferedReadStream::BufferedReadStream(ReadFunc rf, char* buf, size_t bufsz)
     : _cur(0), _buf(buf), _last(0), _dst(0), _bufsz(bufsz), _lastread(0), _count(0)
-    , _readf(rf), _eoff(eoff), _eof(false)
+    , _readf(rf), _eof(false)
 {
     assert(rf && buf && bufsz > 4);
 }
@@ -34,17 +34,17 @@ void BufferedReadStream::Refill()
         _last = _buf + rd - 1;
         _cur = _buf;
 
-        if (rd < _bufsz)
+        if(!rd)
         {
-            _eof = !_eoff || _eoff(this);
             _buf[rd] = '\0';
+            _eof = true;
             ++_last;
         }
     }
 }
 
 BufferedFILEStream::BufferedFILEStream(void *FILEp, char* buf, size_t bufsz)
-    : BufferedReadStream(_Read, NULL, buf, bufsz), _fh(FILEp)
+    : BufferedReadStream(_Read, buf, bufsz), _fh(FILEp)
 {
 }
 
@@ -56,7 +56,7 @@ size_t BufferedFILEStream::_Read(void* dst, size_t bytes, BufferedReadStream* se
 }
 
 InplaceStringStream::InplaceStringStream(char* s, size_t len)
-    : BufferedReadStream(_Read, NULL, s, len)
+    : BufferedReadStream(_Read, s, len)
 {
 
 }

@@ -8,6 +8,7 @@
 #include "json_out.h"
 #include "accessor.h"
 #include "jsonstreamwrapper.h"
+#include "subproc.h"
 
 static void jsonout(VarCRef ref)
 {
@@ -46,14 +47,22 @@ TreeHandler::TreeHandler(size_t skipFromRequest)
         jsonout(tree.root());
     }
 
-    Accessor acc(tree, "d", 1);
-    const double* v = tree.subtree(acc).asFloat();
-    printf("acc: json.d.1 = %f\n", *v);
+    {
+        Accessor acc(tree, "d", 1);
+        const double* v = tree.subtree(acc).asFloat();
+        printf("acc: json.d.1 = %f\n", *v);
 
-    v = tree.subtree("/d/1").asFloat();
-    printf("ptr: /d/1 = %f\n", *v);
+        v = tree.subtree("/d/1").asFloat();
+        printf("ptr: /d/1 = %f\n", *v);
+    }
 
     tree.root().clear();
+
+    puts("Start bg process...");
+    AsyncLaunchConfig cfg;
+    cfg.args.push_back("test.bat");
+    std::future<DataTree*> fut = loadJsonFromProcessAsync(std::move(cfg));
+
 
     puts("Loading file");
 
@@ -63,9 +72,22 @@ TreeHandler::TreeHandler(size_t skipFromRequest)
         char buf[4096];
         BufferedFILEStream fs(f, buf, sizeof(buf));
         bool ok = loadJsonDestructive(tree.root(), fs);
+        printf("Loaded, ok = %u\n", ok);
         assert(ok);
         fclose(f);
     }
+
+    DataTree *test = fut.get();
+    if(test)
+    {
+        puts("... merging ...");
+        tree.root()["twitter"].merge(test->root(), false);
+        puts("... merged!");
+        delete test;
+    }
+    else
+        puts("... subprocess failed!");
+
 
     puts("Ready!");
 

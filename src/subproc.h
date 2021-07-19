@@ -2,11 +2,24 @@
 
 #include "jsonstreamwrapper.h"
 
+#include <future>
+
 struct subprocess_s;
 class DataTree;
 
 // args[0] is the executable, args[1...] the params. args[] is terminated by a NULL entry.
-DataTree *loadJsonFromProcess(const char **args);
+// output from process is parsed into json tree
+bool loadJsonFromProcess(DataTree *tree, const char **args);
+
+struct AsyncLaunchConfig
+{
+    std::vector<std::string> args;
+};
+
+// start process in bg thread and parse as json whatever it spews to stdout.
+// delete the tree ptr when it's no longer needed
+std::future<DataTree*> loadJsonFromProcessAsync(AsyncLaunchConfig&& cfg);
+
 
 // Adapted from rapidjson/filereadstream.h
 class ProcessReadStream : public BufferedReadStream
@@ -28,7 +41,6 @@ public:
 private:
 
     static size_t _Read(void* dst, size_t bytes, BufferedReadStream* self);
-    static bool _IsEOF(BufferedReadStream* self);
 
     subprocess_s *_proc;
     CloseBehavior closeb;

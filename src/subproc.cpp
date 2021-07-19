@@ -1,51 +1,87 @@
 #include "subproc.h"
+#include <thread>
+
 #include "subprocess.h"
+#include "pmalloca.h"
+
 #include <assert.h>
 #include "datatree.h"
 #include "json_in.h"
 
-void subproctest()
+static void procfail(ProcessReadStream& ps, const char **args)
 {
-    const char *args[] =
-    {
-        "test.bat", NULL
-    };
-    subprocess_s proc;
-    puts("------proc------");
-    if(subprocess_create(args, subprocess_option_enable_async | subprocess_option_no_window, &proc))
-        return; // nope
-
-    
-    char buf[4096];
-    ProcessReadStream ps(&proc, ProcessReadStream::WAIT, &buf[0], sizeof(buf));
-
-    while(!ps.done())
-    {
-        putchar(ps.Take());
-    }
-
-    puts("------end------");
+    printf("[%s] JSON parse error before:\n", args[0]);
+    unsigned i = 0;
+    char c;
+    while(i++ < 100 && ((c = ps.Take())) )
+        putchar(c);
+    putchar('\n');
 }
 
-DataTree* loadJsonFromProcess(const char** args, size_t readTimeoutMS, size_t totalTimeoutMS)
+bool loadJsonFromProcess(DataTree *tree, const char** args)
 {
     subprocess_s proc;
     if (subprocess_create(args, subprocess_option_enable_async | subprocess_option_no_window | subprocess_option_inherit_environment, &proc))
+    {
+        printf("Failed to create process [%s]\n", args[0]);
+        return false;
+    }
+
+    char buf[12*1024];
+    ProcessReadStream ps(&proc, ProcessReadStream::DONTTOUCH, &buf[0], sizeof(buf));
+
+    bool ok = loadJsonDestructive(tree->root(), ps);
+    if(ok)
+    {
+        printf("[%s] parsed as json, waiting until it exits...\n", args[0]);
+        int ret = 0;
+        subprocess_join(&proc, &ret);
+        printf("[%s] exited with code %d\n", args[0], ret);
+    }
+    else
+    {
+        printf("[%s] failed to parse, killing\n", args[0]);
+        subprocess_terminate(&proc);
+    }
+
+    if(!ok)
+        procfail(ps, args);
+
+    subprocess_destroy(&proc);
+
+    return ok;
+}
+
+static DataTree *_newTreeFromProcess(AsyncLaunchConfig&& cfg)
+{
+    const size_t sz = (cfg.args.size() + 1) * sizeof(const char*);
+    const char ** args = (const char **)_malloca(sz);
+    if(!args)
         return NULL;
-
+    size_t i;
+    for(i = 0; i < cfg.args.size(); ++i)
+        args[i] = cfg.args[i].c_str();
+    args[i] = NULL; // terminator
+    
     DataTree *tree = new DataTree;
-    char buf[4096];
-    ProcessReadStream ps(&proc, ProcessReadStream::WAIT, &buf[0], sizeof(buf));
-
-    assert(false); // FIXME
-
+    bool ok = loadJsonFromProcess(tree, args);
+    if(!ok)
+    {
+        delete tree;
+        tree = NULL;
+    }
+    _freea(args);
     return tree;
 }
 
+std::future<DataTree*> loadJsonFromProcessAsync(AsyncLaunchConfig&& cfg)
+{
+    return std::async(std::launch::async, _newTreeFromProcess, std::move(cfg));
+}
 
 
 ProcessReadStream::ProcessReadStream(subprocess_s* proc, CloseBehavior close, char* buf, size_t bufsz)
-    : BufferedReadStream(_Read, _IsEOF, buf, bufsz), _proc(proc), closeb(close)
+    : BufferedReadStream(_Read, buf, bufsz), _proc(proc), closeb(close)
 {
     assert(proc);
 }
@@ -78,10 +114,4 @@ size_t ProcessReadStream::_Read(void* dst, size_t bytes, BufferedReadStream* sel
 {
     ProcessReadStream* me = static_cast<ProcessReadStream*>(self);
     return subprocess_read_stdout(me->_proc, (char*)dst, bytes);
-}
-
-bool ProcessReadStream::_IsEOF(BufferedReadStream* self)
-{
-    ProcessReadStream* me = static_cast<ProcessReadStream*>(self);
-    return !subprocess_alive(me->_proc);
 }

@@ -14,12 +14,11 @@ public:
     typedef char Ch;
 
     typedef size_t (*ReadFunc)(void *dst, size_t bytes, BufferedReadStream *self);
-    typedef bool (*IsEofFunc)(BufferedReadStream* self);
 
     // The passed in buffer must stay alive while the stream is in use!
     // Pass eoff == NULL for the default EOF behavior: EOF is when less bytes
     // than requested could be read. Pass a custom function to override that behavior.
-    BufferedReadStream(ReadFunc rf, IsEofFunc eoff, char *buf, size_t bufsz);
+    BufferedReadStream(ReadFunc rf, char *buf, size_t bufsz);
     ~BufferedReadStream();
 
     inline Ch Peek() const { return *_cur; } // If this crashes: Did you forget to call init()?
@@ -72,7 +71,6 @@ public:
     size_t _lastread;
     size_t _count;  //!< Number of characters read
     const ReadFunc _readf;
-    const IsEofFunc _eoff;
     bool _eof;
 };
 
