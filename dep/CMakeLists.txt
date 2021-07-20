@@ -5,12 +5,19 @@
 add_definitions(-DNO_SSL)   # listen on localhost and use a reverse proxy if ssl is needed
 add_definitions(-DNO_CGI)   # not required
 add_definitions(-DUSE_IPV6)
+add_definitions(-DNO_FILES)
+add_definitions(-DNO_FILESYSTEMS) # not required. makes request handling faster, too. See check_authorization() if in doubt.
+add_definitions(-DMG_EXTERNAL_FUNCTION_mg_cry_internal_impl) # required for NO_FILESYSTEMS
+add_definitions(-DMG_EXTERNAL_FUNCTION_log_access) # required for NO_FILESYSTEMS
+#add_definitions(-DALTERNATIVE_QUEUE) # doesn't seem to do anything good
 
 set(src
     luaalloc.c
     luaalloc.h
     civetweb/civetweb.c
     civetweb/civetweb.h
+    external_mg_cry_internal_impl.inl  # civetweb stub
+    external_log_access.inl            # civetweb stub
     subprocess.h
     strpool.h
     impls.cpp
