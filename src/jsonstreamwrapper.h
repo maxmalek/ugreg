@@ -28,7 +28,7 @@ public:
         if(_cur < _last)
             ++_cur;
         else
-            Refill();
+            _Refill();
         return c;
     }
     inline size_t Tell() const { return _count + static_cast<size_t>(_cur - _buf); }
@@ -60,8 +60,7 @@ public:
 
 
     // ----- DO NOT TOUCH ------------
-
-    void Refill();
+    void _Refill();
 
     Ch* _cur;
     Ch* const _buf;
@@ -74,10 +73,10 @@ public:
     bool _eof;
 };
 
-class BufferedFILEStream : public BufferedReadStream
+class BufferedFILEReadStream : public BufferedReadStream
 {
 public:
-    BufferedFILEStream(void *FILEp, char *buf, size_t bufsz);
+    BufferedFILEReadStream(void *FILEp, char *buf, size_t bufsz);
 private:
     static size_t _Read(void* dst, size_t bytes, BufferedReadStream* self);
     void * const _fh;
@@ -89,4 +88,48 @@ public:
     InplaceStringStream(char *s, size_t len); // must pass length explicitly
 private:
     static size_t _Read(void* dst, size_t bytes, BufferedReadStream* self);
+};
+
+
+class BufferedWriteStream
+{
+public:
+    typedef char Ch;
+
+    typedef size_t(*WriteFunc)(const void* src, size_t bytes, BufferedWriteStream* self);
+
+    // The passed in buffer must stay alive while the stream is in use!
+    // Pass eoff == NULL for the default EOF behavior: EOF is when less bytes
+    // than requested could be read. Pass a custom function to override that behavior.
+    BufferedWriteStream(WriteFunc wf, char* buf, size_t bufsz);
+    ~BufferedWriteStream();
+
+
+    inline size_t Tell() const { return _count + static_cast<size_t>(_dst - _buf); }
+
+
+    inline void Put(Ch c) { *_dst++ = c; if(_dst == _last) Flush(); }
+
+    void Flush();
+
+    inline bool isError() const { return _err; }
+
+
+    // ------------ non-rapidjson-API -----------------
+    Ch* _dst;
+    Ch* const _last;
+    Ch* const _buf;
+
+    size_t _count;  //!< Number of characters written, total
+    const WriteFunc _writef;
+    bool _err; // if this is ever set, the disk is full or something
+};
+
+class BufferedFILEWriteStream : public BufferedWriteStream
+{
+public:
+    BufferedFILEWriteStream(void* FILEp, char* buf, size_t bufsz);
+private:
+    static size_t _Write(const void* src, size_t bytes, BufferedWriteStream* self);
+    void* const _fh;
 };

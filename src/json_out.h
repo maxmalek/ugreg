@@ -1,6 +1,3 @@
-// FIXME: change this to use own streaming interface
-// so that we don't have to buffer the entire output in memory
-
 #pragma once
 
 #include <assert.h>
@@ -10,6 +7,7 @@
 #include "rapidjson/writer.h"
 #include "rapidjson/prettywriter.h"
 #include "treeiter.h"
+#include "jsonstreamwrapper.h"
 
 namespace json_out { // private namespace
 
@@ -73,7 +71,7 @@ struct WriterFunctor
 
 
 template<typename Output>
-void writeJson(Output& out, const VarCRef src, bool pretty)
+void writeJson_T(Output& out, const VarCRef src, bool pretty)
 {
     if(pretty)
     {
@@ -88,3 +86,7 @@ void writeJson(Output& out, const VarCRef src, bool pretty)
         treeIter_T(f, src);
     }
 }
+
+// Does not attempt to check stream validity. If you need to get out, throw an exception
+// in the stream's write function
+void writeJson(BufferedWriteStream& out, const VarCRef src, bool pretty);

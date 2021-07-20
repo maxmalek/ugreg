@@ -16,7 +16,7 @@ BufferedReadStream::~BufferedReadStream()
 void BufferedReadStream::init()
 {
     if (!_cur)
-        Refill();
+        _Refill();
 }
 
 const BufferedReadStream::Ch* BufferedReadStream::Peek4() const
@@ -24,7 +24,7 @@ const BufferedReadStream::Ch* BufferedReadStream::Peek4() const
     return (_cur + 4 - !_eof <= _last) ? _cur : 0;
 }
 
-void BufferedReadStream::Refill()
+void BufferedReadStream::_Refill()
 {
     if (!_eof)
     {
@@ -43,14 +43,37 @@ void BufferedReadStream::Refill()
     }
 }
 
-BufferedFILEStream::BufferedFILEStream(void *FILEp, char* buf, size_t bufsz)
+BufferedWriteStream::BufferedWriteStream(WriteFunc wf, char* buf, size_t bufsz)
+    : _dst(buf), _buf(buf), _last(buf + bufsz), _count(0), _writef(wf), _err(false)
+{
+}
+
+BufferedWriteStream::~BufferedWriteStream()
+{
+    Flush();
+}
+
+void BufferedWriteStream::Flush()
+{
+    if (!_err && _dst != _buf)
+    {
+        const size_t avail = _dst - _buf;
+        const size_t written = _writef(_buf, avail, this);
+        _count += written;
+        _err = written != avail;
+    }
+    _dst = _buf;
+}
+
+
+BufferedFILEReadStream::BufferedFILEReadStream(void *FILEp, char* buf, size_t bufsz)
     : BufferedReadStream(_Read, buf, bufsz), _fh(FILEp)
 {
 }
 
-size_t BufferedFILEStream::_Read(void* dst, size_t bytes, BufferedReadStream* self)
+size_t BufferedFILEReadStream::_Read(void* dst, size_t bytes, BufferedReadStream* self)
 {
-    BufferedFILEStream *me = static_cast<BufferedFILEStream*>(self);
+    BufferedFILEReadStream *me = static_cast<BufferedFILEReadStream*>(self);
     FILE *fh = static_cast<FILE*>(me->_fh);
     return fread(dst, 1, bytes, fh);
 }
@@ -58,7 +81,6 @@ size_t BufferedFILEStream::_Read(void* dst, size_t bytes, BufferedReadStream* se
 InplaceStringStream::InplaceStringStream(char* s, size_t len)
     : BufferedReadStream(_Read, s, len)
 {
-
 }
 
 size_t InplaceStringStream::_Read(void* dst, size_t bytes, BufferedReadStream* self)
@@ -67,4 +89,16 @@ size_t InplaceStringStream::_Read(void* dst, size_t bytes, BufferedReadStream* s
     // first time must succeed.
     // 2nd time around there is nothing left.
     return self->_cur ? 0 : self->_bufsz;
+}
+
+BufferedFILEWriteStream::BufferedFILEWriteStream(void* FILEp, char* buf, size_t bufsz)
+    : BufferedWriteStream(_Write, buf, bufsz), _fh(FILEp)
+{
+}
+
+size_t BufferedFILEWriteStream::_Write(const void* dst, size_t bytes, BufferedWriteStream* self)
+{
+    BufferedFILEWriteStream* me = static_cast<BufferedFILEWriteStream*>(self);
+    FILE* fh = static_cast<FILE*>(me->_fh);
+    return fwrite(dst, 1, bytes, fh);
 }

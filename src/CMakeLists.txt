@@ -30,6 +30,8 @@ set(src
     treemem.cpp
     treemem.h
     mem.h
+    socketstream.cpp
+    socketstream.h
 )
 
 add_executable(ugreg ${src})

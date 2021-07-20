@@ -9,11 +9,13 @@
 #include "accessor.h"
 #include "jsonstreamwrapper.h"
 #include "subproc.h"
+#include "socketstream.h"
+
 
 static void jsonout(VarCRef ref)
 {
     rapidjson::StringBuffer sb;
-    writeJson(sb, ref, false);
+    writeJson_T(sb, ref, false);
     sb.Flush();
     puts(sb.GetString());
 }
@@ -70,7 +72,7 @@ TreeHandler::TreeHandler(size_t skipFromRequest)
     if(FILE *f = fopen("citylots.json", "rb"))
     {
         char buf[4096];
-        BufferedFILEStream fs(f, buf, sizeof(buf));
+        BufferedFILEReadStream fs(f, buf, sizeof(buf));
         bool ok = loadJsonDestructive(tree.root(), fs);
         printf("Loaded, ok = %u\n", ok);
         assert(ok);
@@ -113,7 +115,7 @@ int TreeHandler::onRequest(mg_connection* conn)
     std::ostringstream os;
     os << q;
     if (info->query_string)
-        os << " -- " << q;
+        os << " -- " << info->query_string;
 
     std::string out = os.str();
     printf("q = [%s]\n", out.c_str());
@@ -126,10 +128,24 @@ int TreeHandler::onRequest(mg_connection* conn)
         return 404;
     }
 
-    rapidjson::StringBuffer sb;
-    writeJson(sb, sub, false);
-    mg_send_http_ok(conn, "text/json", sb.GetLength());
-    mg_write(conn, sb.GetString(), sb.GetLength());
+    mg_send_http_ok(conn, "text/json", -1);
+
+    try
+    {
+        char buf[4096];
+        ThrowingSocketWriteStream wr(conn, buf, sizeof(buf));
+        writeJson(wr, sub, false);
+        mg_send_chunk(conn, "", 0); // terminating chunk
+        printf("[%s] JSON reply sent\n", out.c_str());
+    }
+    catch(ThrowingSocketWriteStream::WriteFail ex)
+    {
+        printf("[%s] Wrote %u bytes to socket, then failed (client aborted?)\n", out.c_str(), (unsigned)ex.written);
+    }
+    catch(...)
+    {
+        printf("[%s] Unhandled exception\n", out.c_str());
+    }
 
     return 200; // HTTP OK
 }

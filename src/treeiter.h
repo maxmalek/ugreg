@@ -1,6 +1,7 @@
 #pragma once
 
 #include "variant.h"
+#include "treemem.h"
 #include <assert.h>
 
 // Example functor to iterate tree:
