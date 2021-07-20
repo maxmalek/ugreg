@@ -97,13 +97,13 @@ static int server()
     TreeHandler htree(4); // strlen("/get")
     srv.registerHandler("/get", htree.Handler, &htree);
 
-#if defined(_DEBUG) && defined(_MSC_VER)
+/*#if defined(_DEBUG) && defined(_MSC_VER)
     {
         _CrtMemState mem;
         _CrtMemCheckpoint(&mem);
         _CrtMemDumpStatistics(&mem);
     }
-#endif
+#endif*/
 
     while (!s_quit)
         Sleep(1000);
@@ -116,14 +116,14 @@ static int server()
 
 int main(int argc, char** argv)
 {
-#if defined(_DEBUG) && defined(_MSC_VER)
+/*#if defined(_DEBUG) && defined(_MSC_VER)
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF | _CRTDBG_CHECK_CRT_DF);
-#endif
+#endif*/
     int ret = server();
 
-#if defined(_DEBUG) && defined(_MSC_VER)
+/*#if defined(_DEBUG) && defined(_MSC_VER)
     _CrtDumpMemoryLeaks();
-#endif
+#endif*/
 
     return ret;
 }
