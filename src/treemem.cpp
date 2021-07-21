@@ -106,6 +106,11 @@ void* TreeMem::Alloc(size_t sz)
     return luaalloc(_LA, NULL, 0, sz);
 }
 
+void* TreeMem::Realloc(void* p, size_t oldsize, size_t newsize)
+{
+    return luaalloc(_LA, p, oldsize, newsize);
+}
+
 void TreeMem::Free(void* p, size_t sz)
 {
     luaalloc(_LA, p, sz, 0);

@@ -21,6 +21,25 @@ static Var *_NewArray(TreeMem& mem, size_t n)
     return p;
 }
 
+static Var* _ResizeArray(TreeMem& mem, size_t newsize, Var *arr, size_t oldsize)
+{
+    if(newsize == oldsize) // sanity check
+        return arr;
+
+    // shrinking? -- destruct trailing range first
+    if(newsize < oldsize)
+    {
+        for(size_t i = newsize; i < oldsize; ++i)
+            arr[i].clear(mem);
+        mem_destruct(arr + newsize, arr + oldsize);
+    }
+    Var* p = (Var*)mem.Realloc(arr, sizeof(Var) * oldsize, sizeof(Var) * newsize);
+    // enlarging?
+    if(oldsize < newsize)
+        mem_construct_default(p + oldsize, p + newsize);
+    return p;
+}
+
 static void _DeleteArray(TreeMem& mem, Var *p, size_t n)
 {
     assert(!p == !n);
@@ -130,6 +149,13 @@ void Var::_transmute(TreeMem& mem, size_t newmeta)
     meta = newmeta;
 }
 
+void Var::_adjustsize(size_t size)
+{
+    assert(size <= SIZE_MASK);
+    assert(_topbits() == BITS_ARRAY || _topbits() == BITS_STRING); // makes no sense for the other types
+    meta = (meta & ~SIZE_MASK) | size;
+}
+
 void Var::clear(TreeMem& mem)
 {
     _transmute(mem, TYPE_NULL);
@@ -168,10 +194,18 @@ Var Var::clone(TreeMem &dstmem, const TreeMem& srcmem) const
 
 Var * Var::makeArray(TreeMem& mem, size_t n)
 {
+    Var *a;
     if(_topbits() == BITS_ARRAY)
-        return u.a;
-    _settop(mem, BITS_ARRAY, n);
-    return (( u.a = _NewArray(mem, n) ));
+    {
+        a = _ResizeArray(mem, n, u.a, _size());
+        _adjustsize(n);
+    }
+    else
+    {
+        a = _NewArray(mem, n);
+        _settop(mem, BITS_ARRAY, n);
+    }
+    return (( u.a = a )); // u.a must be assigned AFTER _settop()!
 }
 
 Var::Map *Var::makeMap(TreeMem& mem, size_t prealloc)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+//#include <utility> // std::move
 
 // operator new() without #include <new>
 // Unfortunately the standard mandates the use of size_t, so we need stddef.h the very least.
@@ -33,3 +34,11 @@ void mem_construct_from(T* begin, T* end, const T& x)
     for (T* p = begin; p < end; ++p)
         _X_PLACEMENT_NEW(p) T(x);
 }
+
+// not needed for now
+/*template<typename T>
+void mem_construct_move_from(T* begin, T* end, const T *movebegin)
+{
+    for (T* p = begin; p < end; ++p)
+        _X_PLACEMENT_NEW(p) T(std::move(*movebegin++));
+}*/

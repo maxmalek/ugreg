@@ -146,6 +146,8 @@ public:
 
     void _settop(TreeMem& mem, Topbits top, size_t size);
     void _transmute(TreeMem& mem, size_t newmeta);
+    void _adjustsize(size_t newsize);
+
     inline Topbits _topbits() const { return Topbits(meta >> SHIFT_TOP2BITS); }
     inline bool isCompound() const { return meta >> SHIFT_TOPBIT; } // highest bit set?
     inline bool isAtom()     const { return !isCompound(); }

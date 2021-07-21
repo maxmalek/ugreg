@@ -50,6 +50,7 @@ public:
 
     // --- block allocator -- (lowercase not to conflict with some debug #defines or whatever)
     void *Alloc(size_t sz);
+    void *Realloc(void* p, size_t oldsize, size_t newsize);
     void Free(void *p, size_t sz);
 
 private:
