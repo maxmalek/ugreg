@@ -69,22 +69,13 @@ static bool loadcfg(DataTree& base, const char *fn)
 bool doargs(DataTree& tree, int argc, char **argv)
 {
     ServerConfig cfg;
-    argh::parser cmd({ "-c", "--config" });
+    argh::parser cmd;
     cmd.parse(argc, argv);
 
-    for (const auto& it : cmd.params())
+    for (size_t i = 1; i < cmd.size(); ++i)
     {
-        const std::string& k = it.first, & v = it.second;
-        if (k == "c" || k == "config")
-        {
-            printf("Loading config file: %s\n",  v.c_str());
-            loadcfg(tree, v.c_str());
-        }
-        else
-        {
-            printf("Unrecognized cmdline param: %s\n", k.c_str());
-            return false;
-        }
+        printf("Loading config file: %s\n", cmd[i].c_str());
+        loadcfg(tree, cmd[i].c_str());
     }
 
     return true;
@@ -104,8 +95,11 @@ int main(int argc, char** argv)
 
     ServerConfig cfg;
     if(!cfg.apply(cfgtree.root()))
-        bail("Invalid config after processing options. Fix your config file(s).", "");
-
+    {
+        bail("Invalid config after processing options. Fix your config file(s).\nCurrent config:\n",
+            dumpjson(cfgtree.root(), true).c_str()
+        );
+    }
 
     // Can start the webserver early while we're still loading up other things.
     WebServer::StaticInit();

@@ -1,0 +1,7 @@
+// This is meant to be loaded on top of an existing config to turn on debugging things
+{
+    "listen": [
+        { "host": "127.0.0.1", "port": 13337 }
+    ],
+    "expose_debug_apis": true
+}

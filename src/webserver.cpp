@@ -26,6 +26,7 @@ void WebServer::stop()
 
 void WebServer::registerHandler(const char *entrypoint, mg_request_handler h, void *ud)
 {
+    printf("WS: Register handler %s\n", entrypoint);
     assert(_ctx && entrypoint && entrypoint[0] == '/');
     mg_set_request_handler(_ctx, entrypoint, h, ud);
 }
@@ -71,6 +72,7 @@ bool WebServer::start(const ServerConfig& cfg)
         return false;
 
     _ctx = ctx;
+    puts("WS: Started.");
     return true;
 }
 
