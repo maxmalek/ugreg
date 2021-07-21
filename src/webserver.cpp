@@ -5,9 +5,6 @@
 #include "civetweb/civetweb.h"
 #include "config.h"
 
-#include <thread> // TEMP
-
-
 WebServer::WebServer()
     : _ctx(NULL)
 {
@@ -22,6 +19,7 @@ void WebServer::stop()
 {
     if(!_ctx)
         return;
+    puts("WS: Stopping...");
     mg_stop(_ctx);
     _ctx = NULL;
 }
@@ -52,19 +50,10 @@ bool WebServer::start(const ServerConfig& cfg)
                 ls << 's';
         }
         listenbuf = ls.str();
-        printf("Listening on %s\n", listenbuf.c_str());
+        printf("WS: Listening on %s\n", listenbuf.c_str());
     }
-    {
-        unsigned threads = cfg.listen_threads;
-        if(!threads)
-        {
-            threads = 2 * std::thread::hardware_concurrency();
-            if(threads < 5)
-                threads = 5;
-        }
-        printf("Using %u request worker threads\n", threads);
-        threadsbuf = std::to_string(threads);
-    }
+    threadsbuf = std::to_string(cfg.listen_threads);
+    printf("WS: Using %u request worker threads\n", cfg.listen_threads);
     
 
     // via https://github.com/civetweb/civetweb/blob/master/docs/UserManual.md

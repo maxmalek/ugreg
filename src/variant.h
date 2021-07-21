@@ -7,6 +7,19 @@
 class TreeMem;
 class Var;
 
+// For merge() operations.
+// If not recursive, simply assign keys and replace the values of keys that are overwritten.
+// If recursive, merge all maps recursively (all other values are replaced);
+//  merging only applies if both values are maps. If one of them is not, one simply replaces the other.
+// If MERGE_APPEND_ARRAYS is set, instead of replacing arrays, if both values are arrays, append one to the other.
+enum MergeFlags
+{
+    MERGE_FLAT           = 0x00,
+    MERGE_RECURSIVE      = 0x01,
+    MERGE_APPEND_ARRAYS  = 0x02
+};
+inline static MergeFlags operator|(MergeFlags a, MergeFlags b) {return MergeFlags(unsigned(a) | unsigned(b)); }
+
 // Note: Methods that don't take TreeMem don't modify the refcount!
 class _VarMap
 {
@@ -18,7 +31,7 @@ public:
     void destroy(TreeMem& mem); // deletes self
     _VarMap(TreeMem& mem);
 
-    void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, bool recursive);
+    void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags);
     void clear(TreeMem& mem);
     inline bool empty() const { return _storage.empty(); }
     _VarMap *clone(TreeMem& dstmem, const TreeMem& srcmem) const;
@@ -247,13 +260,10 @@ public:
     // The VarRef returned from this is always valid & safe, but if a new key was created it will be of TYPE_NULL.
     VarRef operator[](const char *key);
 
-
+    // Merge o into this according to MergeFlags.
     // Returns false if o is not a map.
     // Turns own node into map if it is not already, then merges in o, then returns true.
-    // If not recursive, simply assign keys and replace the values of keys that are overwritten.
-    // If recursive, merge all maps recursively (all other values are replaced);
-    //  merging only applies if both values are maps. If one of them is not, one simply replaces the other.
-    bool merge(const VarCRef& o, bool recursive);
+    bool merge(const VarCRef& o, MergeFlags mergeflags);
 
     // Replaces own contents with o's contents.
     void replace(const VarCRef& o);

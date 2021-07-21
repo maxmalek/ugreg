@@ -13,12 +13,14 @@ struct ServerConfig
         bool ssl;
     };
 
-    ServerConfig();
-
+   // --- begin fields ---
     std::vector<Listen> listen;
     unsigned listen_threads;
+    bool expose_debug_apis;
+    // --- end fields ---
 
-    void clear();
-    void add(VarCRef root);
-    bool valid() const;
+
+    ServerConfig();
+
+    bool apply(VarCRef root); // Sets values to above fields and returns true if the config looks good
 };

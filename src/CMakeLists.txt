@@ -32,6 +32,8 @@ set(src
     mem.h
     socketstream.cpp
     socketstream.h
+    teststuff.cpp
+    teststuff.h
 )
 
 add_executable(ugreg ${src})

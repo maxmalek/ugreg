@@ -27,3 +27,6 @@ bool strToDurationMS_Safe(u64* dst, const char* s, size_t maxlen = -1);
 
 
 u64 timeNowMS();
+
+unsigned getNumCPUCores();
+

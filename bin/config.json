@@ -1,0 +1,15 @@
+{
+    /*
+    One entry per listen address/port. Port must be an int and is mandatory, the rest is optional.
+    Set host to empty or leave away to listen on every interface.
+    For the full documentation, see
+        https://github.com/civetweb/civetweb/blob/master/docs/UserManual.md#listening_ports-8080
+    Example: { "host": "127.0.0.1", "port": 8080 }
+    */
+    "listen": [
+        { "port": 8080 },
+        { "host": "127.0.0.1", "port": 13337 }
+    ],
+    // Don't enable this for a production system as it can leak sensitive data!
+    "expose_debug_apis": true
+}

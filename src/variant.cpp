@@ -251,7 +251,14 @@ const double *Var::asFloat() const
 
 bool Var::asBool() const
 {
-    return meta == TYPE_BOOL && u.ui;
+    switch(meta)
+    {
+        case TYPE_BOOL:
+        case TYPE_INT:
+        case TYPE_UINT:
+            return !!u.ui;
+    }
+    return false;
 }
 
 PoolStr Var::asString(const TreeMem& mem) const
@@ -431,7 +438,7 @@ Var& _VarMap::_InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k)
 
 
 // TODO: if we don't need a copying merge, make this a consuming merge that moves stuff
-void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, bool recursive)
+void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags)
 {
     _checkmem(dstmem);
     for(_Map::const_iterator it = o._storage.begin(); it != o._storage.end(); ++it)
@@ -440,8 +447,20 @@ void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, bo
         StrRef k = dstmem.putNoRefcount(ps.s, ps.len);
         Var& dst = _InsertAndRefcount(dstmem, _storage, k);
 
-        if(recursive && it->second.type() == Var::TYPE_MAP)
-            dst.makeMap(dstmem)->merge(dstmem, *it->second.u.m, srcmem, recursive);
+        const Var::Type othertype = it->second.type();
+
+        if((mergeflags & MERGE_RECURSIVE) && othertype == Var::TYPE_MAP)
+            dst.makeMap(dstmem)->merge(dstmem, *it->second.u.m, srcmem, mergeflags);
+        else if((mergeflags & MERGE_APPEND_ARRAYS) && othertype == Var::TYPE_ARRAY && dst.type() == Var::TYPE_ARRAY)
+        {
+            const size_t oldsize = dst._size();
+            const size_t addsize = it->second._size();
+            const Var *oa = it->second.array_unsafe();
+            // resize destination and skip forward
+            Var *a = dst.makeArray(dstmem, oldsize + addsize) + oldsize;
+            for(size_t i = 0; i < addsize; ++i)
+                a[i] = std::move(oa[i].clone(dstmem, srcmem));
+        }
         else // One entry replaces the other entirely
         {
             dst.clear(dstmem);
@@ -518,14 +537,14 @@ VarRef VarRef::operator[](const char* key)
     return VarRef(mem, &sub);
 }
 
-bool VarRef::merge(const VarCRef& o, bool recursive)
+bool VarRef::merge(const VarCRef& o, MergeFlags mergeflags)
 {
     assert(v && o.v);
     if(o.type() != Var::TYPE_MAP)
         return false;
 
     const Var::Map& om = *o.v->map_unsafe();
-    v->makeMap(mem, om.size())->merge(mem, om, o.mem, recursive);
+    v->makeMap(mem, om.size())->merge(mem, om, o.mem, mergeflags);
     return true;
 }
 

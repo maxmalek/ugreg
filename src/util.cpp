@@ -1,6 +1,7 @@
 #include "util.h"
 #include <chrono>
 #include <assert.h>
+#include <thread>
 
 // Clang has this, other compilers may or may not
 #ifndef __has_builtin
@@ -113,4 +114,9 @@ u64 timeNowMS()
     auto t0 = now.time_since_epoch();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t0);
     return ms.count();
+}
+
+unsigned getNumCPUCores()
+{
+    return std::thread::hardware_concurrency();
 }
