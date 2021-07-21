@@ -20,6 +20,7 @@ set(src
     external_log_access.inl            # civetweb stub
     subprocess.h
     strpool.h
+    argh.h
     impls.cpp
 )
 

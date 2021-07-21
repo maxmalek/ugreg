@@ -18,6 +18,6 @@ struct ServerConfig
     std::vector<Listen> listen;
 
     void clear();
-    bool add(VarCRef root);
-    bool addFile(const char *file);
+    void add(VarCRef root);
+    bool valid() const;
 };

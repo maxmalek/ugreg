@@ -13,11 +13,8 @@ void ServerConfig::clear()
     listen.clear();
 }
 
-bool ServerConfig::add(VarCRef root)
+void ServerConfig::add(VarCRef root)
 {
-    if(!root)
-        return false;
-
     if(VarCRef L = root.lookup("listen"))
         for(size_t i = 0; i < L.size(); ++i)
             if(VarCRef e = L.at(i))
@@ -33,6 +30,9 @@ bool ServerConfig::add(VarCRef root)
                     listen.emplace_back(lis);
                 }
             }
+}
 
+bool ServerConfig::valid() const
+{
     return !listen.empty();
 }
