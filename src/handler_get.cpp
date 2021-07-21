@@ -151,7 +151,7 @@ int TreeHandler::onRequest(mg_connection* conn)
 
     try
     {
-        char buf[4096];
+        char buf[32*1024];
         ThrowingSocketWriteStream wr(conn, buf, sizeof(buf));
         writeJson(wr, sub, false);
         mg_send_chunk(conn, "", 0); // terminating chunk
