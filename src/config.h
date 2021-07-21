@@ -16,6 +16,7 @@ struct ServerConfig
     ServerConfig();
 
     std::vector<Listen> listen;
+    unsigned listen_threads;
 
     void clear();
     void add(VarCRef root);

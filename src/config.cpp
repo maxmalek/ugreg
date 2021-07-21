@@ -3,6 +3,7 @@
 // make the default values sane for testing and not a security issue.
 // We're not MongoDB.
 ServerConfig::ServerConfig()
+    : listen_threads(0)
 {
     Listen def { "127.0.0.1", 8080, false };
     listen.emplace_back(def);

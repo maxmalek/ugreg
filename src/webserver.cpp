@@ -5,6 +5,7 @@
 #include "civetweb/civetweb.h"
 #include "config.h"
 
+#include <thread> // TEMP
 
 
 WebServer::WebServer()
@@ -36,7 +37,7 @@ bool WebServer::start(const ServerConfig& cfg)
     mg_callbacks cb;
     memset(&cb, 0, sizeof(cb));
 
-    std::string listenbuf;
+    std::string listenbuf, threadsbuf;
     {
         std::ostringstream ls;
         for(size_t i = 0; i < cfg.listen.size(); ++i)
@@ -53,6 +54,18 @@ bool WebServer::start(const ServerConfig& cfg)
         listenbuf = ls.str();
         printf("Listening on %s\n", listenbuf.c_str());
     }
+    {
+        unsigned threads = cfg.listen_threads;
+        if(!threads)
+        {
+            threads = 2 * std::thread::hardware_concurrency();
+            if(threads < 5)
+                threads = 5;
+        }
+        printf("Using %u request worker threads\n", threads);
+        threadsbuf = std::to_string(threads);
+    }
+    
 
     // via https://github.com/civetweb/civetweb/blob/master/docs/UserManual.md
     // Everything is handled programmatically, so there is no document_root
@@ -60,6 +73,7 @@ bool WebServer::start(const ServerConfig& cfg)
     const char* options[] =
     {
         "listening_ports", listenbuf.c_str(),
+        "num_threads", threadsbuf.c_str(),
         NULL
     };
 
