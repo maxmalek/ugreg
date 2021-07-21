@@ -127,7 +127,7 @@ void Var::_settop(TreeMem& mem, Topbits top, size_t size)
 {
     assert(size <= SIZE_MASK);
     assert(top != BITS_OTHER);
-    _transmute(mem, (size_t(top) << SHIFT_TOP2BITS) | size);
+    _transmute(mem, (size_t(top) << SHIFT_TOP2BITS) | (size & SIZE_MASK));
 }
 
 void Var::_transmute(TreeMem& mem, size_t newmeta)
@@ -153,7 +153,7 @@ void Var::_adjustsize(size_t size)
 {
     assert(size <= SIZE_MASK);
     assert(_topbits() == BITS_ARRAY || _topbits() == BITS_STRING); // makes no sense for the other types
-    meta = (meta & ~SIZE_MASK) | size;
+    meta = (meta & ~SIZE_MASK) | (size & SIZE_MASK);
 }
 
 void Var::clear(TreeMem& mem)
