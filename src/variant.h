@@ -175,6 +175,7 @@ public:
     PoolStr asString(const TreeMem& mem) const; // (does not convert to string)
     const char *asCString(const TreeMem& mem) const;
     const double *asFloat() const;
+    bool asBool() const; // only true if really bool type and true
 
     Var& operator=(Var&& o) noexcept;
 
@@ -233,6 +234,7 @@ public:
     PoolStr asString() const { return v->asString(mem); } // (does not convert to string)
     const char* asCString() const { return v->asCString(mem); }
     const double* asFloat() const { return v->asFloat(); };
+    bool asBool() const { return v->asBool(); }
 
     // Returns this, transmuted to a different type. If the type is changed, old values are lost.
     VarRef& makeMap();
@@ -282,11 +284,16 @@ public:
     inline operator const Var* () const { return v; }
 
     Var::Type type() const { return v->type(); }
+    size_t size() const { return v->size(); }
     bool isNull() const { return v->isNull(); }
     const s64* asInt() const { return v->asInt(); }
     const u64* asUint() const { return v->asUint(); }
     PoolStr asString() const { return v->asString(mem); } // (does not convert to string)
     const char* asCString() const { return v->asCString(mem); }
     const double* asFloat() const { return v->asFloat(); };
+    bool asBool() const { return v->asBool(); }
+
+    VarCRef at(size_t idx) const;          // does not convert to array
+    VarCRef lookup(const char *key) const; // does not convert to map
 };
 

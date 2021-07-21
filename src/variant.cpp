@@ -249,6 +249,11 @@ const double *Var::asFloat() const
     return meta == TYPE_FLOAT ? &u.f : NULL;
 }
 
+bool Var::asBool() const
+{
+    return meta == TYPE_BOOL && u.ui;
+}
+
 PoolStr Var::asString(const TreeMem& mem) const
 {
     PoolStr ps { NULL, 0 };
@@ -531,3 +536,12 @@ void VarRef::replace(const VarCRef& o)
     *v = std::move(o.v->clone(mem, o.mem));
 }
 
+VarCRef VarCRef::at(size_t idx) const
+{
+    return VarCRef(mem, v->at(idx));
+}
+
+VarCRef VarCRef::lookup(const char* key) const
+{
+    return VarCRef(mem, v->lookup(mem.lookup(key, strlen(key))));
+}

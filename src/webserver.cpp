@@ -5,11 +5,7 @@
 #include "civetweb/civetweb.h"
 #include "config.h"
 
-static void mg_cry_internal_impl(const struct mg_connection* conn,
-    const char* func,
-    unsigned line,
-    const char* fmt,
-    va_list ap);
+
 
 WebServer::WebServer()
     : _ctx(NULL)
@@ -42,11 +38,20 @@ bool WebServer::start(const ServerConfig& cfg)
 
     std::string listenbuf;
     {
-        std::ostringstream listen;
-        if(cfg.listenaddr.length())
-            listen << cfg.listenaddr << ':';
-        listen << cfg.listenport;
-        listenbuf = listen.str();
+        std::ostringstream ls;
+        for(size_t i = 0; i < cfg.listen.size(); ++i)
+        {
+            if(i)
+                ls << ',';
+            const ServerConfig::Listen& lis = cfg.listen[i];
+            if(lis.host.length())
+                ls << lis.host << ':';
+            ls << lis.port;
+            if(lis.ssl)
+                ls << 's';
+        }
+        listenbuf = ls.str();
+        printf("Listening on %s\n", listenbuf.c_str());
     }
 
     // via https://github.com/civetweb/civetweb/blob/master/docs/UserManual.md
