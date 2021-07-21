@@ -27,8 +27,6 @@ public:
     Var& getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
           Var *get(StrRef key);
     const Var *get(StrRef key) const;
-    //      Var* get(const char* kbegin, size_t klen); // for keys not terminated with \0
-    //const Var *get(const char* kbegin, size_t klen) const;
 
     void emplace(TreeMem& mem, StrRef k,  Var&& x); // increases refcount if new key stored
 
@@ -128,7 +126,7 @@ public:
     // either the value or pointer to value
     union
     {
-        StrRef s;    // when string
+        StrRef s;   // when string
         Var *a;     // when array; entries in a[0..N), N is the lower bits of meta
         Map *m;
         
@@ -177,14 +175,6 @@ public:
     PoolStr asString(const TreeMem& mem) const; // (does not convert to string)
     const char *asCString(const TreeMem& mem) const;
     const double *asFloat() const;
-
-    // convert to string
-    //struct Buf { char b[64]; }; 
-    // returns pointer to tmp or to internal space.
-    // (user has to pass in tmp space so that we don't have to do an allocation)
-    // TODO: think harder about this: what to do with array or map. NULL return seems best for non-trivial types (aka atomToString)
-    // ... could also serialize as json string but that seems entirely stupid to do here...
-    //const char *toString(Buf& tmp); 
 
     Var& operator=(Var&& o) noexcept;
 

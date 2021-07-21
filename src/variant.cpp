@@ -66,10 +66,10 @@ Var::~Var()
     // we're screwed if there's still some leftover memory in the dtor.
     // Means if we have a ref to an external block of memory, we have no other
     // choice than to leak it.
-    // Practically it will be clared when the TreeMem is destroyed, but
+    // Practically it will be cleared when the TreeMem is destroyed, but
     // that may not happen until process exit, at which point it doesn't matter anyway.
     // TL;DR if this blows, did you forget to clear()?
-    assert(!meta && "Var not cleared!");
+    assert(!meta && "Var not cleared before dtor!");
 }
 
 Var::Var(Var&& v) noexcept
@@ -324,32 +324,6 @@ const Var* Var::lookup(StrRef k) const
     return _topbits() == BITS_MAP ? u.m->get(k) : NULL;
 }
 
-
-/*Var* Var::lookup(const TreeMem& mem, const char* key)
-{
-    return _topbits() == BITS_MAP ? u.m->get(key) : NULL;
-}
-
-const Var* Var::lookup(const TreeMem& mem, const char* key) const
-{
-    return _topbits() == BITS_MAP ? u.m->get(key) : NULL;
-}
-
-Var* Var::lookup(const char* kbegin, size_t klen)
-{
-    return  _topbits() == BITS_MAP ? u.m->get(kbegin, klen) : NULL;
-}
-
-const Var* Var::lookup(const char* kbegin, size_t klen) const
-{
-    return  _topbits() == BITS_MAP ? u.m->get(kbegin, klen) : NULL;
-}
-
-inline Var& Var::operator[](const char* key)
-{
-    return (*map_unsafe())[key];
-}*/
-
 Var::Type Var::type() const
 {
     static const Type types[] = { TYPE_NULL, TYPE_STRING, TYPE_ARRAY, TYPE_MAP }; // first element is never used
@@ -506,38 +480,6 @@ const Var* _VarMap::get(StrRef k) const
     _Map::const_iterator it = _storage.find(k);
     return it != _storage.end() ? &it->second : NULL;
 }
-
-/*
-Var* _VarMap::get(const char* key)
-{
-    _Map::iterator it = _storage.find(key);
-    return it != _storage.end() ? &it->second : NULL;
-}
-
-const Var* _VarMap::get(const char* key) const
-{
-    _Map::const_iterator it = _storage.find(key);
-    return it != _storage.end() ? &it->second : NULL;
-}
-
-const Var* _VarMap::get(const char* kbegin, size_t klen) const
-{
-    _Map::const_iterator it = _storage.find(std::string(kbegin, klen));
-    return it != _storage.end() ? &it->second : NULL;
-}
-
-Var* _VarMap::get(const char* kbegin, size_t klen)
-{
-    _Map::iterator it = _storage.find(std::string(kbegin, klen));
-    return it != _storage.end() ? &it->second : NULL;
-}
-
-inline Var& _VarMap::operator[](const char* key)
-{
-    return _storage[key];
-}
-
-*/
 
 Var& _VarMap::getOrCreate(TreeMem& mem, StrRef key)
 {
