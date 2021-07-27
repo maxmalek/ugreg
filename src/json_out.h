@@ -62,9 +62,9 @@ struct WriterFunctor
         return json_out::emit(wr, v);
     }
 
-    inline void EndArray() { wr.EndArray(); }
-    inline void EndObject() { wr.EndObject(); }
-    inline void Key(const char *k, size_t len) { wr.Key(k, len); }
+    inline void EndArray(VarCRef) { wr.EndArray(); }
+    inline void EndObject(VarCRef) { wr.EndObject(); }
+    inline void Key( const char *k, size_t len) { wr.Key(k, len); }
 };
 
 }; // end namespace json_out

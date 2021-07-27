@@ -36,7 +36,7 @@ bool WebServer::start(const ServerConfig& cfg)
     mg_callbacks cb;
     memset(&cb, 0, sizeof(cb));
 
-    std::string listenbuf, threadsbuf;
+    std::string listenbuf;
     {
         std::ostringstream ls;
         for(size_t i = 0; i < cfg.listen.size(); ++i)
@@ -53,7 +53,7 @@ bool WebServer::start(const ServerConfig& cfg)
         listenbuf = ls.str();
         printf("WS: Listening on %s\n", listenbuf.c_str());
     }
-    threadsbuf = std::to_string(cfg.listen_threads);
+    std::string threadsbuf = std::to_string(cfg.listen_threads);
     printf("WS: Using %u request worker threads\n", cfg.listen_threads);
     
 

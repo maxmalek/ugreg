@@ -34,6 +34,8 @@ set(src
     socketstream.h
     teststuff.cpp
     teststuff.h
+    treefunc.cpp
+    treefunc.h
 )
 
 add_executable(ugreg ${src})

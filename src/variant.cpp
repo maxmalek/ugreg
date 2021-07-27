@@ -444,8 +444,7 @@ void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, Me
     for(_Map::const_iterator it = o._storage.begin(); it != o._storage.end(); ++it)
     {
         PoolStr ps = srcmem.getSL(it->first);
-        StrRef k = dstmem.putNoRefcount(ps.s, ps.len);
-        Var& dst = _InsertAndRefcount(dstmem, _storage, k);
+        Var& dst = putKey(dstmem, ps.s, ps.len);
 
         const Var::Type othertype = it->second.type();
 
@@ -505,16 +504,24 @@ const Var* _VarMap::get(StrRef k) const
     return it != _storage.end() ? &it->second : NULL;
 }
 
+Var& _VarMap::putKey(TreeMem& mem, const char* key, size_t len)
+{
+    StrRef k = mem.putNoRefcount(key, len);
+    return getOrCreate(mem, k);
+}
+
 Var& _VarMap::getOrCreate(TreeMem& mem, StrRef key)
 {
     return _InsertAndRefcount(mem, _storage, key);
 }
 
-void _VarMap::emplace(TreeMem& mem, StrRef k, Var&& x)
+Var& _VarMap::emplace(TreeMem& mem, StrRef k, Var&& x)
 {
     _checkmem(mem);
-    if(_storage.insert(std::make_pair(k, std::move(x))).second)
+    auto it = _storage.insert(std::make_pair(k, std::move(x)));
+    if(it.second)
         mem.increfS(k);
+    return it.first->second;
 }
 
 VarRef& VarRef::makeMap()
@@ -531,9 +538,7 @@ VarRef& VarRef::makeArray(size_t n)
 
 VarRef VarRef::operator[](const char* key)
 {
-    makeMap();
-    StrRef k = mem.putNoRefcount(key, strlen(key));
-    Var& sub = v->map_unsafe()->getOrCreate(mem, k);
+    Var& sub = v->makeMap(mem)->putKey(mem, key, strlen(key));
     return VarRef(mem, &sub);
 }
 

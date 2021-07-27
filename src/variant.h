@@ -12,11 +12,11 @@ class Var;
 // If recursive, merge all maps recursively (all other values are replaced);
 //  merging only applies if both values are maps. If one of them is not, one simply replaces the other.
 // If MERGE_APPEND_ARRAYS is set, instead of replacing arrays, if both values are arrays, append one to the other.
-enum MergeFlags
+enum MergeFlags // bitmask!
 {
     MERGE_FLAT           = 0x00,
     MERGE_RECURSIVE      = 0x01,
-    MERGE_APPEND_ARRAYS  = 0x02
+    MERGE_APPEND_ARRAYS  = 0x02,
 };
 inline static MergeFlags operator|(MergeFlags a, MergeFlags b) {return MergeFlags(unsigned(a) | unsigned(b)); }
 
@@ -41,7 +41,9 @@ public:
           Var *get(StrRef key);
     const Var *get(StrRef key) const;
 
-    void emplace(TreeMem& mem, StrRef k,  Var&& x); // increases refcount if new key stored
+    Var& putKey(TreeMem& mem, const char* key, size_t len);
+
+    Var& emplace(TreeMem& mem, StrRef k,  Var&& x); // increases refcount if new key stored
 
     inline Iterator begin() const { return _storage.begin(); }
     inline Iterator end() const { return _storage.end(); }
@@ -160,8 +162,8 @@ public:
     void _adjustsize(size_t newsize);
 
     inline Topbits _topbits() const { return Topbits(meta >> SHIFT_TOP2BITS); }
-    inline bool isCompound() const { return meta >> SHIFT_TOPBIT; } // highest bit set?
-    inline bool isAtom()     const { return !isCompound(); }
+    inline bool isContainer() const { return meta >> SHIFT_TOPBIT; } // highest bit set?
+    inline bool isAtom()     const { return !isContainer(); }
     inline size_t _size()  const { return meta & SIZE_MASK; } // valid for string and array (but not map)
     size_t size() const;
 
@@ -188,7 +190,7 @@ public:
     PoolStr asString(const TreeMem& mem) const; // (does not convert to string)
     const char *asCString(const TreeMem& mem) const;
     const double *asFloat() const;
-    bool asBool() const; // only true if really bool type and true
+    bool asBool() const; // only true if really bool type and true, false otherwise
 
     Var& operator=(Var&& o) noexcept;
 

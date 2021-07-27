@@ -12,8 +12,8 @@ struct WriterFunctor
     // Return false not to recurse (End*() will not be called)
     bool operator()(VarCRef v) {}         
 
-    void EndArray() {}       // finished iterating over array
-    void EndObject() {}      // finished iterating over map
+    void EndArray(VarCRef v) {}       // finished iterating over array
+    void EndObject(VarCRef v) {}      // finished iterating over map
     void Key(const char *k, size_t len) {} // encountered a map key (op() will be called next)
 };
 */
@@ -87,7 +87,7 @@ void treeIter_T(Functor& func, const VarCRef src)
                         goto next;
                     }
                 }
-                func.EndArray();
+                func.EndArray(VarCRef(src.mem, s.v));
                 break;
             }
 
@@ -108,7 +108,7 @@ void treeIter_T(Functor& func, const VarCRef src)
                         goto next;
                     }
                 }
-                func.EndObject();
+                func.EndObject(VarCRef(src.mem, s.v));
                 break;
             }
         }

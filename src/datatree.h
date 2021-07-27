@@ -3,6 +3,8 @@
 #include "variant.h"
 #include "treemem.h"
 
+#include <shared_mutex>
+
 class Accessor;
 
 // Root of tree with memory pool
@@ -23,7 +25,7 @@ public:
     // else it won't work when looking up string keys.
     // An empty accessor will return root().
     // Don't forget to check if the returned ref is valid before accessing it.
-    VarRef  subtree(const Accessor& a);
+    VarRef  subtree(const Accessor& a, bool create = false);
     VarCRef subtree(const Accessor& a) const;
 
     // Use stringly typed JSON pointer (returns an invalid ref for malformed json pointers)
@@ -33,8 +35,11 @@ public:
     // An empty string ("") returns the root, a valid json pointer ("/...") returns that,
     // and an invalid JSON pointer (one that starts not with '/') returns an invalid ref.
     // Don't forget to check if the returned ref is valid before accessing it.
-    VarRef  subtree(const char *path);
+    VarRef  subtree(const char *path, bool create = false);
     VarCRef subtree(const char* path) const;
 
     Var _root;
+
+public:
+    std::shared_mutex mutex;
 };

@@ -52,7 +52,7 @@ bool loadJsonFromProcess(DataTree *tree, const char** args)
     return ok;
 }
 
-static DataTree *_newTreeFromProcess(AsyncLaunchConfig&& cfg)
+DataTree * loadJsonFromProcessSync(AsyncLaunchConfig&& cfg)
 {
     const size_t sz = (cfg.args.size() + 1) * sizeof(const char*);
     const char ** args = (const char **)_malloca(sz);
@@ -76,8 +76,9 @@ static DataTree *_newTreeFromProcess(AsyncLaunchConfig&& cfg)
 
 std::future<DataTree*> loadJsonFromProcessAsync(AsyncLaunchConfig&& cfg)
 {
-    return std::async(std::launch::async, _newTreeFromProcess, std::move(cfg));
+    return std::async(std::launch::async, loadJsonFromProcessSync, std::move(cfg));
 }
+
 
 
 ProcessReadStream::ProcessReadStream(subprocess_s* proc, CloseBehavior close, char* buf, size_t bufsz)

@@ -13,6 +13,7 @@
 #include "json_in.h"
 #include "teststuff.h"
 #include "subproc.h"
+#include "treefunc.h"
 
 #include <Windows.h> // FIXME: kill this shit
 
@@ -114,33 +115,17 @@ int main(int argc, char** argv)
     // TEST DATA START
     DataTree tree;
     {
-        puts("Start bg process...");
-        AsyncLaunchConfig cfg;
-        cfg.args.push_back("test.bat");
-        std::future<DataTree*> fut = loadJsonFromProcessAsync(std::move(cfg));
-
-        puts("Loading file");
-
-        if (FILE* f = fopen("citylots.json", "rb"))
+        loadAndMergeJsonFromFile(&tree, "citylots.json", "/citylots", MERGE_FLAT);
         {
-            char buf[4096];
-            BufferedFILEReadStream fs(f, buf, sizeof(buf));
-            bool ok = loadJsonDestructive(tree.root(), fs);
-            printf("Loaded, ok = %u\n", ok);
-            assert(ok);
-            fclose(f);
+            AsyncLaunchConfig cfg;
+            cfg.args.push_back("test.bat");
+            loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/twitter", MERGE_FLAT);
         }
-
-        DataTree* test = fut.get();
-        if (test)
         {
-            puts("... merging ...");
-            tree.root()["twitter"].merge(test->root(), MERGE_FLAT);
-            puts("... merged!");
-            delete test;
+            AsyncLaunchConfig cfg;
+            cfg.args.push_back("matrix.bat");
+            loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/matrix", MERGE_FLAT);
         }
-        else
-            puts("... subprocess failed!");
     }
     // TEST DATA END
 

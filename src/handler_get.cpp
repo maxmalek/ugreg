@@ -58,6 +58,10 @@ int TreeHandler::onRequest(mg_connection* conn)
     std::string out = os.str();
     printf("q = [%s]\n", out.c_str());*/
 
+
+    // ---- BEGIN READ LOCK ----
+    std::shared_lock<std::shared_mutex> lock(tree.mutex);
+
     VarCRef sub = tree.subtree(q);
     //printf("sub = %p\n", sub.v);
     if(!sub)

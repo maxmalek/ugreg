@@ -16,6 +16,8 @@ struct AsyncLaunchConfig
     std::vector<std::string> args;
 };
 
+DataTree *loadJsonFromProcessSync(AsyncLaunchConfig&& cfg);
+
 // start process in bg thread and parse as json whatever it spews to stdout.
 // delete the tree ptr when it's no longer needed
 std::future<DataTree*> loadJsonFromProcessAsync(AsyncLaunchConfig&& cfg);
