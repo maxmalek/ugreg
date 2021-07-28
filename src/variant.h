@@ -6,6 +6,7 @@
 
 class TreeMem;
 class Var;
+class _VarMap;
 
 // For merge() operations.
 // If not recursive, simply assign keys and replace the values of keys that are overwritten.
@@ -20,53 +21,6 @@ enum MergeFlags // bitmask!
 };
 inline static MergeFlags operator|(MergeFlags a, MergeFlags b) {return MergeFlags(unsigned(a) | unsigned(b)); }
 
-// Note: Methods that don't take TreeMem don't modify the refcount!
-class _VarMap
-{
-    typedef std::unordered_map<StrRef, Var> _Map;
-    ~_VarMap(); // call destroy() instead
-public:
-    typedef _Map::const_iterator Iterator;
-
-    void destroy(TreeMem& mem); // deletes self
-    _VarMap(TreeMem& mem);
-
-    void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags);
-    void clear(TreeMem& mem);
-    inline bool empty() const { return _storage.empty(); }
-    _VarMap *clone(TreeMem& dstmem, const TreeMem& srcmem) const;
-    inline size_t size() const { return _storage.size(); }
-
-    Var& getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
-          Var *get(StrRef key);
-    const Var *get(StrRef key) const;
-
-    Var& putKey(TreeMem& mem, const char* key, size_t len);
-
-    Var& emplace(TreeMem& mem, StrRef k,  Var&& x); // increases refcount if new key stored
-
-    inline Iterator begin() const { return _storage.begin(); }
-    inline Iterator end() const { return _storage.end(); }
-
-private: // disabled ops until we actually need them
-    _VarMap(const _VarMap&) = delete;
-    _VarMap& operator=(const _VarMap& o) = delete;
-
-    // TODO: replace this with a custom impl at some point
-    _Map _storage;
-
-    static Var& _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
-
-public:
-    u64 expirytime;
-
-
-private:
-    void _checkmem(const TreeMem& m) const;
-#ifdef _DEBUG
-    TreeMem * const _mymem;
-#endif
-};
 
 /* A small variant type that encapsulates all primitives available in JSON:
 - Atom types:      null, number aka int/float, bool, string
@@ -91,7 +45,6 @@ and makes sure that the memory allocators are handled correctly.
 */
 class Var
 {
-private:
 public:
     Var();
     ~Var();
@@ -221,6 +174,60 @@ public:
     Var(TreeMem& mem, const char* s);
     Var(TreeMem& mem, const char* s, size_t len);
 };
+
+// -------------------------------------------------
+
+
+// Note: Methods that don't take TreeMem don't modify the refcount!
+class _VarMap
+{
+    typedef std::unordered_map<StrRef, Var> _Map;
+    ~_VarMap(); // call destroy() instead
+public:
+    typedef _Map::const_iterator Iterator;
+
+    void destroy(TreeMem& mem); // deletes self
+    _VarMap(TreeMem& mem);
+
+    void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags);
+    void clear(TreeMem& mem);
+    inline bool empty() const { return _storage.empty(); }
+    _VarMap* clone(TreeMem& dstmem, const TreeMem& srcmem) const;
+    inline size_t size() const { return _storage.size(); }
+
+    Var& getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
+    Var* get(StrRef key);
+    const Var* get(StrRef key) const;
+
+    Var& putKey(TreeMem& mem, const char* key, size_t len);
+
+    Var& emplace(TreeMem& mem, StrRef k, Var&& x); // increases refcount if new key stored
+
+    inline Iterator begin() const { return _storage.begin(); }
+    inline Iterator end() const { return _storage.end(); }
+
+private: // disabled ops until we actually need them
+    _VarMap(const _VarMap&) = delete;
+    _VarMap& operator=(const _VarMap& o) = delete;
+
+    // TODO: replace this with a custom impl at some point
+    _Map _storage;
+
+    static Var& _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
+
+public:
+    u64 expirytime;
+
+
+private:
+    void _checkmem(const TreeMem& m) const;
+#ifdef _DEBUG
+    TreeMem* const _mymem;
+#endif
+};
+
+// -------------------------------------------------
+
 
 class VarRef;
 class VarCRef;
