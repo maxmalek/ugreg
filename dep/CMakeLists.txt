@@ -25,4 +25,7 @@ set(src
 )
 
 add_library(alldeps ${src})
-#target_link_libraries(alldeps)
+
+if(UNIX)
+    target_link_libraries(alldeps pthread)
+endif()
