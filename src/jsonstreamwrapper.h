@@ -14,11 +14,12 @@ public:
     typedef char Ch;
 
     typedef size_t (*ReadFunc)(void *dst, size_t bytes, BufferedReadStream *self);
+    typedef void (*InitFunc)(BufferedReadStream *self);
 
     // The passed in buffer must stay alive while the stream is in use!
     // Pass eoff == NULL for the default EOF behavior: EOF is when less bytes
     // than requested could be read. Pass a custom function to override that behavior.
-    BufferedReadStream(ReadFunc rf, char *buf, size_t bufsz);
+    BufferedReadStream(InitFunc initf, ReadFunc rf, char *buf, size_t bufsz);
     ~BufferedReadStream();
 
     inline Ch Peek() const { return *_cur; } // If this crashes: Did you forget to call init()?
@@ -71,6 +72,7 @@ public:
     size_t _count;  //!< Number of characters read
     const ReadFunc _readf;
     bool _eof;
+    const InitFunc _initf;
 };
 
 class BufferedFILEReadStream : public BufferedReadStream
@@ -97,11 +99,12 @@ public:
     typedef char Ch;
 
     typedef size_t(*WriteFunc)(const void* src, size_t bytes, BufferedWriteStream* self);
+    typedef void (*InitFunc)(BufferedWriteStream* self);
 
     // The passed in buffer must stay alive while the stream is in use!
     // Pass eoff == NULL for the default EOF behavior: EOF is when less bytes
     // than requested could be read. Pass a custom function to override that behavior.
-    BufferedWriteStream(WriteFunc wf, char* buf, size_t bufsz);
+    BufferedWriteStream(InitFunc initf, WriteFunc wf, char* buf, size_t bufsz);
     ~BufferedWriteStream();
 
 
@@ -112,10 +115,12 @@ public:
 
     void Flush();
 
-    inline bool isError() const { return _err; }
-
 
     // ------------ non-rapidjson-API -----------------
+    inline bool isError() const { return _err; }
+    void init();
+
+
     Ch* _dst;
     Ch* const _last;
     Ch* const _buf;
@@ -123,6 +128,7 @@ public:
     size_t _count;  //!< Number of characters written, total
     const WriteFunc _writef;
     bool _err; // if this is ever set, the disk is full or something
+    const InitFunc _initf;
 };
 
 class BufferedFILEWriteStream : public BufferedWriteStream

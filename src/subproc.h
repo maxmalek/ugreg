@@ -40,10 +40,11 @@ public:
     int wait();
     void terminate();
 
-private:
-
+protected:
+    ProcessReadStream(InitFunc initf, ReadFunc readf, subprocess_s* proc, CloseBehavior close, char* buf, size_t bufsz);
     static size_t _Read(void* dst, size_t bytes, BufferedReadStream* self);
 
+private:
     subprocess_s *_proc;
     CloseBehavior closeb;
 };

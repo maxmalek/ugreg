@@ -20,8 +20,23 @@ static void procfail(ProcessReadStream& ps, const char **args)
 
 bool loadJsonFromProcess(DataTree *tree, const char** args)
 {
+    // Aside from .exe, .bat is the only natively executable file on windows.
+    // So to ease testing, we support using .bat stubs to start the actual scripts.
+#ifdef _WIN32
+    const char * const oldarg0 = args[0];
+    std::string arg0 = args[0];
+    arg0 += ".bat";
+    args[0] = arg0.c_str();
+#endif
+
     subprocess_s proc;
-    if (subprocess_create(args, subprocess_option_enable_async | subprocess_option_no_window | subprocess_option_inherit_environment, &proc))
+    int err = subprocess_create(args, subprocess_option_enable_async | subprocess_option_no_window | subprocess_option_inherit_environment, &proc);
+    
+#ifdef _WIN32
+    args[0] = oldarg0;
+#endif
+
+    if (err)
     {
         printf("Failed to create process [%s]\n", args[0]);
         return false;
@@ -80,9 +95,13 @@ std::future<DataTree*> loadJsonFromProcessAsync(AsyncLaunchConfig&& cfg)
 }
 
 
-
 ProcessReadStream::ProcessReadStream(subprocess_s* proc, CloseBehavior close, char* buf, size_t bufsz)
-    : BufferedReadStream(_Read, buf, bufsz), _proc(proc), closeb(close)
+    : ProcessReadStream(NULL, _Read, proc, close, buf, bufsz)
+{
+}
+
+ProcessReadStream::ProcessReadStream(InitFunc initf, ReadFunc readf, subprocess_s* proc, CloseBehavior close, char* buf, size_t bufsz)
+    : BufferedReadStream(initf, readf, buf, bufsz), _proc(proc), closeb(close)
 {
     assert(proc);
 }

@@ -3,7 +3,7 @@
 #include <assert.h>
 
 SocketWriteStream::SocketWriteStream(void* conn, char* buf, size_t bufsize)
-    : BufferedWriteStream(_Write, buf, bufsize), _conn(conn)
+    : BufferedWriteStream(NULL, _Write, buf, bufsize), _conn(conn)
 {
 }
 
@@ -17,7 +17,7 @@ size_t SocketWriteStream::_Write(const void* src, size_t bytes, BufferedWriteStr
 }
 
 ThrowingSocketWriteStream::ThrowingSocketWriteStream(void* conn, char* buf, size_t bufsize)
-    : BufferedWriteStream(_Write, buf, bufsize), _conn(conn)
+    : BufferedWriteStream(NULL, _Write, buf, bufsize), _conn(conn)
 {
 }
 

@@ -2,9 +2,9 @@
 #include <stdio.h>
 #include <assert.h>
 
-BufferedReadStream::BufferedReadStream(ReadFunc rf, char* buf, size_t bufsz)
+BufferedReadStream::BufferedReadStream(InitFunc initf, ReadFunc rf, char* buf, size_t bufsz)
     : _cur(0), _buf(buf), _last(0), _dst(0), _bufsz(bufsz), _lastread(0), _count(0)
-    , _readf(rf), _eof(false)
+    , _readf(rf), _eof(false), _initf(initf)
 {
     assert(rf && buf && bufsz > 4);
 }
@@ -16,7 +16,11 @@ BufferedReadStream::~BufferedReadStream()
 void BufferedReadStream::init()
 {
     if (!_cur)
+    {
         _Refill();
+        if(_initf)
+            _initf(this);
+    }
 }
 
 const BufferedReadStream::Ch* BufferedReadStream::Peek4() const
@@ -43,8 +47,8 @@ void BufferedReadStream::_Refill()
     }
 }
 
-BufferedWriteStream::BufferedWriteStream(WriteFunc wf, char* buf, size_t bufsz)
-    : _dst(buf), _buf(buf), _last(buf + bufsz), _count(0), _writef(wf), _err(false)
+BufferedWriteStream::BufferedWriteStream(InitFunc initf, WriteFunc wf, char* buf, size_t bufsz)
+    : _dst(NULL), _buf(buf), _last(buf + bufsz), _count(0), _writef(wf), _err(false), _initf(initf)
 {
 }
 
@@ -65,9 +69,19 @@ void BufferedWriteStream::Flush()
     _dst = _buf;
 }
 
+void BufferedWriteStream::init()
+{
+    if(!_dst)
+    {
+        _dst = _buf;
+        if(_initf)
+            _initf(this);
+    }
+}
+
 
 BufferedFILEReadStream::BufferedFILEReadStream(void *FILEp, char* buf, size_t bufsz)
-    : BufferedReadStream(_Read, buf, bufsz), _fh(FILEp)
+    : BufferedReadStream(NULL, _Read, buf, bufsz), _fh(FILEp)
 {
 }
 
@@ -79,7 +93,7 @@ size_t BufferedFILEReadStream::_Read(void* dst, size_t bytes, BufferedReadStream
 }
 
 InplaceStringStream::InplaceStringStream(char* s, size_t len)
-    : BufferedReadStream(_Read, s, len)
+    : BufferedReadStream(NULL, _Read, s, len)
 {
 }
 
@@ -92,7 +106,7 @@ size_t InplaceStringStream::_Read(void* dst, size_t bytes, BufferedReadStream* s
 }
 
 BufferedFILEWriteStream::BufferedFILEWriteStream(void* FILEp, char* buf, size_t bufsz)
-    : BufferedWriteStream(_Write, buf, bufsz), _fh(FILEp)
+    : BufferedWriteStream(NULL, _Write, buf, bufsz), _fh(FILEp)
 {
 }
 

@@ -14,8 +14,7 @@
 #include "teststuff.h"
 #include "subproc.h"
 #include "treefunc.h"
-
-#include <Windows.h> // FIXME: kill this shit
+#include "util.h"
 
 #ifndef SIGQUIT
 #define SIGQUIT 3
@@ -118,12 +117,12 @@ int main(int argc, char** argv)
         loadAndMergeJsonFromFile(&tree, "citylots.json", "/citylots", MERGE_FLAT);
         {
             AsyncLaunchConfig cfg;
-            cfg.args.push_back("test.bat");
+            cfg.args.push_back("twitter.sh");
             loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/twitter", MERGE_FLAT);
         }
         {
             AsyncLaunchConfig cfg;
-            cfg.args.push_back("matrix.bat");
+            cfg.args.push_back("matrix.sh");
             loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/matrix", MERGE_FLAT);
         }
     }
@@ -139,7 +138,7 @@ int main(int argc, char** argv)
     puts("Ready!");
 
     while (!s_quit)
-        Sleep(100);
+        sleepMS(1000);
 
     srv.stop();
     WebServer::StaticShutdown();

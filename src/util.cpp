@@ -110,7 +110,7 @@ bool strToDurationMS_Safe(u64* dst, const char* s, size_t maxlen)
 
 u64 timeNowMS()
 {
-    auto now = std::chrono::system_clock::now();
+    auto now = std::chrono::steady_clock::now();
     auto t0 = now.time_since_epoch();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t0);
     return ms.count();
@@ -119,4 +119,11 @@ u64 timeNowMS()
 unsigned getNumCPUCores()
 {
     return std::thread::hardware_concurrency();
+}
+
+u64 sleepMS(u64 ms)
+{
+    u64 now = timeNowMS();
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    return timeNowMS() - now;
 }

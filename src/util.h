@@ -30,3 +30,6 @@ u64 timeNowMS();
 
 unsigned getNumCPUCores();
 
+// Sleep calling thread for some amount of ms.
+// Returns how long the sleep actually took (to account for variations in scheduling, etc)
+u64 sleepMS(u64 ms);
