@@ -214,7 +214,7 @@ bool JsonLoader::parseDestructive(BufferedReadStream& stream)
     return rd.Parse<ParseFlagsDestructive>(stream, *this);
 }
 
-bool loadJsonDestructive(VarRef& dst, BufferedReadStream& stream)
+bool loadJsonDestructive(VarRef dst, BufferedReadStream& stream)
 {
     stream.init();
     JsonLoader ld(dst.mem);

@@ -26,7 +26,9 @@ static void handlesigs(void (*f)(int))
 {
     if(!f)
         f = SIG_DFL;
+#ifdef SIGBREAK
     signal(SIGBREAK, f);
+#endif
     signal(SIGQUIT, f);
     signal(SIGTERM, f);
     signal(SIGINT, f);
@@ -41,7 +43,7 @@ static void sigquit(int)
 static void bail(const char *a, const char *b)
 {
     fprintf(stderr, "FATAL: %s%s\n", a, b);
-    _exit(1);
+    exit(1);
 }
 
 

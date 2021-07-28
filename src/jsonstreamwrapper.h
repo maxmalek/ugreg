@@ -1,5 +1,7 @@
 #pragma once
 
+#include "types.h"
+
 /*
 This file wraps rapidjson's streams into a generic interface.
 The reason is that I'd rather have one base class that implements most of the functionality
