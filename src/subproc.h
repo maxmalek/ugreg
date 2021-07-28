@@ -3,6 +3,7 @@
 #include "jsonstreamwrapper.h"
 
 #include <future>
+#include <vector>
 
 struct subprocess_s;
 class DataTree;
