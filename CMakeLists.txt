@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.11)
 project(ugreg)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
 option(RAPIDJSON_SSE42 "Use SSE 4.2 for parsing" TRUE)
 option(RAPIDJSON_SSE2 "Use SSE 2 for parsing" TRUE)
