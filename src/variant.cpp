@@ -2,6 +2,8 @@
 #include <assert.h>
 #include <utility>
 #include <limits>
+#include <string.h>
+
 #include "variant.h"
 #include "treemem.h"
 #include "mem.h"
