@@ -1,5 +1,6 @@
 #include "subproc.h"
 #include <thread>
+#include <sstream>
 
 #include "subprocess.h"
 #include "pmalloca.h"
@@ -10,12 +11,15 @@
 
 static void procfail(ProcessReadStream& ps, const char **args)
 {
-    printf("[%s] JSON parse error before:\n", args[0]);
+    size_t pos = ps.Tell();
     unsigned i = 0;
     char c;
+    std::ostringstream os;
     while(i++ < 100 && ((c = ps.Take())) )
-        putchar(c);
-    putchar('\n');
+        os << c;
+    printf("[%s] JSON parse error after reading %u bytes, before:\n%s\n",
+        args[0], unsigned(pos), os.str().c_str());
+
 }
 
 bool loadJsonFromProcess(DataTree *tree, const char** args)
@@ -55,12 +59,10 @@ bool loadJsonFromProcess(DataTree *tree, const char** args)
     }
     else
     {
+        procfail(ps, args);
         printf("[%s] failed to parse, killing\n", args[0]);
         subprocess_terminate(&proc);
     }
-
-    if(!ok)
-        procfail(ps, args);
 
     subprocess_destroy(&proc);
 
