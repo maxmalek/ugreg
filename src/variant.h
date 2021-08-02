@@ -215,7 +215,20 @@ private: // disabled ops until we actually need them
 
     static Var& _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
 
+    // return true when object is expired and should be deleted
+    bool expire(u64 now) const;
+
 public:
+    // TODO: replace this with a pointer to a struct that stores expiry info.
+    // also need a mutex to allow multiple readers to wait until an eventual re-fetch is done
+    // idea: lock shared, if need to fetch: lock unique, return, queue for re-query (will be blocked by unique lock),
+    // once fetch arrives: merge into tree, unlock unique lock.
+    // -- store fetch endpoints in a separate tree
+    // -- when we query something but it is an expired map, return empty-handed
+    // -- then go visit the fetch endpoints tree and check what must be fetched
+    // -- queue re-fetch and wait until that is done
+    // --> maybe add TYPE_USERDATA that stores a void* and use that for the fetch tree
+    // fetch tree entry: pointer to in-progress future, if any; script to call; params;
     u64 expirytime;
 
 
