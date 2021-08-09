@@ -191,17 +191,18 @@ Var JsonLoader::_popframe()
     Frame& f = _topframe();
 
     Var tmp;
-    if(f.m) // move values over if it's an array
+    if(f.m)
         tmp = std::move(f.v);
-    else
+    else // move values over if it's an array
     {
-        assert(tmp.type() == Var::TYPE_NULL);
         Var *a = tmp.makeArray(_mem, f.vals.size());
         std::move(f.vals.begin(), f.vals.end(), a); // move range
         f.vals.clear();
     }
 
     // Don't actually pop the stack; clear and re-use f later.
+    // (This also makes sure that STL containers keep their prev. allocated memory around
+    // so we don't keep reallocating new memory over and over)
     f.clear();
     --frameidx;
     return tmp;

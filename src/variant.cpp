@@ -54,6 +54,19 @@ static void _DeleteArray(TreeMem& mem, Var *p, size_t n)
     }
 }
 
+static VarExpiry *_NewExpiry(TreeMem& mem)
+{
+    void *p = (VarExpiry*)mem.Alloc(sizeof(VarExpiry));
+    VarExpiry *ex = _X_PLACEMENT_NEW(p) VarExpiry;
+    return ex;
+}
+
+static void _DeleteExpiry(TreeMem& mem, VarExpiry *ex)
+{
+    ex->~VarExpiry();
+    mem.Free(ex, sizeof(*ex));
+}
+
 
 Var::Var()
     : meta(TYPE_NULL)
@@ -145,7 +158,8 @@ void Var::_transmute(TreeMem& mem, size_t newmeta)
         case BITS_MAP:
             u.m->destroy(mem);
             break;
-        case BITS_OTHER: ; // nothing to do
+        case BITS_OTHER:
+            break; // nothing to do
     }
 
     meta = newmeta;
@@ -261,6 +275,11 @@ bool Var::asBool() const
             return !!u.ui;
     }
     return false;
+}
+
+void* Var::asPtr() const
+{
+    return meta == TYPE_PTR ? u.p : NULL;
 }
 
 PoolStr Var::asString(const TreeMem& mem) const
@@ -397,6 +416,12 @@ StrRef Var::setStr(TreeMem& mem, const char* x, size_t len)
     return (( u.s = s ));
 }
 
+void* Var::setPtr(TreeMem& mem, void* p)
+{
+    _transmute(mem, TYPE_PTR);
+    return ((u.p = p));
+}
+
 void _VarMap::_checkmem(const TreeMem& m) const
 {
 #ifdef _DEBUG
@@ -405,11 +430,18 @@ void _VarMap::_checkmem(const TreeMem& m) const
 }
 
 _VarMap::_VarMap(TreeMem& mem)
-    : expirytime(0)
+    : _expiry(NULL)
 #ifdef _DEBUG
     , _mymem(&mem)
 #endif
 {
+}
+
+_VarMap::_VarMap(_VarMap&& o)
+    : _storage(std::move(o._storage))
+    , _expiry(o._expiry)
+{
+    o._expiry = NULL;
 }
 
 _VarMap::~_VarMap()
@@ -419,7 +451,6 @@ _VarMap::~_VarMap()
 
 void _VarMap::destroy(TreeMem& mem)
 {
-    _checkmem(mem);
     clear(mem);
     this->~_VarMap();
     mem.Free(this, sizeof(*this));
@@ -436,6 +467,11 @@ Var& _VarMap::_InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k)
         //return storage[k]; // this is fine too but the above should be faster
     }
     return f->second;
+}
+
+bool _VarMap::isExpired(u64 now) const
+{
+    return _expiry && now < _expiry->ts;
 }
 
 
@@ -485,7 +521,7 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
 {
     _checkmem(srcmem);
     _VarMap *cp = _NewMap(dstmem, size());
-    cp->expirytime = expirytime;
+    cp->_expiry = _expiry ? _expiry->clone(dstmem) : NULL;
     for(Iterator it = _storage.begin(); it != _storage.end(); ++it)
     {
         PoolStr k = srcmem.getSL(it->first);
@@ -570,4 +606,19 @@ VarCRef VarCRef::at(size_t idx) const
 VarCRef VarCRef::lookup(const char* key) const
 {
     return VarCRef(mem, v->lookup(mem.lookup(key, strlen(key))));
+}
+
+VarExpiry* VarExpiry::clone(TreeMem& mem)
+{
+    VarExpiry *cl = (VarExpiry*)mem.Alloc(sizeof(VarExpiry));
+    cl->ts = ts;
+    return cl;
+}
+
+VarExpiry::VarExpiry()
+{
+}
+
+VarExpiry::~VarExpiry()
+{
 }

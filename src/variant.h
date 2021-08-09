@@ -59,14 +59,15 @@ public:
 
     enum Type
     {
-        TYPE_NULL,
+        TYPE_NULL, // Important that this is 0
         TYPE_BOOL,
         TYPE_INT,
         TYPE_UINT,
         TYPE_FLOAT,
         TYPE_STRING,
+        TYPE_PTR, // Not actually json but we use this type to store a userdata/void*
         TYPE_ARRAY,
-        TYPE_MAP
+        TYPE_MAP,
     };
 
     enum Topbits
@@ -101,6 +102,7 @@ public:
         s64 i;      // when signed integer type
         u64 ui;     // ... or unsigned
         double f;   // when float type
+        void *p;    // when ptr/userdata
     } u;
 
     enum Priv : size_t
@@ -133,6 +135,7 @@ public:
     double setFloat(TreeMem& mem, double x);
     StrRef setStr(TreeMem& mem, const char *x);
     StrRef setStr(TreeMem& mem, const char* x, size_t len);
+    void *setPtr(TreeMem& mem, void *p);
     Var *makeArray(TreeMem& mem, size_t n);
     Map *makeMap(TreeMem& mem, size_t prealloc = 0);
 
@@ -144,6 +147,7 @@ public:
     const char *asCString(const TreeMem& mem) const;
     const double *asFloat() const;
     bool asBool() const; // only true if really bool type and true, false otherwise
+    void *asPtr() const;
 
     Var& operator=(Var&& o) noexcept;
 
@@ -177,6 +181,32 @@ public:
 
 // -------------------------------------------------
 
+// TODO:
+// also need a mutex to allow multiple readers to wait until an eventual re-fetch is done
+// idea: lock shared, if need to fetch: lock unique, return, queue for re-query (will be blocked by unique lock),
+// once fetch arrives: merge into tree, unlock unique lock.
+// -- store fetch endpoints in a separate tree
+// -- when we query something but it is an expired map, return empty-handed
+// -- then go visit the fetch endpoints tree and check what must be fetched
+// -- queue re-fetch and wait until that is done
+// --> maybe add TYPE_USERDATA that stores a void* and use that for the fetch tree
+// fetch tree entry: pointer to in-progress future, if any; script to call; params;
+class VarExpiry
+{
+public:
+    u64 ts;
+    // TODO: manual reset event
+
+
+    VarExpiry *clone(TreeMem& mem);
+    VarExpiry();
+    ~VarExpiry();
+
+private:
+    VarExpiry(const VarExpiry&) = delete;
+    VarExpiry& operator=(const VarExpiry&) = delete;
+};
+
 
 // Note: Methods that don't take TreeMem don't modify the refcount!
 class _VarMap
@@ -188,6 +218,7 @@ public:
 
     void destroy(TreeMem& mem); // deletes self
     _VarMap(TreeMem& mem);
+    _VarMap(_VarMap&&);
 
     void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags);
     void clear(TreeMem& mem);
@@ -206,6 +237,10 @@ public:
     inline Iterator begin() const { return _storage.begin(); }
     inline Iterator end() const { return _storage.end(); }
 
+    // return true when object is expired and should be deleted
+    bool isExpired(u64 now) const;
+    u64 getExpiryTime() const { return _expiry ? _expiry->ts : 0; }
+
 private: // disabled ops until we actually need them
     _VarMap(const _VarMap&) = delete;
     _VarMap& operator=(const _VarMap& o) = delete;
@@ -215,24 +250,8 @@ private: // disabled ops until we actually need them
 
     static Var& _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
 
-    // return true when object is expired and should be deleted
-    bool expire(u64 now) const;
+    VarExpiry *_expiry; // only allocated when necessary
 
-public:
-    // TODO: replace this with a pointer to a struct that stores expiry info.
-    // also need a mutex to allow multiple readers to wait until an eventual re-fetch is done
-    // idea: lock shared, if need to fetch: lock unique, return, queue for re-query (will be blocked by unique lock),
-    // once fetch arrives: merge into tree, unlock unique lock.
-    // -- store fetch endpoints in a separate tree
-    // -- when we query something but it is an expired map, return empty-handed
-    // -- then go visit the fetch endpoints tree and check what must be fetched
-    // -- queue re-fetch and wait until that is done
-    // --> maybe add TYPE_USERDATA that stores a void* and use that for the fetch tree
-    // fetch tree entry: pointer to in-progress future, if any; script to call; params;
-    u64 expirytime;
-
-
-private:
     void _checkmem(const TreeMem& m) const;
 #ifdef _DEBUG
     TreeMem* const _mymem;

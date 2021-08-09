@@ -56,6 +56,7 @@ bool loadJsonFromProcess(DataTree *tree, const char** args)
         int ret = 0;
         subprocess_join(&proc, &ret);
         printf("[%s] exited with code %d\n", args[0], ret);
+        ok = !ret; // if the process reports failure, don't use it even if it's valid json
     }
     else
     {

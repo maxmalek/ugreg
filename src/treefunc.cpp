@@ -25,7 +25,7 @@ struct ExpiryFunctor
     void EndArray(VarCRef v) {}
     void EndObject(VarCRef v)
     {
-        if(u64 exp = v.v->map_unsafe()->expirytime)
+        if(u64 exp = v.v->map_unsafe()->getExpiryTime())
             minexpiry = std::min(minexpiry, exp);
     }
     void Key(const char* k, size_t len) {} // encountered a map key (op() will be called next)
@@ -40,6 +40,15 @@ u64 getTreeMinExpiryTime(VarCRef ref)
     return f.minexpiry;
 }
 
+static void finalizeAndMerge(TreeMergeResult& res, DataTree& dst, DataTree& t, const std::string& where, MergeFlags merge)
+{
+    res.expiryTime = getTreeMinExpiryTime(t.root());
+    { // BEGIN WRITE LOCK
+        std::unique_lock<std::shared_mutex> lock(dst.mutex);
+        if (VarRef sub = dst.subtree(where.c_str(), true))
+            res.ok = sub.merge(t.root(), merge);
+    } // END WRITE LOCK
+}
 
 
 static TreeMergeResult _loadAndMergeJsonFromProcess(DataTree *dst, AsyncLaunchConfig cfg, std::string where, MergeFlags merge)
@@ -51,12 +60,7 @@ static TreeMergeResult _loadAndMergeJsonFromProcess(DataTree *dst, AsyncLaunchCo
 
     if(t)
     {
-        res.expiryTime = getTreeMinExpiryTime(t->root());
-        { // BEGIN WRITE LOCK
-            std::unique_lock<std::shared_mutex> lock(dst->mutex);
-            if(VarRef sub = dst->subtree(where.c_str(), true))
-                res.ok = sub.merge(t->root(), merge);
-        } // END WRITE LOCK
+        finalizeAndMerge(res, *dst, *t, where, merge);
 
         if(res.ok)
             printf("Merged proc [%s] to %s\n", cfg.args[0].c_str(), where.c_str());
@@ -85,7 +89,6 @@ static TreeMergeResult _loadAndMergeJsonFromFile(DataTree* dst, std::string file
     DataTree tree;
     char buf[12*1024];
     BufferedFILEReadStream fs(f, buf, sizeof(buf));
-    std::unique_lock<std::shared_mutex> lock(tree.mutex);
     bool loaded = loadJsonDestructive(tree.root(), fs);
     fclose(f);
 
@@ -93,12 +96,7 @@ static TreeMergeResult _loadAndMergeJsonFromFile(DataTree* dst, std::string file
     {
         printf("Finished loading file [%s]\n", file.c_str());
 
-        res.expiryTime = getTreeMinExpiryTime(tree.root());
-        { // BEGIN WRITE LOCK
-            std::unique_lock<std::shared_mutex> lock(dst->mutex);
-            if(VarRef sub = dst->subtree(where.c_str(), true))
-                res.ok = sub.merge(tree.root(), merge);
-        } // END WRITE LOCK
+        finalizeAndMerge(res, *dst, tree, where, merge);
 
         if(res.ok)
             printf("Merged file [%s] to %s\n", file.c_str(), where.c_str());
