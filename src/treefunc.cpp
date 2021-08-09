@@ -15,7 +15,7 @@ TreeMergeResult::TreeMergeResult()
 struct ExpiryFunctor
 {
     ExpiryFunctor()
-        : minexpiry(-1)
+        : minexpiry(0)
     {}
 
     // Var was encountered. Return true to recurse (eventually End*() will be called).
@@ -26,7 +26,7 @@ struct ExpiryFunctor
     void EndObject(VarCRef v)
     {
         if(u64 exp = v.v->map_unsafe()->getExpiryTime())
-            minexpiry = std::min(minexpiry, exp);
+            minexpiry = minexpiry ? std::min(minexpiry, exp) : exp;
     }
     void Key(const char* k, size_t len) {} // encountered a map key (op() will be called next)
 
