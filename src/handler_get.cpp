@@ -83,6 +83,7 @@ static CountedPtr<const StoredRequest> prepareStoredRequest(VarCRef sub, const T
     rq->expiryTime = getTreeMinExpiryTime(sub);
     StoredRequestWriteStream wr(rq, buf, sizeof(buf));
     writeJson(wr, sub, false);
+    rq->body.shrink_to_fit();
     return rq;
 }
 

@@ -29,6 +29,8 @@ public:
 // MUST be allocated with new when you use this!
 struct StoredRequest : public Refcounted
 {
+    virtual ~StoredRequest() {}
+
     u64 expiryTime;
     std::vector<char> body;
 };
