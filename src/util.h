@@ -33,3 +33,6 @@ unsigned getNumCPUCores();
 // Sleep calling thread for some amount of ms.
 // Returns how long the sleep actually took (to account for variations in scheduling, etc)
 u64 sleepMS(u64 ms);
+
+u32 strhash(const char *s);
+u32 roundPow2(u32 v);

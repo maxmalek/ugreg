@@ -36,6 +36,10 @@ set(src
     teststuff.h
     treefunc.cpp
     treefunc.h
+    cachetable.h
+    refcounted.h
+    request.cpp
+    request.h
 )
 
 add_executable(ugreg ${src})

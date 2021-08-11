@@ -127,3 +127,23 @@ u64 sleepMS(u64 ms)
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
     return timeNowMS() - now;
 }
+
+u32 strhash(const char* s)
+{
+    u32 hash = 0;
+    while (*s)
+        hash = hash * 101 + *s++;
+    return hash;
+}
+
+u32 roundPow2(u32 v)
+{
+    v--;
+    v |= v >> 1u;
+    v |= v >> 2u;
+    v |= v >> 4u;
+    v |= v >> 8u;
+    v |= v >> 16u;
+    v++;
+    return v;
+}
