@@ -11,6 +11,13 @@ add_definitions(-DMG_EXTERNAL_FUNCTION_mg_cry_internal_impl) # required for NO_F
 add_definitions(-DMG_EXTERNAL_FUNCTION_log_access) # required for NO_FILESYSTEMS
 #add_definitions(-DALTERNATIVE_QUEUE) # doesn't seem to do anything good
 
+# for miniz: disable extra stuff we don't need
+add_definitions(-DMINIZ_NO_TIME)
+add_definitions(-DMINIZ_NO_ARCHIVE_APIS)
+add_definitions(-DMINIZ_NO_ARCHIVE_WRITING_APIS)
+add_definitions(-DMINIZ_NO_ZLIB_COMPATIBLE_NAMES)
+add_definitions(-DMINIZ_NO_STDIO)
+
 set(src
     luaalloc.c
     luaalloc.h
@@ -22,6 +29,8 @@ set(src
     strpool.h
     argh.h
     impls.cpp
+    miniz.c
+    miniz.h
 )
 
 add_library(alldeps ${src})

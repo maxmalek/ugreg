@@ -5,18 +5,30 @@
 #include "refcounted.h"
 #include "jsonstreamwrapper.h"
 
+enum CompressionType
+{
+    COMPR_NONE,
+    COMPR_DEFLATE
+};
+
+enum RequestFlags // bitmask
+{
+    RQF_NONE   = 0x00,
+    RQF_PRETTY = 0x01,
+};
+
 class Request
 {
 public:
     Request()
-        : compression(0), flags(0) {}
+        : compression(COMPR_NONE), flags(RQF_NONE) {}
 
-    Request(const char* q, unsigned compression, unsigned flags)
+    Request(const char* q, CompressionType compression, RequestFlags flags)
         : query(q), compression(compression), flags(flags) {}
 
     std::string query;
-    unsigned compression;
-    unsigned flags;
+    CompressionType compression;
+    RequestFlags flags;
 
     bool operator==(const Request& o) const
     {
@@ -36,6 +48,7 @@ struct StoredRequest : public Refcounted
     std::vector<char> body;
 };
 
+// TODO: remove requirement for external buffer to reduce copying
 class StoredRequestWriteStream : public BufferedWriteStream
 {
 public:

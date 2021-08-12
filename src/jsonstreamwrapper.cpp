@@ -79,6 +79,21 @@ void BufferedWriteStream::init()
     }
 }
 
+BufferedWriteStream::BufInfo BufferedWriteStream::getBuffer() const
+{
+    assert(_dst);
+    BufInfo b{ _dst, _last - _dst };
+    return b;
+}
+
+void BufferedWriteStream::advanceBuffer(size_t n)
+{
+    assert(_dst + n  <= _last);
+    _dst += n;
+    if(_dst == _last)
+        Flush();
+}
+
 
 BufferedFILEReadStream::BufferedFILEReadStream(void *FILEp, char* buf, size_t bufsz)
     : BufferedReadStream(NULL, _Read, buf, bufsz), _fh(FILEp)

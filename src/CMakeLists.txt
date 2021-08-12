@@ -40,6 +40,8 @@ set(src
     refcounted.h
     request.cpp
     request.h
+    zstream.cpp
+    zstream.h
 )
 
 add_executable(ugreg ${src})

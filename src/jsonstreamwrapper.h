@@ -61,7 +61,6 @@ public:
         return _eof && _cur == _last;
     }
 
-
     // ----- DO NOT TOUCH ------------
     void _Refill();
 
@@ -121,6 +120,19 @@ public:
     // ------------ non-rapidjson-API -----------------
     inline bool isError() const { return _err; }
     void init();
+
+
+    // ----- Direct memory-to-memory API --------
+    struct BufInfo
+    {
+        Ch* buf;
+        size_t remain;
+    };
+    BufInfo getBuffer() const; // useful when you need a buffer pointer to write to directly
+    void advanceBuffer(size_t n); // use this after writing n bytes to the buffer to advance the internal state
+
+
+    //------------------------------------------------------
 
 
     Ch* _dst;

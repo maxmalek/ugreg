@@ -9,6 +9,7 @@
 #include "subproc.h"
 #include "socketstream.h"
 #include "treefunc.h"
+#include "zstream.h"
 
 
 TreeHandler::TreeHandler(DataTree& tree, size_t skipFromRequest)
@@ -45,6 +46,46 @@ static const char s_cachedOKStart[] =
 "Connection: close\r\n"
 "Content-Length: "; // + bytes + \r\n
 
+static const char s_cachedDeflateOKStart[] =
+"HTTP/1.1 200 OK\r\n"
+"Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
+"Expires: 0\r\n"
+"Pragma: no-cache\r\n"
+"Content-Type: text/json; charset=utf-8\r\n"
+"Connection: close\r\n"
+"Content-Encoding: deflate\r\n"
+"Content-Length: "; // + bytes + \r\n
+
+
+typedef void (*RequestBufferWriter)(BufferedWriteStream& ws, VarCRef sub, const Request& r);
+
+static void _finalizeStoredRequest(BufferedWriteStream& ws, VarCRef sub, const Request& r)
+{
+    writeJson(ws, sub, !!(r.flags & RQF_PRETTY));
+}
+
+static void _finalizeDeflateRequest(BufferedWriteStream& ws, VarCRef sub, const Request& r)
+{
+    char zbuf[8 * 1024];
+    DeflateWriteStream z(ws, 1, zbuf, sizeof(zbuf)); // TODO: use compression level from config
+    return _finalizeStoredRequest(z, sub, r);
+}
+
+struct CachedRequestOutHandler
+{
+    const char* header;
+    size_t headerSize;
+    RequestBufferWriter writer;
+};
+
+// Key: CompressionType (see request.h)
+static const CachedRequestOutHandler s_requestOut[] =
+{
+    { s_cachedOKStart,        sizeof(s_cachedOKStart),        _finalizeStoredRequest },
+    { s_cachedDeflateOKStart, sizeof(s_cachedDeflateOKStart), _finalizeDeflateRequest }
+};
+
+
 // mg_send_http_ok() is a freaking performance hog.
 // in case everything is fine, just poop out an ok http header and move on.
 static void sendDefaultOK(mg_connection *conn)
@@ -53,9 +94,12 @@ static void sendDefaultOK(mg_connection *conn)
 }
 
 
-static int sendStoredRequest(mg_connection* conn, const CountedPtr<const StoredRequest>& srq)
+static int sendStoredRequest(mg_connection* conn, const CountedPtr<const StoredRequest>& srq, const Request& r)
 {
-    mg_write(conn, s_cachedOKStart, sizeof(s_cachedOKStart) - 1);
+    const char *hdr    = s_requestOut[r.compression].header;
+    const size_t hdrsz = s_requestOut[r.compression].headerSize;
+
+    mg_write(conn, hdr, hdrsz - 1);
 
     const size_t len = srq->body.size();
     char buf[64];
@@ -103,30 +147,37 @@ static int sendToSocketNoCache(mg_connection *conn, VarCRef sub)
     return 200; // HTTP OK
 }
 
-static CountedPtr<const StoredRequest> prepareStoredRequest(VarCRef sub, const TreeHandler::Cache::Key& k)
+static CountedPtr<const StoredRequest> prepareStoredRequest(VarCRef sub, const Request& r)
 {
     char buf[8 * 1024];
     StoredRequest* rq = new StoredRequest;
+
+    // TODO: add support for max-cache-time
     rq->expiryTime = getTreeMinExpiryTime(sub);
-    StoredRequestWriteStream wr(rq, buf, sizeof(buf));
-    writeJson(wr, sub, false);
+
+    // Extra scope to make sure the stream is destroyed and flushes all its data before we finalize rq
+    {
+        StoredRequestWriteStream wr(rq, buf, sizeof(buf));
+        s_requestOut[r.compression].writer(wr, sub, r);
+    }
+
     rq->body.shrink_to_fit();
     return rq;
 }
 
 // This is called from many threads at once.
-// Avoid anything that changes the tree.
+// Avoid anything that changes the tree, and ensure proper read-locking!
 int TreeHandler::onRequest(mg_connection* conn)
 {
     const mg_request_info* info = mg_get_request_info(conn);
 
     const char* q = info->local_uri + _skipFromRequest;
 
-    const Cache::Key k(Request(q, 0, 0)); // TODO: compression, flags
+    const Cache::Key k(std::move(Request(q, COMPR_DEFLATE, RQF_NONE))); // FIXME: parse the request line and check whether to actually use compression
     CountedPtr<const StoredRequest> srq = _cache.get(k);
     if(srq)
         if(!srq->expiryTime || srq->expiryTime < timeNowMS())
-            return sendStoredRequest(conn, srq);
+            return sendStoredRequest(conn, srq, k.obj);
 
 
     // ---- BEGIN READ LOCK ----
@@ -144,12 +195,14 @@ int TreeHandler::onRequest(mg_connection* conn)
         }
         //return sendToSocketNoCache(conn, sub); // FIXME: remove this and fix the breakage!
 
-        srq = prepareStoredRequest(sub, k); // this needs to be locked because we use sub...
+        srq = prepareStoredRequest(sub, k.obj); // this needs to be locked because we use sub...
     }
 
-    // ... but once the reply was prepared and stored, the lock is no longer necessar
+    printf("NEW CACHE: compr=%u, size=%u\n", k.obj.compression, (unsigned)srq->body.size());
+
+    // ... but once the reply was prepared, the lock is no longer necessary
     // Just note that the thing we send must be a CountedPtr, because some other thread may evict the cache entry in the meantime,
     // which would delete the object if we didn't hold a CountedPtr to it!
     _cache.put(k, srq);
-    return sendStoredRequest(conn, srq);
+    return sendStoredRequest(conn, srq, k.obj);
 }
