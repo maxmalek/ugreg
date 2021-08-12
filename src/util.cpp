@@ -147,3 +147,21 @@ u32 roundPow2(u32 v)
     v++;
     return v;
 }
+
+char* sizetostr_unsafe(char* buf, size_t bufsz, size_t num)
+{
+    char *p = buf + bufsz - 1;
+    *p-- = 0;
+    if(!num)
+        *p-- = '0';
+    else do
+    {
+        size_t div = num / 10;
+        size_t rem = num - (div * 10);
+        assert(rem < 10);
+        num = div;
+        *p-- = '0' + rem;
+    }
+    while(num);
+    return p+1;
+}

@@ -36,6 +36,15 @@ static const char s_defaultOK[] =
 "Connection: close\r\n"
 "\r\n";
 
+static const char s_cachedOKStart[] =
+"HTTP/1.1 200 OK\r\n"
+"Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
+"Expires: 0\r\n"
+"Pragma: no-cache\r\n"
+"Content-Type: text/json; charset=utf-8\r\n"
+"Connection: close\r\n"
+"Content-Length: "; // + bytes + \r\n
+
 // mg_send_http_ok() is a freaking performance hog.
 // in case everything is fine, just poop out an ok http header and move on.
 static void sendDefaultOK(mg_connection *conn)
@@ -46,8 +55,26 @@ static void sendDefaultOK(mg_connection *conn)
 
 static int sendStoredRequest(mg_connection* conn, const CountedPtr<const StoredRequest>& srq)
 {
-    sendDefaultOK(conn);
-    mg_write(conn, srq->body.data(), srq->body.size());
+    mg_write(conn, s_cachedOKStart, sizeof(s_cachedOKStart) - 1);
+
+    const size_t len = srq->body.size();
+    char buf[64];
+
+    // equivalent to:
+    // size_t partlen = sprintf(buf, "%u\r\n\r\n", (unsigned)len);
+    // char *p = &buf[0];
+    // ...but much faster
+    char *p = sizetostr_unsafe(buf, sizeof(buf) - 3, len); // leave 3 extra byte at the end unused
+    assert(buf[sizeof(buf) - 4] == 0);
+    buf[sizeof(buf)-4] = '\r'; // overwrite the \0 at the end of the string
+    buf[sizeof(buf)-3] = '\n'; // overwrite the 3 leftover bytes
+    buf[sizeof(buf)-2] = '\r';
+    buf[sizeof(buf)-1] = '\n';
+    const size_t partlen = &buf[sizeof(buf)] - p;
+
+    mg_write(conn, p, partlen);
+
+    mg_write(conn, srq->body.data(), len);
     return 200;
 }
 
@@ -98,7 +125,7 @@ int TreeHandler::onRequest(mg_connection* conn)
     const Cache::Key k(Request(q, 0, 0)); // TODO: compression, flags
     CountedPtr<const StoredRequest> srq = _cache.get(k);
     if(srq)
-        if(srq->expiryTime < timeNowMS())
+        if(!srq->expiryTime || srq->expiryTime < timeNowMS())
             return sendStoredRequest(conn, srq);
 
 
@@ -115,7 +142,7 @@ int TreeHandler::onRequest(mg_connection* conn)
             mg_send_http_error(conn, 404, "");
             return 404;
         }
-        return sendToSocketNoCache(conn, sub); // FIXME: remove this and fix the breakage!
+        //return sendToSocketNoCache(conn, sub); // FIXME: remove this and fix the breakage!
 
         srq = prepareStoredRequest(sub, k); // this needs to be locked because we use sub...
     }

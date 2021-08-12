@@ -52,7 +52,7 @@ public:
     {
         ref._p = 0;
     }
-    CountedPtr& operator=(CountedPtr&& ref)
+    CountedPtr& operator=(CountedPtr&& ref) noexcept
     {
         T* const oldp = _p;
         _p = ref._p;

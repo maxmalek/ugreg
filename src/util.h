@@ -36,3 +36,5 @@ u64 sleepMS(u64 ms);
 
 u32 strhash(const char *s);
 u32 roundPow2(u32 v);
+
+char *sizetostr_unsafe(char *buf, size_t bufsz, size_t num);

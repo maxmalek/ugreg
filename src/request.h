@@ -11,8 +11,8 @@ public:
     Request()
         : compression(0), flags(0) {}
 
-    Request(const char* query, unsigned compression, unsigned flags)
-        : compression(compression), flags(flags) {}
+    Request(const char* q, unsigned compression, unsigned flags)
+        : query(q), compression(compression), flags(flags) {}
 
     std::string query;
     unsigned compression;
@@ -29,6 +29,7 @@ public:
 // MUST be allocated with new when you use this!
 struct StoredRequest : public Refcounted
 {
+    StoredRequest() : expiryTime(0) {}
     virtual ~StoredRequest() {}
 
     u64 expiryTime;
