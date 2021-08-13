@@ -214,11 +214,8 @@ int TreeHandler::onRequest(mg_connection* conn)
 
         rq = prepareStoredRequest(sub, k.obj); // this needs to be locked because we use sub...
     }
-
     // ... but once the reply was prepared, the lock is no longer necessary
-    // Just note that the thing we hold on to must be a CountedPtr,
-    // because some other thread may evict the cache entry in the meantime,
-    // which would delete the object if we didn't hold a CountedPtr to it!
+
     rq->body.shrink_to_fit();
 
     // When a max. cache time is set, see whether the object expires on its own earlier than
@@ -234,7 +231,11 @@ int TreeHandler::onRequest(mg_connection* conn)
     printf("NEW CACHE: compr=%u, size=%u, expiry=%" PRIu64 "\n",
         k.obj.compression, (unsigned)rq->body.size(), rq->expiryTime);
 
-    srq = rq; // Pin it. Important!
+    // Pin it. Important!
+    // Some other thread may evict the cache entry in the meantime,
+    // which would delete the object if we didn't hold a CountedPtr to it,
+    // in which case rq would become a dangling pointer. Bad!
+    srq = rq;
 
     _cache.put(k, srq);
     return sendStoredRequest(conn, srq, k.obj);
