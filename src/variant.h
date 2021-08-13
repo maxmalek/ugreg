@@ -170,7 +170,7 @@ public:
     const Var* lookup(StrRef s) const;
 
     // instantiate from types
-    inline Var(nullptr_t) : Var() {}
+    inline Var(std::nullptr_t) : Var() {}
     Var(bool x);
     Var(s64 x);
     Var(u64 x);
@@ -317,7 +317,7 @@ public:
 
     // value assignment
     void clear() { v->clear(mem); }
-    inline VarRef& operator=(nullptr_t)     { v->clear(mem);       return *this; }
+    inline VarRef& operator=(std::nullptr_t)     { v->clear(mem);       return *this; }
     inline VarRef& operator=(bool x)        { v->setBool(mem, x);  return *this; }
     inline VarRef& operator=(s64 x)         { v->setInt(mem, x);   return *this; }
     inline VarRef& operator=(u64 x)         { v->setUint(mem, x);  return *this; }

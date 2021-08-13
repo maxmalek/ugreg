@@ -81,8 +81,8 @@ void BufferedWriteStream::init()
 
 BufferedWriteStream::BufInfo BufferedWriteStream::getBuffer() const
 {
-    assert(_dst);
-    BufInfo b{ _dst, _last - _dst };
+    assert(_dst && _dst <= _last);
+    BufInfo b{ _dst, static_cast<size_t>(_last - _dst) };
     return b;
 }
 

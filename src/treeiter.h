@@ -111,6 +111,8 @@ void treeIter_T(Functor& func, const VarCRef src)
                 func.EndObject(VarCRef(src.mem, s.v));
                 break;
             }
+
+            default: assert(false); break; // unreachable
         }
     }
 }

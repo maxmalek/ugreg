@@ -69,7 +69,7 @@ public:
              T * const oldp = _p;
              _p = p;
              if(p)
-                p->incref()
+                p->incref();
              if(oldp)
                  oldp->decref();
         }

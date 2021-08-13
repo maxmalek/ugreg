@@ -64,6 +64,7 @@ VarRef DataTree::subtree(const Accessor& acc, bool create)
                 case Var::TYPE_STRING:
                     p = &lastp->makeMap(*this)->emplace(*this, k.u.s, std::move(Var()));
                     break;
+                default: assert(false); p = NULL; // can't happen: only int or string in accessors!
             }
         }
     }
