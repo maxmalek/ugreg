@@ -13,7 +13,7 @@ public:
     ~TreeHandler();
     static int Handler(struct mg_connection* conn, void* self);
 
-    typedef CacheTable<Request, const StoredRequest> Cache;
+    typedef CacheTable<Request, const StoredReply> Cache;
 
 private:
     int onRequest(struct mg_connection* conn);

@@ -72,15 +72,15 @@ u32 Request::Hash(const Request& r)
     return hash;
 }
 
-StoredRequestWriteStream::StoredRequestWriteStream(StoredRequest* req, char* buf, size_t bufsize)
+StoredReplyWriteStream::StoredReplyWriteStream(StoredReply* req, char* buf, size_t bufsize)
     : BufferedWriteStream(NULL, _Write, buf, bufsize)
     , _req(req)
 {
 }
 
-size_t StoredRequestWriteStream::_Write(const void* src, size_t bytes, BufferedWriteStream* self)
+size_t StoredReplyWriteStream::_Write(const void* src, size_t bytes, BufferedWriteStream* self)
 {
-    StoredRequestWriteStream* me = static_cast<StoredRequestWriteStream*>(self);
+    StoredReplyWriteStream* me = static_cast<StoredReplyWriteStream*>(self);
     std::vector<char>& v = me->_req->body;
 
     size_t cur = v.size();

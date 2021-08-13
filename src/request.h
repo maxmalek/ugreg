@@ -53,21 +53,21 @@ public:
 };
 
 // MUST be allocated with new when you use this!
-struct StoredRequest : public Refcounted
+struct StoredReply : public Refcounted
 {
-    StoredRequest() : expiryTime(0) {}
-    virtual ~StoredRequest() {}
+    StoredReply() : expiryTime(0) {}
+    virtual ~StoredReply() {}
 
     u64 expiryTime;
     std::vector<char> body;
 };
 
 // TODO: remove requirement for external buffer to reduce copying
-class StoredRequestWriteStream : public BufferedWriteStream
+class StoredReplyWriteStream : public BufferedWriteStream
 {
 public:
-    StoredRequestWriteStream(StoredRequest *req, char* buf, size_t bufsize); // mg_connection
+    StoredReplyWriteStream(StoredReply *req, char* buf, size_t bufsize); // mg_connection
 private:
     static size_t _Write(const void* src, size_t bytes, BufferedWriteStream* self);
-    StoredRequest* const _req;
+    StoredReply* const _req;
 };

@@ -94,7 +94,7 @@ static void sendDefaultChunkedOK(mg_connection *conn)
 }
 
 
-static int sendStoredRequest(mg_connection* conn, const CountedPtr<const StoredRequest>& srq, const Request& r)
+static int sendStoredRequest(mg_connection* conn, const CountedPtr<const StoredReply>& srq, const Request& r)
 {
     const char *hdr    = s_requestOut[r.compression].header;
     const size_t hdrsz = s_requestOut[r.compression].headerSize;
@@ -147,17 +147,17 @@ static int sendToSocketNoCache(mg_connection *conn, VarCRef sub)
     return 200; // HTTP OK
 }
 
-static CountedPtr<const StoredRequest> prepareStoredRequest(VarCRef sub, const Request& r)
+static CountedPtr<const StoredReply> prepareStoredRequest(VarCRef sub, const Request& r)
 {
     char buf[8 * 1024];
-    StoredRequest* rq = new StoredRequest;
+    StoredReply* rq = new StoredReply;
 
     // TODO: add support for max-cache-time
     rq->expiryTime = getTreeMinExpiryTime(sub);
 
     // Extra scope to make sure the stream is destroyed and flushes all its data before we finalize rq
     {
-        StoredRequestWriteStream wr(rq, buf, sizeof(buf));
+        StoredReplyWriteStream wr(rq, buf, sizeof(buf));
         s_requestOut[r.compression].writer(wr, sub, r);
     }
 
@@ -182,7 +182,7 @@ int TreeHandler::onRequest(mg_connection* conn)
         k = std::move(r);
     }
 
-    CountedPtr<const StoredRequest> srq = _cache.get(k);
+    CountedPtr<const StoredReply> srq = _cache.get(k);
     if(srq)
         if(!srq->expiryTime || srq->expiryTime < timeNowMS())
             return sendStoredRequest(conn, srq, k.obj);
