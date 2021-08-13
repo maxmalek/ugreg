@@ -29,6 +29,8 @@ int TreeHandler::Handler(mg_connection* conn, void* self)
     return static_cast<TreeHandler*>(self)->onRequest(conn);
 }
 
+// TODO: clean this up. add changed transfer encoding and Content-Length: manually if required
+
 static const char s_defaultChunkedOK[] =
 "HTTP/1.1 200 OK\r\n"
 "Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
@@ -61,7 +63,7 @@ static const char s_cachedDeflateOKStart[] =
 
 typedef void (*RequestBufferWriter)(BufferedWriteStream& ws, VarCRef sub, const Request& r);
 
-static void _finalizeStoredRequest(BufferedWriteStream& ws, VarCRef sub, const Request& r)
+static void writeToStream(BufferedWriteStream& ws, VarCRef sub, const Request& r)
 {
     writeJson(ws, sub, !!(r.flags & RQF_PRETTY));
 }
@@ -70,7 +72,7 @@ static void _finalizeDeflateRequest(BufferedWriteStream& ws, VarCRef sub, const 
 {
     char zbuf[8 * 1024];
     DeflateWriteStream z(ws, 1, zbuf, sizeof(zbuf)); // TODO: use compression level from config
-    return _finalizeStoredRequest(z, sub, r);
+    return writeToStream(z, sub, r);
 }
 
 struct CachedRequestOutHandler
@@ -83,7 +85,7 @@ struct CachedRequestOutHandler
 // Key: CompressionType (see request.h)
 static const CachedRequestOutHandler s_requestOut[] =
 {
-    { s_cachedOKStart,        sizeof(s_cachedOKStart),        _finalizeStoredRequest },
+    { s_cachedOKStart,        sizeof(s_cachedOKStart),        writeToStream },
     { s_cachedDeflateOKStart, sizeof(s_cachedDeflateOKStart), _finalizeDeflateRequest }
 };
 
@@ -124,7 +126,7 @@ static int sendStoredRequest(mg_connection* conn, const CountedPtr<const StoredR
     return 200;
 }
 
-static int sendToSocketNoCache(mg_connection *conn, VarCRef sub)
+static int sendToSocketNoCache(mg_connection *conn, VarCRef sub, const Request& r)
 {
     //mg_send_http_ok(conn, "text/json", -1);
     sendDefaultChunkedOK(conn);
@@ -133,7 +135,8 @@ static int sendToSocketNoCache(mg_connection *conn, VarCRef sub)
     {
         char buf[32 * 1024];
         ThrowingSocketWriteStream wr(conn, buf, sizeof(buf));
-        writeJson(wr, sub, false);
+        // FIXME: respect compression settings; wrap the above stream if necessary
+        writeToStream(wr, sub, r);
         mg_send_chunk(conn, "", 0); // terminating chunk
         //printf("[%s] JSON reply sent\n", out.c_str());
     }
@@ -210,7 +213,7 @@ int TreeHandler::onRequest(mg_connection* conn)
         }
 
         if(!_cache.enabled)
-            return sendToSocketNoCache(conn, sub);
+            return sendToSocketNoCache(conn, sub, k.obj);
 
         rq = prepareStoredRequest(sub, k.obj); // this needs to be locked because we use sub...
     }
