@@ -41,8 +41,20 @@ public:
     }
     Hashed& operator=(Hashed&& o)
     {
-        obj = std::move(o.obj)
+        obj = std::move(o.obj);
         hash = o.hash;
+        return *this;
+    }
+    Hashed& operator=(const T& o)
+    {
+        obj = o;
+        hash = o.Hash(o);
+        return *this;
+    }
+    Hashed& operator=(T&& o)
+    {
+        obj = std::move(o);
+        hash = o.Hash(o);
         return *this;
     }
 

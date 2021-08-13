@@ -27,7 +27,7 @@ int TreeHandler::Handler(mg_connection* conn, void* self)
     return static_cast<TreeHandler*>(self)->onRequest(conn);
 }
 
-static const char s_defaultOK[] =
+static const char s_defaultChunkedOK[] =
 "HTTP/1.1 200 OK\r\n"
 "Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
 "Expires: 0\r\n"
@@ -88,9 +88,9 @@ static const CachedRequestOutHandler s_requestOut[] =
 
 // mg_send_http_ok() is a freaking performance hog.
 // in case everything is fine, just poop out an ok http header and move on.
-static void sendDefaultOK(mg_connection *conn)
+static void sendDefaultChunkedOK(mg_connection *conn)
 {
-    mg_write(conn, s_defaultOK, sizeof(s_defaultOK) - 1); // don't include the \0
+    mg_write(conn, s_defaultChunkedOK, sizeof(s_defaultChunkedOK) - 1); // don't include the \0
 }
 
 
@@ -125,7 +125,7 @@ static int sendStoredRequest(mg_connection* conn, const CountedPtr<const StoredR
 static int sendToSocketNoCache(mg_connection *conn, VarCRef sub)
 {
     //mg_send_http_ok(conn, "text/json", -1);
-    sendDefaultOK(conn);
+    sendDefaultChunkedOK(conn);
 
     try
     {
@@ -171,9 +171,17 @@ int TreeHandler::onRequest(mg_connection* conn)
 {
     const mg_request_info* info = mg_get_request_info(conn);
 
-    const char* q = info->local_uri + _skipFromRequest;
+    Cache::Key k;
+    {
+        Request r;
+        if(!r.parse(info, _skipFromRequest))
+        {
+            mg_send_http_error(conn, 400, ""); // Bad Request
+            return 400;
+        }
+        k = std::move(r);
+    }
 
-    const Cache::Key k(std::move(Request(q, COMPR_DEFLATE, RQF_NONE))); // FIXME: parse the request line and check whether to actually use compression
     CountedPtr<const StoredRequest> srq = _cache.get(k);
     if(srq)
         if(!srq->expiryTime || srq->expiryTime < timeNowMS())
@@ -186,7 +194,7 @@ int TreeHandler::onRequest(mg_connection* conn)
     {
         std::shared_lock<std::shared_mutex> lock(tree.mutex);
 
-        VarCRef sub = tree.subtree(q);
+        VarCRef sub = tree.subtree(k.obj.query.c_str());
         //printf("sub = %p\n", sub.v);
         if(!sub)
         {

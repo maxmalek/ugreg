@@ -5,6 +5,11 @@
 #include "refcounted.h"
 #include "jsonstreamwrapper.h"
 
+struct mg_request_info;
+
+// Supported compression algorithms, ordered by preference
+// Higher values are preferred
+// See request.cpp: parseEncoding()
 enum CompressionType
 {
     COMPR_NONE,
@@ -16,7 +21,14 @@ enum RequestFlags // bitmask
     RQF_NONE   = 0x00,
     RQF_PRETTY = 0x01,
 };
+inline static RequestFlags operator|(RequestFlags a, RequestFlags b) { return RequestFlags(unsigned(a) | unsigned(b)); }
+inline static RequestFlags& operator|=(RequestFlags& a, RequestFlags b) { return (a = RequestFlags(unsigned(a) | unsigned(b))); }
 
+
+// One request contains everything needed to generate the response.
+// The request is also used as a key for the response cache, so make sure
+// that operator== does a proper equality check of ALL members that may modify
+// the response that is generated.
 class Request
 {
 public:
@@ -25,6 +37,8 @@ public:
 
     Request(const char* q, CompressionType compression, RequestFlags flags)
         : query(q), compression(compression), flags(flags) {}
+
+    bool parse(const mg_request_info *info, size_t skipFromQuery);
 
     std::string query;
     CompressionType compression;
