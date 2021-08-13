@@ -19,6 +19,11 @@ struct ServerConfig
     std::vector<Listen> listen;
     unsigned listen_threads;
     bool expose_debug_apis;
+    struct
+    {
+        unsigned rows, columns;
+        u64 maxtime;
+    } reply_cache;
     // --- end fields ---
 
 

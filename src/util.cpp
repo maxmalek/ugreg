@@ -69,7 +69,7 @@ NumConvertResult strToDurationMS_NN(u64* dst, const char* s, size_t maxlen)
     NumConvertResult res{ 0, false };
     u64 ms = 0;
 
-    for(;;)
+    while(*s)
     {
         size_t k;
         const char *const beg = s;
@@ -92,9 +92,11 @@ NumConvertResult strToDurationMS_NN(u64* dst, const char* s, size_t maxlen)
             }
             maxlen -= skip;
             s += skip;
+            res.used += skip;
         }
         assert(unit); // unreachable
         res.overflow |= r.overflow | mul_check_overflow<u64>(&k, k, unit);
+        ms += k;
     }
 out:
     *dst = ms;
@@ -103,6 +105,9 @@ out:
 
 bool strToDurationMS_Safe(u64* dst, const char* s, size_t maxlen)
 {
+    if(!s)
+        return false;
+
     NumConvertResult r = strToDurationMS_NN(dst, s, maxlen);
     //                     unk len and at end of s?        consumed exact # bytes?
     return !r.overflow && ((maxlen == -1 && !s[r.used]) || r.used == maxlen);

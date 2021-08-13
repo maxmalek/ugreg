@@ -10,11 +10,13 @@
 #include "socketstream.h"
 #include "treefunc.h"
 #include "zstream.h"
+#include "config.h"
 
 
-TreeHandler::TreeHandler(DataTree& tree, size_t skipFromRequest)
+TreeHandler::TreeHandler(DataTree& tree, size_t skipFromRequest, const ServerConfig& cfg )
     : tree(tree), _skipFromRequest(skipFromRequest)
-    , _cache(128, 8) // TODO: move to config
+    , _cache(cfg.reply_cache.rows, cfg.reply_cache.columns)
+    , cfg(cfg)
 {
 }
 
@@ -147,13 +149,10 @@ static int sendToSocketNoCache(mg_connection *conn, VarCRef sub)
     return 200; // HTTP OK
 }
 
-static CountedPtr<const StoredReply> prepareStoredRequest(VarCRef sub, const Request& r)
+static StoredReply *prepareStoredRequest(VarCRef sub, const Request& r)
 {
     char buf[8 * 1024];
     StoredReply* rq = new StoredReply;
-
-    // TODO: add support for max-cache-time
-    rq->expiryTime = getTreeMinExpiryTime(sub);
 
     // Extra scope to make sure the stream is destroyed and flushes all its data before we finalize rq
     {
@@ -161,7 +160,10 @@ static CountedPtr<const StoredReply> prepareStoredRequest(VarCRef sub, const Req
         s_requestOut[r.compression].writer(wr, sub, r);
     }
 
-    rq->body.shrink_to_fit();
+    // OPTIMIZE: this could be moved to be done in writeJson() while we walk the tree
+    rq->expiryTime = getTreeMinExpiryTime(sub);
+
+    //rq->body.shrink_to_fit(); // Don't do this here! We're holding a perf-critical lock, this can wait.
     return rq;
 }
 
@@ -182,15 +184,20 @@ int TreeHandler::onRequest(mg_connection* conn)
         k = std::move(r);
     }
 
-    CountedPtr<const StoredReply> srq = _cache.get(k);
-    if(srq)
-        if(!srq->expiryTime || srq->expiryTime < timeNowMS())
-            return sendStoredRequest(conn, srq, k.obj);
+    CountedPtr<const StoredReply> srq;
+    if(_cache.enabled)
+    {
+        srq = _cache.get(k);
+        if(srq)
+            if(!srq->expiryTime || timeNowMS() < srq->expiryTime)
+                return sendStoredRequest(conn, srq, k.obj);
+    }
 
 
     // ---- BEGIN READ LOCK ----
     // Tree query and use of the result must be locked.
     // Can't risk a merge or expire process to drop parts of the tree in another thread that we're still using here.
+    StoredReply *rq;
     {
         std::shared_lock<std::shared_mutex> lock(tree.mutex);
 
@@ -201,16 +208,34 @@ int TreeHandler::onRequest(mg_connection* conn)
             mg_send_http_error(conn, 404, "");
             return 404;
         }
-        //return sendToSocketNoCache(conn, sub); // FIXME: remove this and fix the breakage!
 
-        srq = prepareStoredRequest(sub, k.obj); // this needs to be locked because we use sub...
+        if(!_cache.enabled)
+            return sendToSocketNoCache(conn, sub);
+
+        rq = prepareStoredRequest(sub, k.obj); // this needs to be locked because we use sub...
     }
 
-    printf("NEW CACHE: compr=%u, size=%u\n", k.obj.compression, (unsigned)srq->body.size());
-
     // ... but once the reply was prepared, the lock is no longer necessary
-    // Just note that the thing we send must be a CountedPtr, because some other thread may evict the cache entry in the meantime,
+    // Just note that the thing we hold on to must be a CountedPtr,
+    // because some other thread may evict the cache entry in the meantime,
     // which would delete the object if we didn't hold a CountedPtr to it!
+    rq->body.shrink_to_fit();
+
+    // When a max. cache time is set, see whether the object expires on its own earlier than
+    // the maxtime. Adjust accordinly.
+    if(cfg.reply_cache.maxtime)
+    {
+        u64 t = rq->expiryTime;
+        u64 maxt = timeNowMS() + cfg.reply_cache.maxtime;
+        t = t ? std::min(t, maxt) : maxt;
+        rq->expiryTime = t;
+    }
+
+    printf("NEW CACHE: compr=%u, size=%u, expiry=%" PRIu64 "\n",
+        k.obj.compression, (unsigned)rq->body.size(), rq->expiryTime);
+
+    srq = rq; // Pin it. Important!
+
     _cache.put(k, srq);
     return sendStoredRequest(conn, srq, k.obj);
 }

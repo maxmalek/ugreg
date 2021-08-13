@@ -109,7 +109,7 @@ int main(int argc, char** argv)
     if (!srv.start(cfg))
         bail("Failed to start server!", "");
 
-    TreeHandler hcfg(cfgtree, 7); // strlen("/config")
+    TreeHandler hcfg(cfgtree, 7, cfg); // strlen("/config")
     if(cfg.expose_debug_apis)
         srv.registerHandler("/config", hcfg.Handler, &hcfg);
 
@@ -132,7 +132,7 @@ int main(int argc, char** argv)
 
 
     // FIXME: this is ugly
-    TreeHandler htree(tree, 4); // strlen("/get")
+    TreeHandler htree(tree, 4, cfg); // strlen("/get")
     srv.registerHandler("/get", htree.Handler, &htree);
 
 

@@ -79,10 +79,11 @@ class CacheTable
 {
 public:
     typedef Hashed<K> Key;
+    const bool enabled;
 private:
-    const size_t _cols; // power of 2
+    size_t _cols; // power of 2
     u32 _rng;
-    const u32 _mask; // (power of 2) - 1
+    u32 _mask; // (power of 2) - 1
     mutable std::shared_mutex mutex;
     std::vector<Key> _keys;
     std::vector<CountedPtr<V> > _vals;
@@ -100,11 +101,17 @@ private:
     }
 public:
     CacheTable(u32 slots, size_t cols)
-        : _cols(roundPow2(cols)), _rng(6581), _mask(std::max<size_t>(2, roundPow2(slots)) - 1)
+        : enabled(slots && cols), _cols(0), _rng(6581), _mask(0)
     {
-        const size_t N = (size_t(_mask) + 1) * cols;
-        _keys.resize(N);
-        _vals.resize(N);
+        if(enabled)
+        {
+            _cols = roundPow2(cols);
+            _mask = (roundPow2(slots) - 1) | 1;
+
+            const size_t N = (size_t(_mask) + 1) * cols;
+            _keys.resize(N);
+            _vals.resize(N);
+        }
     }
 
     void clear()
