@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "config.h"
 #include "util.h"
 
@@ -34,11 +35,18 @@ bool ServerConfig::apply(VarCRef root)
     VarCRef xdebugapi = root.lookup("expose_debug_apis");
     expose_debug_apis = xdebugapi && xdebugapi.asBool();
 
+    if(VarCRef xthreads = root.lookup("listen_threads"))
+        if(const u64 *pth = xthreads.asUint())
+            listen_threads = *pth;
+
     if (!listen_threads)
     {
-        listen_threads = 2 * getNumCPUCores();
+        unsigned c = getNumCPUCores();
+        listen_threads = 2 * c;
         if (listen_threads < 5)
             listen_threads = 5;
+        printf("config.listen_threads is 0 or not set, autodetected %u cores --> %u threads\n",
+            c, listen_threads);
     }
 
     return !listen.empty();

@@ -294,6 +294,9 @@ public:
     VarRef& makeMap();
     VarRef& makeArray(size_t n);
 
+    VarRef at(size_t idx) const;          // does not convert to array
+    VarRef lookup(const char* key) const; // does not convert to map
+
     // converts into a map, creates key if not present, so that a construction like this:
     // VarRef ref = ...;
     // ref.clear();

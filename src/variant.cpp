@@ -598,6 +598,16 @@ void VarRef::replace(const VarCRef& o)
     *v = std::move(o.v->clone(mem, o.mem));
 }
 
+VarRef VarRef::at(size_t idx) const
+{
+    return VarRef(mem, v->at(idx));
+}
+
+VarRef VarRef::lookup(const char* key) const
+{
+    return VarRef(mem, v->lookup(mem.lookup(key, strlen(key))));
+}
+
 VarCRef VarCRef::at(size_t idx) const
 {
     return VarCRef(mem, v->at(idx));

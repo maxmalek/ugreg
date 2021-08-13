@@ -43,11 +43,7 @@ bool Request::parse(const mg_request_info* info, size_t skipFromQuery)
     // or the request handler wasn't set up with the right skip length
     assert(strlen(info->local_uri) >= skipFromQuery);
 
-    const char *q = info->local_uri + skipFromQuery;
-    if(!*q)
-        return false;
-
-    this->query = q;
+    this->query = info->local_uri + skipFromQuery;
 
     const char* vars = info->query_string;
     if(vars && *vars)

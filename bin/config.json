@@ -1,4 +1,4 @@
-{
+{"config":{
     /*
     One entry per listen address/port. Port must be an int and is mandatory, the rest is optional.
     Set host to empty or leave away to listen on every interface.
@@ -11,4 +11,4 @@
     ],
     // Don't enable this for a production system as it can leak sensitive data!
     "expose_debug_apis": false
-}
+}}

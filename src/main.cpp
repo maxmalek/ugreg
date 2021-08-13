@@ -96,7 +96,7 @@ int main(int argc, char** argv)
         bail("Failed to handle cmdline. Exiting.", "");
 
     ServerConfig cfg;
-    if(!cfg.apply(cfgtree.root()))
+    if(!cfg.apply(cfgtree.subtree("/config")))
     {
         bail("Invalid config after processing options. Fix your config file(s).\nCurrent config:\n",
             dumpjson(cfgtree.root(), true).c_str()
