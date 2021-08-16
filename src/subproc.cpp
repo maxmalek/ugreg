@@ -49,8 +49,6 @@ bool loadJsonFromProcess(DataTree *tree, const char** args)
         return false;
     }
 
-    sleepMS(1000);
-
     char buf[12*1024];
     ProcessReadStream ps(&proc, ProcessReadStream::DONTTOUCH, &buf[0], sizeof(buf));
 
