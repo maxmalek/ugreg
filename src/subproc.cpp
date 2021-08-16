@@ -15,10 +15,13 @@ static void procfail(ProcessReadStream& ps, const char **args)
     unsigned i = 0;
     char c;
     std::ostringstream os;
-    while(i++ < 100 && ((c = ps.Take())) )
+    while(((c = ps.Take())) && i++ < 100)
         os << c;
-    printf("[%s] JSON parse error after reading %u bytes, before:\n%s\n",
-        args[0], unsigned(pos), os.str().c_str());
+    if(!pos && !i)
+        printf("[%s] Did not produce output before it died\n", args[0]);
+    else
+        printf("[%s] JSON parse error after reading %u bytes, before:\n%s\n",
+            args[0], unsigned(pos), os.str().c_str());
 
 }
 
@@ -35,7 +38,7 @@ bool loadJsonFromProcess(DataTree *tree, const char** args)
 
     subprocess_s proc;
     int err = subprocess_create(args, subprocess_option_enable_async | subprocess_option_no_window | subprocess_option_inherit_environment, &proc);
-    
+
 #ifdef _WIN32
     args[0] = oldarg0;
 #endif
@@ -46,23 +49,49 @@ bool loadJsonFromProcess(DataTree *tree, const char** args)
         return false;
     }
 
+    sleepMS(1000);
+
     char buf[12*1024];
     ProcessReadStream ps(&proc, ProcessReadStream::DONTTOUCH, &buf[0], sizeof(buf));
 
     bool ok = loadJsonDestructive(tree->root(), ps);
+
     if(ok)
     {
         printf("[%s] parsed as json, waiting until it exits...\n", args[0]);
-        int ret = 0;
-        subprocess_join(&proc, &ret);
-        printf("[%s] exited with code %d\n", args[0], ret);
-        ok = !ret; // if the process reports failure, don't use it even if it's valid json
     }
     else
     {
         procfail(ps, args);
-        printf("[%s] failed to parse, killing\n", args[0]);
-        subprocess_terminate(&proc);
+        if(subprocess_alive(&proc))
+        {
+            printf("[%s] failed to parse and still alive, killing\n", args[0]);
+            subprocess_terminate(&proc);
+        }
+    }
+
+    int ret = 0;
+    subprocess_join(&proc, &ret);
+    ok = !ret; // if the process reports failure, don't use it even if it's valid json
+    printf("[%s] exited with code %d\n", args[0], ret);
+    if(!ok && subprocess_stderr(&proc))
+    {
+        bool hdr = false;
+        for(;;) // attempt to output stderr of failed process
+        {
+            char buf[1024];
+            unsigned rd = subprocess_read_stderr(&proc, buf, sizeof(buf));
+            if(!rd)
+                break;
+            if(!hdr)
+            {
+                printf("---- [%s] begin stderr dump ----\n", args[0]);
+                hdr = true;
+            }
+            fwrite(buf, 1, sizeof(buf), stdout);
+        }
+        if(hdr)
+            printf("---- [%s] end stderr dump ----\n", args[0]);
     }
 
     subprocess_destroy(&proc);
