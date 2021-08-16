@@ -119,12 +119,12 @@ int main(int argc, char** argv)
         loadAndMergeJsonFromFile(&tree, "citylots.json", "/citylots", MERGE_FLAT);
         {
             AsyncLaunchConfig cfg;
-            cfg.args.push_back("twitter.sh");
+            cfg.args.push_back("./twitter.sh");
             loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/twitter", MERGE_FLAT);
         }
         {
             AsyncLaunchConfig cfg;
-            cfg.args.push_back("matrix.sh");
+            cfg.args.push_back("./matrix.sh");
             loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/matrix", MERGE_FLAT);
         }
     }
