@@ -3,6 +3,7 @@
 #include <vector>
 #include <utility>
 #include <shared_mutex>
+#include <mutex>
 
 #include "types.h"
 #include "util.h"
