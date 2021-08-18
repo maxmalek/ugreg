@@ -583,12 +583,20 @@ VarRef VarRef::operator[](const char* key)
 bool VarRef::merge(const VarCRef& o, MergeFlags mergeflags)
 {
     assert(v && o.v);
+
+    if(isNull())
+    {
+        *v = std::move(o.v->clone(mem, o.mem));
+        return true;
+    }
+
     if(o.type() != Var::TYPE_MAP)
         return false;
 
     const Var::Map& om = *o.v->map_unsafe();
     v->makeMap(mem, om.size())->merge(mem, om, o.mem, mergeflags);
     return true;
+
 }
 
 void VarRef::replace(const VarCRef& o)

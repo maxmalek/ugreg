@@ -13,7 +13,7 @@ struct TreeMergeResult
 {
     TreeMergeResult();
     bool ok;
-    u64 expiryTime;
+    //u64 expiryTime;
 };
 
 // async call! returns immediately, but starts some background processing that will

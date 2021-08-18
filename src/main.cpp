@@ -116,12 +116,14 @@ int main(int argc, char** argv)
     // TEST DATA START
     DataTree tree;
     {
-        loadAndMergeJsonFromFile(&tree, "citylots.json", "/citylots", MERGE_FLAT);
-        {
+        //loadAndMergeJsonFromFile(&tree, "citylots.json", "/citylots", MERGE_FLAT);
+        loadAndMergeJsonFromFile(&tree, "mock_users.json", "/users", MERGE_FLAT);
+        loadAndMergeJsonFromFile(&tree, "mock_rooms.json", "/rooms", MERGE_FLAT);
+        /*{
             AsyncLaunchConfig cfg;
             cfg.args.push_back("./twitter.sh");
             loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/twitter", MERGE_FLAT);
-        }
+        }*/
         {
             AsyncLaunchConfig cfg;
             cfg.args.push_back("./matrix.sh");
