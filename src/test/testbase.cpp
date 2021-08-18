@@ -1,5 +1,5 @@
-#include "teststuff.h"
 #include <assert.h>
+#include <string>
 #include "rapidjson/stringbuffer.h"
 #include "datatree.h"
 #include "jsonstreamwrapper.h"
@@ -52,4 +52,10 @@ void teststuff()
     }
 
     puts("---- test stuff end -----");
+}
+
+int main(int argc, char **argv)
+{
+    teststuff();
+    return 0;
 }

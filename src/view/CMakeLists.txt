@@ -1,6 +1,6 @@
 set(src
-    parser.cpp
-    parser.h
+    viewparser.cpp
+    viewparser.h
 )
 
 add_library(viewengine ${src})

@@ -1,8 +1,10 @@
-#include "parser.h"
+#include "viewparser.h"
 #include <vector>
 #include <string>
+#include <assert.h>
 #include "util.h"
 #include "safe_numerics.h"
+#include "treemem.h"
 
 /*
 enum TokenType
@@ -54,21 +56,16 @@ enum ParserStateType
     PARSE_EVAL,     // inside {...}
 };
 
-enum TokenType
-{
-    TOK_OP
-};
-
 struct ParserState
 {
-    size_t stackidx;
+    //size_t stackidx;
     const char *ptr;
 };
 
 class Parser
 {
 public:
-    Parser(TreeMem& mem);
+    Parser(TreeMem& mem) : mem(mem) {}
     ParserState snapshot() const { return state; }
     void rewind(const ParserState& ps) { state = ps; }
     bool parse(const char *s);
@@ -79,7 +76,8 @@ private:
     bool _parseKey(bool ignoreStartSlash = false);
     bool _parseNum(Var& v);
     bool _parseStr(Var& v);
-    bool _parseNull(Var& v);
+    bool _parseNull();
+    size_t _parseVerbatim(const char *in); // returns length of match if matched, otherwise 0
     bool _parseLiteral();
     bool _parseValue(); // literal or eval
     bool _parseDecimal(u64& i);
@@ -112,6 +110,13 @@ private:
 
 };
 
+bool parseView(const char *s)
+{
+    TreeMem mem;
+    Parser p(mem);
+    return p.parse(s);
+}
+
 static inline bool _IsSep(char c)
 {
     return c == '[' || c == ']' || c == '/' || c == ' ' || c == '\t' || !c;
@@ -140,9 +145,9 @@ bool Parser::parse(const char *s)
     //statestack.resize(1);
     //statestack[0] = PARSE_NORMAL;
     state.ptr = s;
-    state.stackidx = 0;
+    //state.stackidx = 0;
 
-    return _parseLookup();
+    return _parseLookup() && _skipSpace() && *state.ptr == 0;
 }
 
 // 1337
@@ -181,10 +186,60 @@ bool Parser::_parseNum(Var& v)
     return top.accept();
 }
 
+// FIXME: make this handle both ' and " and handle escapes inside
+bool Parser::_parseStr(Var& v)
+{
+    const char *s = state.ptr;
+    if(*s++ != '\'')
+        return false;
+
+    const char * const begin = s;
+    bool esc = false;
+    for(char c; (c = *s++); ++s)
+    {
+        if(c == '\'' && !esc)
+        {
+            v.setStr(mem, state.ptr, s - state.ptr);
+            state.ptr = s;
+            return true;
+        }
+
+        esc = c == '\\';
+    }
+    return false;
+}
+
+bool Parser::_parseNull()
+{
+    ParserTop top(*this);
+    return _parseVerbatim("null") && top.accept();
+}
+
+size_t Parser::_parseVerbatim(const char *in)
+{
+    assert(*in);
+    const char * const s = state.ptr;
+    for (size_t k = 0;; ++k)
+    {
+        char c = *in++;
+        if (!c) // all matched
+        {
+            state.ptr = s + k;
+            return k;
+        }
+        if (s[k] != c)
+            break; // it's not this op, check the next
+    }
+    return 0;
+}
+
 bool Parser::_parseLiteral()
 {
     Var v;
-    return _parseStr(v) || _parseNum(v) || _parseNull(v);
+    bool ok = _parseStr(v) || _parseNum(v) || _parseNull();
+    // TODO: emit
+    v.clear(mem);
+    return ok;
 }
 
 bool Parser::_parseValue()
@@ -239,17 +294,15 @@ bool Parser::_parseLookup(bool ignoreStartSlash)
 bool Parser::_parseKey(bool ignoreStartSlash)
 {
     const char *s = state.ptr;
-    if(s[0] != '/')
-    {
-        if(!ignoreStartSlash)
-            return false;
+    if(s[0] == '/')
         ++s;
-    }
+    else if(!ignoreStartSlash)
+        return false;
     
-    for(char c; (c = *s) && c != '/' && c != '['; ++s)
-    {
-    }
+    for(char c; (c = *s) && c != '/' && c != '['; )
+        ++s;
 
+    state.ptr = s;
     return true; // zero-length key is okay and is the empty string
 }
 
@@ -290,7 +343,7 @@ bool Parser::_parseIdent()
 
     bool ok = s != state.ptr;
     if(ok)
-        state.ptr = s + 1;
+        state.ptr = s;
     return ok;
 }
 
@@ -315,8 +368,8 @@ bool Parser::_parseIdentList()
 bool Parser::_skipSpace(bool require)
 {
     const char *s = state.ptr;
-    char c;
-    while((c = *s++) && (c == ' ' || c == '\t')) {}
+    for(char c; (c = *s) && (c == ' ' || c == '\t'); )
+        ++s;
     bool skipped = s != state.ptr;
     state.ptr = s;
     return !require || skipped;
@@ -336,7 +389,8 @@ bool Parser::_eat(char c)
 bool Parser::_parseSelection()
 {
     ParserTop top(*this);
-    return _parseLookup(false) && _skipSpace() && _parseOp() && _skipSpace() && _parseValue() && top.accept();
+    // FIXME: parsing the lookup here does not stop at spaces! mandate wrapping it into '' if that is needed?
+    return  _skipSpace() && (_parseIdent() || _parseLookup(false)) && _skipSpace() && _parseOp() && _skipSpace() && _parseValue() && _skipSpace() && top.accept();
 }
 
 // primitive comparisons
@@ -345,6 +399,9 @@ enum OpType
     OP_EQ,
     OP_LT,
     OP_GT,
+    OP_CONTAINS,
+    OP_STARTSWITH,
+    OP_ENDSWITH,
 };
 
 enum { MAX_OP_LEN = 2 };
@@ -352,17 +409,23 @@ struct OpEntry
 {
     const char text[MAX_OP_LEN + 1]; // + \0
     OpType op;
-    int invert;
+    int xor;
 };
 
+// need to check the longer ones first so that there's no collision (ie. checking < first and then returning, even though it was actually <=)
 static const OpEntry ops[] =
 {
-    { "=",  OP_EQ, 0},
+    { "==",  OP_EQ, 0 },
+    { "=",  OP_EQ, 0 },
     { "!=", OP_EQ, 1 },
-    { "<",  OP_LT, 0 },
+    { "<>", OP_EQ, 1 }, // eh why not
     { ">=", OP_LT, 1 },
-    { ">",  OP_GT, 0 },
     { "<=", OP_GT, 1 },
+    { "<",  OP_LT, 0 },
+    { ">",  OP_GT, 0 },
+    { "<?",  OP_STARTSWITH, 0 },
+    { ">?",  OP_ENDSWITH, 0 },
+    { "??",  OP_CONTAINS, 0 },
 };
 
 bool Parser::_parseOp()
@@ -371,19 +434,12 @@ bool Parser::_parseOp()
     for(size_t i = 0; i < Countof(ops); ++i)
     {
         const char *os = ops[i].text;
-        char c;
-        for(unsigned k = 0 ;; ++k)
+        if(size_t n = _parseVerbatim(os))
         {
-            char c = *os++;
-            if(!c) // got it!
-            {
-                // TODO: emit
-                state.ptr = s + k - 1;
-                return true;
-            }
-            if(s[k] != c)
-                break; // it's not this op, check the next
+            // TODO: emit op
+            return true;
         }
+            
     }
     return false;
 }

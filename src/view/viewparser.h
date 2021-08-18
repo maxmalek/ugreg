@@ -2,3 +2,4 @@
 
 #include "variant.h"
 
+bool parseView(const char *s);
