@@ -11,10 +11,14 @@ struct TestEntry
 static const TestEntry tests[] =
 {
     { "/hello/world", true },
+    { "[name='test']", true },
     { "/hello/world[name='test']", true },
     { "/hello/world[name = 'test']", true },
-    { "/hello/world[val=5]", true },
+    { "/hello/world[val=5]/", true },
     { "/hello/world[pi=3.1415]", true },
+    { "/hello/world[nope=null]", true },
+    { "/hello/world[s ?> '>']", true },
+    { "/hello/world[s !?? 'secret']", true },
     { "/hello/world[nope=null]", true },
     //{ "/hello/world[/sub/key=42]", true }, // probably still broken
     { "/rooms[name=$Q]/id", true },

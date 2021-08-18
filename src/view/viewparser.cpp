@@ -195,12 +195,12 @@ bool Parser::_parseStr(Var& v)
 
     const char * const begin = s;
     bool esc = false;
-    for(char c; (c = *s++); ++s)
+    for(char c; (c = *s); ++s)
     {
         if(c == '\'' && !esc)
         {
-            v.setStr(mem, state.ptr, s - state.ptr);
-            state.ptr = s;
+            v.setStr(mem, state.ptr, s - state.ptr - 1);
+            state.ptr = s + 1;
             return true;
         }
 
@@ -228,7 +228,7 @@ size_t Parser::_parseVerbatim(const char *in)
             return k;
         }
         if (s[k] != c)
-            break; // it's not this op, check the next
+            break;
     }
     return 0;
 }
@@ -327,11 +327,16 @@ bool Parser::_parseSimpleEval()
     return _parseIdent();
 }
 
+// {ident}
 // {ident followed by modifiers}
+// {/lookup/somewhere}
+// {/{lookup/somewhere} followed by modifiers} -- in case the lookup contains spaces // TODO
 bool Parser::_parseExtendedEval()
 {
     ParserTop top(*this);
-    return _eat('{') && _skipSpace() && _parseLookup() && _skipSpace() && _eat('}') && top.accept();
+    if(_eat('{') && _skipSpace() && (_parseIdent() || _parseLookup()))
+        while(_skipSpace() && _parseIdent()) {}
+    return _skipSpace() && _eat('}') && top.accept();
 }
 
 bool Parser::_parseIdent()
@@ -413,31 +418,37 @@ struct OpEntry
 };
 
 // need to check the longer ones first so that there's no collision (ie. checking < first and then returning, even though it was actually <=)
+// negation is handled in _parseOp()
 static const OpEntry ops[] =
 {
+    // anything
     { "==",  OP_EQ, 0 },
     { "=",  OP_EQ, 0 },
-    { "!=", OP_EQ, 1 },
     { "<>", OP_EQ, 1 }, // eh why not
+
+    // numeric (or lexical check for strings)
     { ">=", OP_LT, 1 },
     { "<=", OP_GT, 1 },
     { "<",  OP_LT, 0 },
     { ">",  OP_GT, 0 },
-    { "<?",  OP_STARTSWITH, 0 },
-    { ">?",  OP_ENDSWITH, 0 },
+
+    // substring
     { "??",  OP_CONTAINS, 0 },
+    { "?<",  OP_STARTSWITH, 0 },
+    { "?>",  OP_ENDSWITH, 0 },
 };
 
 bool Parser::_parseOp()
 {
-    const char * const s = state.ptr;
+    ParserTop top(*this);
+    unsigned xor = _eat('!'); // universal negation -- just stick ! in front of it
     for(size_t i = 0; i < Countof(ops); ++i)
     {
         const char *os = ops[i].text;
         if(size_t n = _parseVerbatim(os))
         {
             // TODO: emit op
-            return true;
+            return top.accept();
         }
             
     }
