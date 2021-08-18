@@ -90,3 +90,5 @@ void writeJson_T(Output& out, const VarCRef src, bool pretty)
 // Does not attempt to check stream validity. If you need to get out, throw an exception
 // in the stream's write function
 void writeJson(BufferedWriteStream& out, const VarCRef src, bool pretty);
+
+std::string dumpjson(VarCRef ref, bool pretty = false);

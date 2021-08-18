@@ -1,0 +1,24 @@
+set(src
+    types.h
+    datatree.cpp
+    datatree.h
+    util.cpp
+    util.h
+    variant.cpp
+    variant.h
+    json_in.cpp
+    json_in.h
+    json_out.cpp
+    json_out.h
+    accessor.cpp
+    accessor.h
+    treeiter.h
+    jsonstreamwrapper.cpp
+    jsonstreamwrapper.h
+    treemem.cpp
+    treemem.h
+    mem.h
+    refcounted.h
+)
+
+add_library(base ${src})

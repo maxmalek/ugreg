@@ -19,6 +19,9 @@ bool ServerConfig::apply(VarCRef root)
 {
     listen.clear();
 
+    if(!root)
+        return false;
+
     if(VarCRef L = root.lookup("listen"))
         for(size_t i = 0; i < L.size(); ++i)
             if(VarCRef e = L.at(i))

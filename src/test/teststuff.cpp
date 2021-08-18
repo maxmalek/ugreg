@@ -9,14 +9,6 @@
 
 // Misc things to test for functionality, breakage, and to make sure everything compiles as it should
 
-std::string dumpjson(VarCRef ref, bool pretty)
-{
-    rapidjson::StringBuffer sb;
-    writeJson_T(sb, ref, pretty);
-    sb.Flush();
-    return sb.GetString();
-}
-
 static void jsonout(VarCRef ref)
 {
     puts(dumpjson(ref).c_str());
