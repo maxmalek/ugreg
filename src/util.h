@@ -2,6 +2,14 @@
 
 #include "types.h"
 
+namespace detail
+{
+    template <typename T, size_t N>
+    char(&_ArraySizeHelper(T(&a)[N]))[N];
+}
+#define Countof(a) (sizeof(detail::_ArraySizeHelper(a)))
+
+
 struct NumConvertResult
 {
     size_t used; // number of chars processed
@@ -14,6 +22,7 @@ struct NumConvertResult
 // for not necessarily \0-terminated strings. always writes dst.
 // pass maxlen == -1 to stop at \0, otherwise after maxlen chars.
 NumConvertResult strtosizeNN(size_t *dst, const char *s, size_t maxlen = -1);
+NumConvertResult strtou64NN(u64* dst, const char* s, size_t maxlen = -1);
 
 // converts a time value to milliseconds and stores in dst.
 // accepted suffixes: d, h, m, s, ms

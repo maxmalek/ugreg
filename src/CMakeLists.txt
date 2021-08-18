@@ -42,6 +42,8 @@ set(src
     request.h
     zstream.cpp
     zstream.h
+    viewengine.cpp
+    viewengine.h
 )
 
 add_executable(ugreg ${src})

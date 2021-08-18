@@ -31,17 +31,18 @@ inline static bool mul_check_overflow(T* res, T a, T b)
 #endif
 }
 
-NumConvertResult strtosizeNN(size_t* dst, const char* s, size_t len)
+template<typename T>
+static NumConvertResult strtounum_T_NN(T* dst, const char* s, size_t len)
 {
     NumConvertResult res { 0, false };
-    size_t k = 0;
+    T k = 0;
     if(len) do
     {
         unsigned char c = s[res.used++]; // increment here...
         if(c >= '0' && c <= '9')
         {
-            res.overflow |= mul_check_overflow<size_t>(&k, k, 10);
-            res.overflow |= add_check_overflow<size_t>(&k, k, c - '0');
+            res.overflow |= mul_check_overflow<T>(&k, k, 10);
+            res.overflow |= add_check_overflow<T>(&k, k, c - '0');
         }
         else // not a numeric char
         {
@@ -54,6 +55,17 @@ NumConvertResult strtosizeNN(size_t* dst, const char* s, size_t len)
     *dst = k;
     return res;
 }
+
+NumConvertResult strtosizeNN(size_t* dst, const char* s, size_t len)
+{
+    return strtounum_T_NN<size_t>(dst, s, len);
+}
+
+NumConvertResult strtou64NN(u64* dst, const char* s, size_t len)
+{
+    return strtounum_T_NN<u64>(dst, s, len);
+}
+
 
 enum TimeInMS : u64
 {
