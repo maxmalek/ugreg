@@ -374,7 +374,7 @@ static const char *s_typeNames[] =
     "int",
     "uint",
     "float",
-    "ptr"
+    "ptr",
     "string",
     "array",
     "map"
