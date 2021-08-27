@@ -239,7 +239,7 @@ const s64 *Var::asInt() const
     switch (meta)
     {
     case TYPE_UINT:
-        if (u.ui > std::numeric_limits<s64>::max())
+        if (u.ui > u64(std::numeric_limits<s64>::max()))
             break;
         // fall through
         case TYPE_INT:
@@ -302,7 +302,7 @@ const char* Var::asCString(const TreeMem& mem) const
 }
 
 const Var *Var::at(size_t idx) const
-{ 
+{
     return _topbits() == BITS_ARRAY && idx < _size() ? &u.a[idx] : NULL;
 }
 
@@ -707,6 +707,7 @@ _VarMap::_VarMap(TreeMem& mem)
 _VarMap::_VarMap(_VarMap&& o)
     : _storage(std::move(o._storage))
     , _expiry(o._expiry)
+    , _mymem(o._mymem)
 {
     o._expiry = NULL;
 }

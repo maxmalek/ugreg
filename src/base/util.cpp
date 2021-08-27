@@ -198,7 +198,7 @@ char* sizetostr_unsafe(char* buf, size_t bufsz, size_t num)
         size_t rem = num - (div * 10);
         assert(rem < 10);
         num = div;
-        *p-- = '0' + rem;
+        *p-- = '0' + (char)rem;
     }
     while(num);
     return p+1;

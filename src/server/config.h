@@ -17,11 +17,11 @@ struct ServerConfig
 
    // --- begin fields ---
     std::vector<Listen> listen;
-    unsigned listen_threads;
+    u32 listen_threads;
     bool expose_debug_apis;
     struct
     {
-        unsigned rows, columns;
+        u32 rows, columns;
         u64 maxtime;
     } reply_cache;
     // --- end fields ---
@@ -29,5 +29,5 @@ struct ServerConfig
 
     ServerConfig();
 
-    bool apply(VarCRef root); // Sets values to above fields and returns true if the config looks good
+    bool apply(VarCRef root); // Apply values from root to above fields and returns true if the config looks good
 };

@@ -50,8 +50,11 @@ static void bail(const char *a, const char *b)
 static bool loadcfg(DataTree& base, const char *fn)
 {
     FILE* f = fopen(fn, "rb");
-    if(!f)
+    if (!f)
+    {
         bail("Failed to open config file: ", fn);
+        return false;
+    }
 
     DataTree tree;
     char buf[4096];
@@ -85,10 +88,6 @@ bool doargs(DataTree& tree, int argc, char **argv)
 
 int main(int argc, char** argv)
 {
-#ifdef _DEBUG
-    teststuff();
-#endif
-
     handlesigs(sigquit);
 
     DataTree cfgtree;
@@ -117,8 +116,8 @@ int main(int argc, char** argv)
     DataTree tree;
     {
         //loadAndMergeJsonFromFile(&tree, "citylots.json", "/citylots", MERGE_FLAT);
-        loadAndMergeJsonFromFile(&tree, "mock_users.json", "/users", MERGE_FLAT);
-        loadAndMergeJsonFromFile(&tree, "mock_rooms.json", "/rooms", MERGE_FLAT);
+        loadAndMergeJsonFromFile(&tree, "test/mock_users.json", "/users", MERGE_FLAT);
+        loadAndMergeJsonFromFile(&tree, "test/mock_rooms.json", "/rooms", MERGE_FLAT);
         /*{
             AsyncLaunchConfig cfg;
             cfg.args.push_back("./twitter.sh");

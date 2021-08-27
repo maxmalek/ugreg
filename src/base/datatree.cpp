@@ -108,7 +108,6 @@ VarRef DataTree::subtree(const char* path, bool create)
                 // FIXME: correctly decode JSON pointers here (escapes and #)
                 // see https://rapidjson.org/md_doc_pointer.html#JsonPointer
                 // and https://datatracker.ietf.org/doc/html/rfc6901
-ismap:
                 const char* beg = path;
                 for(;; path++)
                 {
@@ -146,6 +145,5 @@ ismap:
     }
     while(p && *path);
 
-out:
     return VarRef(*this, p);
 }

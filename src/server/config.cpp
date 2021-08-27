@@ -43,17 +43,17 @@ bool ServerConfig::apply(VarCRef root)
 
     if(VarCRef xthreads = root.lookup("listen_threads"))
         if(const u64 *pth = xthreads.asUint())
-            listen_threads = *pth;
+            listen_threads = (unsigned)*pth;
 
     if(VarCRef xc = root.lookup("reply_cache"))
     {
         if(VarCRef x = xc.lookup("rows"))
             if(const u64 *p = x.asUint())
-                reply_cache.rows = *p;
+                reply_cache.rows = (unsigned)*p;
 
         if (VarCRef x = xc.lookup("columns"))
             if (const u64* p = x.asUint())
-                reply_cache.columns = *p;
+                reply_cache.columns = (unsigned)*p;
 
         if (VarCRef x = xc.lookup("maxtime"))
             if(!strToDurationMS_Safe(&reply_cache.maxtime, x.asCString()))
