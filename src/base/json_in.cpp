@@ -36,7 +36,7 @@ struct JsonLoader
     struct Frame
     {
         Frame(const Frame&) = delete; // Because Var isn't default-copyable either
-        Frame(Frame&& o)
+        Frame(Frame&& o) noexcept
             : v(std::move(o.v)), m(o.m), vals(std::move(o.vals)), lastkey(o.lastkey), _mem(o._mem)
         {
             o.m = 0;

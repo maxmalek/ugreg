@@ -120,7 +120,7 @@ public:
         StrRef s;   // when string
         Var *a;     // when array; entries in a[0..N), N is the lower bits of meta
         Map *m;
-        
+
         s64 i;      // when signed integer type
         u64 ui;     // ... or unsigned
         double f;   // when float type
@@ -247,7 +247,7 @@ public:
 
     void destroy(TreeMem& mem); // deletes self
     _VarMap(TreeMem& mem);
-    _VarMap(_VarMap&&);
+    _VarMap(_VarMap&&) noexcept;
 
     void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags);
     void clear(TreeMem& mem);
@@ -313,7 +313,7 @@ public:
 
     inline operator Var*()              { return v; }
     inline operator const Var* () const { return v; }
-    
+
     Var::Type type() const { return v->type(); }
     bool isNull() const { return v->isNull(); }
     const s64* asInt() const { return v->asInt(); }

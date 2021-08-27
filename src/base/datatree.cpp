@@ -102,7 +102,7 @@ VarRef DataTree::subtree(const char* path, bool create)
                 }
                 // it's not a map, make it one
                 p->makeMap(*this);
-                // fall through
+                [[fallthrough]];
             case Var::TYPE_MAP:
             {
                 // FIXME: correctly decode JSON pointers here (escapes and #)

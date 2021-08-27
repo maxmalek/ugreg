@@ -55,7 +55,7 @@ bool WebServer::start(const ServerConfig& cfg)
     }
     std::string threadsbuf = std::to_string(cfg.listen_threads);
     printf("WS: Using %u request worker threads\n", cfg.listen_threads);
-    
+
 
     // via https://github.com/civetweb/civetweb/blob/master/docs/UserManual.md
     // Everything is handled programmatically, so there is no document_root

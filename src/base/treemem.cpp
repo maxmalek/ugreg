@@ -54,7 +54,7 @@ size_t TreeMem::getL(StrRef s) const
 StrRef TreeMem::lookup(const char* s, size_t len) const
 {
     assert(s);
-    return *s ? strpool_lookup(&_sp, s, len) : EMPTY_REF;
+    return *s ? strpool_lookup(&_sp, s, len) : EMPTY_REF; // unfortunately strpool insists on using int for length...
 }
 
 StrRef TreeMem::putNoRefcount(const char* s, size_t len)
@@ -93,13 +93,13 @@ void TreeMem::freeS(StrRef s)
         strpool_discard(&_sp, s);
 }
 
-char* TreeMem::collate(size_t *n) const // TESTING ONLY, LEAKS LIKE FUCK
+/*char* TreeMem::collate(size_t *n) const // TESTING ONLY, LEAKS LIKE FUCK
 {
     int i = 0;
     char *c = strpool_collate(&_sp, &i);
     *n = i;
     return c;
-}
+}*/
 
 void* TreeMem::Alloc(size_t sz)
 {

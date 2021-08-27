@@ -170,7 +170,7 @@ bool Parser::_parseNum(Var& v)
     u64 i;
 
     bool neg = _eat('-');
-    
+
     if(!_parseDecimal(i))
         return false;
 
@@ -311,7 +311,7 @@ bool Parser::_parseKey(bool ignoreStartSlash)
         ++begin;
     else if(!ignoreStartSlash)
         return false;
-    
+
     const char *s = begin;
     for(char c; (c = *s) && c != '/' && c != '['; )
         ++s;
@@ -463,7 +463,7 @@ bool Parser::_parseSimpleSelection()
                 return false;
             exec.cmds.push_back(op);
         }*/
-       
+
     }
     id.clear(mem);
     lit.clear(mem);
@@ -497,7 +497,7 @@ unsigned Parser::_addLiteral(Var&& lit)
 {
     size_t sz = exec.literals.size();
     exec.literals.push_back(std::move(lit));
-    return sz;
+    return (unsigned)sz;
 }
 
 unsigned Parser::_emitPushVarRef(Var&& v)

@@ -46,7 +46,7 @@ public:
     // decrease refcount and drop if no longer referenced
     void freeS(StrRef s);
 
-    char *collate(size_t *n) const;
+    //char *collate(size_t *n) const;
 
     // --- block allocator -- (lowercase not to conflict with some debug #defines or whatever)
     void *Alloc(size_t sz);

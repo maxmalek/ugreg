@@ -1,5 +1,10 @@
 #pragma once
 
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#pragma warning(disable: 26812) // The enum type ... is unscoped. Prefer 'enum class' over 'enum' (Enum.3).
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <limits.h>

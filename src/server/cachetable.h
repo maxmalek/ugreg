@@ -69,9 +69,9 @@ public:
     }
 };
 
-// (slots x cols) grid. Slot is selected by hashing, P is linearly probed.
-// So we want to keep P small (<= 32 entries; 8 should be a good value).
-// Note that the cache table is deisnged to be hammered by many threads at the same time for reading and writing.
+// (slots x cols) grid. Slot is selected by hashing, cols is linearly probed.
+// So we want to keep cols small (<= 32 entries; 8 should be a good value).
+// Note that the cache table is designed to be hammered by many threads at the same time for reading and writing.
 // Entries inside are wrapped in a CountedPtr<V> for exactly this reason:
 // This makes sure that one thread can get a value, unlock, the next thread deletes that value,
 // but the first one still has a counted ref to the object while it is in use.

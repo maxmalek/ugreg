@@ -72,6 +72,7 @@ static void _DeleteExpiry(TreeMem& mem, VarExpiry *ex)
 
 Var::Var()
     : meta(TYPE_NULL)
+    // .u does not need to be inited here
 {
     static_assert((size_t(1) << (SHIFT_TOPBIT - 1u)) - 1u == SIZE_MASK,
         "SIZE_MASK might be weird, check this");
@@ -241,7 +242,7 @@ const s64 *Var::asInt() const
     case TYPE_UINT:
         if (u.ui > u64(std::numeric_limits<s64>::max()))
             break;
-        // fall through
+        [[fallthrough]];
         case TYPE_INT:
             return &u.i;
     }
@@ -255,7 +256,7 @@ const u64 *Var::asUint() const
         case TYPE_INT:
             if(u.i < 0)
                 break;
-        // fall through
+        [[fallthrough]];
         case TYPE_UINT:
             return &u.ui;
     }
@@ -606,7 +607,7 @@ Var::CompareResult Var::compare(CompareMode cmp, const TreeMem& mymem, const Var
     }
 
     // string comparisons
-    if(myt == TYPE_STRING && myt == TYPE_STRING)
+    if(myt == TYPE_STRING && ot == TYPE_STRING)
     {
         const PoolStr pa = asString(mymem);
         const PoolStr pb = o.asString(othermem);
@@ -704,7 +705,7 @@ _VarMap::_VarMap(TreeMem& mem)
 {
 }
 
-_VarMap::_VarMap(_VarMap&& o)
+_VarMap::_VarMap(_VarMap&& o) noexcept
     : _storage(std::move(o._storage))
     , _expiry(o._expiry)
     , _mymem(o._mymem)
@@ -941,6 +942,7 @@ VarExpiry* VarExpiry::clone(TreeMem& mem)
 }
 
 VarExpiry::VarExpiry()
+    : ts(0)
 {
 }
 

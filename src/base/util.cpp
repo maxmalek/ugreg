@@ -120,7 +120,7 @@ NumConvertResult strToDurationMS_NN(u64* dst, const char* s, size_t maxlen)
                 case 'm': unit = (maxlen > 1 && s[1] == 's') ? (((void)(++skip)),DUR_MS) : DUR_M; break;
                 case 's': unit = DUR_S; break;
                 case 'd': unit = DUR_D; break;
-                default: s = beg; // fall through
+                default: s = beg; [[fallthrough]];
                 case 0: goto out; // reset back to beg in case parsing num+suffix failed
             }
             maxlen -= skip;

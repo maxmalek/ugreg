@@ -142,7 +142,8 @@ static int sendToSocketNoCache(mg_connection *conn, VarCRef sub, const Request& 
     }
     catch (ThrowingSocketWriteStream::WriteFail ex)
     {
-        //printf("[%s] Wrote %u bytes to socket, then failed (client aborted?)\n", out.c_str(), (unsigned)ex.written);
+        const char* ip = mg_get_request_info(conn)->remote_addr;
+        printf("WS: [%s] Wrote %u bytes to socket, then failed (client aborted?)\n", ip, (unsigned)ex.written);
     }
     catch (...)
     {
