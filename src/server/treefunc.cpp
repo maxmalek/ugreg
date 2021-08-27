@@ -72,7 +72,7 @@ static TreeMergeResult _loadAndMergeJsonFromProcess(DataTree *dst, AsyncLaunchCo
         delete t;
     }
     else
-        printf("Failed to load json from proc [%s] (bad json?)", cfg.args[0].c_str());
+        printf("Failed to load json from proc [%s] (bad json?)\n", cfg.args[0].c_str());
 
     printf("End loading proc [%s] to %s\n", cfg.args[0].c_str(), where.c_str());
 

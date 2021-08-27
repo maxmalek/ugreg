@@ -29,8 +29,6 @@ int TreeHandler::Handler(mg_connection* conn, void* self)
     return static_cast<TreeHandler*>(self)->onRequest(conn);
 }
 
-// TODO: clean this up. add changed transfer encoding and Content-Length: manually if required
-
 static const char s_defaultChunkedOK[] =
 "HTTP/1.1 200 OK\r\n"
 "Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
@@ -72,7 +70,7 @@ static void _finalizeDeflateRequest(BufferedWriteStream& ws, VarCRef sub, const 
 {
     char zbuf[8 * 1024];
     DeflateWriteStream z(ws, 1, zbuf, sizeof(zbuf)); // TODO: use compression level from config
-    return writeToStream(z, sub, r);
+    writeToStream(z, sub, r);
 }
 
 struct CachedRequestOutHandler

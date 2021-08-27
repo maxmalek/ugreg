@@ -74,6 +74,7 @@ public:
         // keep in sync with c_typeNames in the .cpp file!
     };
 
+    // Also used as comparison operators in the VM
     enum CompareMode
     {
         CMP_EQ, // generic equality (no casting). recurses into arrays/maps. will never return CMP_RES_NA.
@@ -83,6 +84,7 @@ public:
         CMP_CONTAINS,
         CMP_STARTSWITH,
         CMP_ENDSWITH,
+        // keep in sync with s_operatorNames[] in viewexec.cpp
     };
 
     enum CompareResult
@@ -372,8 +374,6 @@ public:
 
     inline operator const Var* () const { return v; }
 
-    bool operator==(VarCRef& o);
-
     Var::Type type() const { return v->type(); }
     size_t size() const { return v->size(); }
     bool isNull() const { return v->isNull(); }
@@ -386,5 +386,7 @@ public:
 
     VarCRef at(size_t idx) const;          // does not convert to array
     VarCRef lookup(const char *key) const; // does not convert to map
+
+    Var::CompareResult compare(Var::CompareMode cmp, const VarCRef& o);
 };
 

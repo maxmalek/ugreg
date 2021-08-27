@@ -708,7 +708,9 @@ _VarMap::_VarMap(TreeMem& mem)
 _VarMap::_VarMap(_VarMap&& o) noexcept
     : _storage(std::move(o._storage))
     , _expiry(o._expiry)
+#ifdef _DEBUG
     , _mymem(o._mymem)
+#endif
 {
     o._expiry = NULL;
 }
@@ -932,6 +934,11 @@ VarCRef VarCRef::at(size_t idx) const
 VarCRef VarCRef::lookup(const char* key) const
 {
     return VarCRef(*mem, v->lookup(mem->lookup(key, strlen(key))));
+}
+
+Var::CompareResult VarCRef::compare(Var::CompareMode cmp, const VarCRef& o)
+{
+    return v->compare(cmp, *mem, *o.v, *o.mem);
 }
 
 VarExpiry* VarExpiry::clone(TreeMem& mem)
