@@ -14,7 +14,7 @@ enum { MAX_OP_LEN = 2 };
 struct OpEntry
 {
     const char text[MAX_OP_LEN + 1]; // + \0
-    OpType op;
+    Var::CompareMode op;
     unsigned invert;
 };
 
@@ -23,20 +23,20 @@ struct OpEntry
 static const OpEntry ops[] =
 {
     // anything
-    { "==",  OP_EQ, 0 },
-    { "=",  OP_EQ, 0 },
-    { "<>", OP_EQ, 1 }, // eh why not
+    { "==", Var::CMP_EQ, 0 },
+    { "=",  Var::CMP_EQ, 0 },
+    { "<>", Var::CMP_EQ, 1 }, // eh why not
 
     // numeric (or lexical check for strings)
-    { ">=", OP_LT, 1 },
-    { "<=", OP_GT, 1 },
-    { "<",  OP_LT, 0 },
-    { ">",  OP_GT, 0 },
+    { ">=", Var::CMP_LT, 1 },
+    { "<=", Var::CMP_GT, 1 },
+    { "<",  Var::CMP_LT, 0 },
+    { ">",  Var::CMP_GT, 0 },
 
     // substring
-    { "??",  OP_CONTAINS, 0 },
-    { "?<",  OP_STARTSWITH, 0 },
-    { "?>",  OP_ENDSWITH, 0 },
+    { "??",  Var::CMP_CONTAINS, 0 },
+    { "?<",  Var::CMP_STARTSWITH, 0 },
+    { "?>",  Var::CMP_ENDSWITH, 0 },
 };
 
 struct ParserState
@@ -490,7 +490,7 @@ bool Parser::_parseOp(Cmd& cm)
         const char *os = ops[i].text;
         if(size_t n = _parseVerbatim(os))
         {
-            cm.type = CM_OPERATOR;
+            cm.type = CM_COMPARE;
             cm.param = (ops[i].op << 1) | (invert ^ ops[i].invert);
             return top.accept();
         }

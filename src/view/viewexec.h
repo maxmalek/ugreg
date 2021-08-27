@@ -20,25 +20,12 @@ struct StackFrame
 
 typedef void (*TransformFunc)(TreeMem& mem, StackFrame& newframe, const StackFrame& oldframe);
 
-// primitive comparisons
-enum OpType
-{
-    OP_EQ,
-    OP_LT,
-    OP_GT,
-    OP_CONTAINS,
-    OP_STARTSWITH,
-    OP_ENDSWITH,
-
-    _OP_ARRAYSIZE
-};
-
 enum CmdType
 {
     CM_GETKEY,     // param = index into literals table (to look up name of key). replace top with top[key].
     CM_GETVAR,     // param = index into literals table (to look up variable name). push value of variable.
     CM_TRANSFORM,  // param = function ID. transform top in place.
-    CM_OPERATOR,   // param = (OpType << 1) | invert. pop A, B; push op(A, B)
+    CM_COMPARE,    // param = (OpType << 1) | invert. pop A, B; push op(A, B)
     CM_LITERAL,    // param = index intro literals table. push literal on top of the stack
     CM_DUP,        // copy stack frame contents at stack[stack.size() - param - 1] on top as new frame
     CM_CHECKKEY,   // shortcut. key can be a json pointer (if it starts with '/', or just a regular key name)

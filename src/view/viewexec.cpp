@@ -123,12 +123,13 @@ void VM::cmd_GetKey(unsigned param)
     for (size_t i = 0; i < N; ++i)
         if(const Var *sub = ain[i].lookup(ps.s)) // NULL if not map
         {
-            aout->v = sub;
+            aout->v = sub; // we're just going deeper, the mem stays the same
             ++aout;
         }
     top.refs.resize(aout - ain);
 }
 
+// keep elements in top only when a subkey has operator relation to a literal
 void VM::cmd_CheckKey(unsigned param, unsigned lit)
 {
     unsigned invert = param & 1;
@@ -138,12 +139,24 @@ void VM::cmd_CheckKey(unsigned param, unsigned lit)
     StackFrame& top = _topframe();
     size_t wpos = 0;
     const size_t N = top.refs.size();
-    const Var& val = literals[lit];
+    VarCRef checklit(*this, &literals[lit]);
+    Var::CompareMode cmp = Var::CompareMode(op);
 
-    assert(false); // TODO WRITE ME
+    VarCRef* const ain = top.refs.data();
+    VarCRef* aout = ain;
+
     for(size_t i = 0; i < N; ++i)
     {
+        Var::CompareResult res = ain[i].compare(cmp, checklit);
+        // Can't be compared, just skip it
+        if (res == Var::CMP_RES_NA)
+            continue;
+
+        unsigned success = (res & 1) ^ invert;
+        if (success)
+            *aout++ = ain[i];
     }
+    top.refs.resize(aout - ain);
 }
 
 void VM::push(VarCRef v)
@@ -186,7 +199,7 @@ bool VM::exec(size_t ip)
 
             case CM_GETVAR: // TODO WRITE ME
             case CM_TRANSFORM:
-            case CM_OPERATOR:
+            case CM_COMPARE:
                 assert(false);
         }
     }
@@ -238,7 +251,7 @@ static const char *s_opcodeNames[] =
     "GETKEY",
     "GETVAR",
     "TRANSFORM",
-    "OPERATOR",
+    "COMPARE",
     "LITERAL",
     "DUP",
     "CHECKKEY",
@@ -255,7 +268,7 @@ static const char *s_operatorNames[] =
     "STARTSWITH",
     "ENDSWITH",
 };
-static_assert(Countof(s_operatorNames) == _OP_ARRAYSIZE, "operator enum vs name table mismatch");
+//static_assert(Countof(s_operatorNames) == _OP_ARRAYSIZE, "operator enum vs name table mismatch");
 
 
 static void oprToStr(std::ostringstream& os, unsigned opparam)
@@ -293,7 +306,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
             case CM_TRANSFORM:
                 os << " (func #" << c.param << ")";
                 break;
-            case CM_OPERATOR:
+            case CM_COMPARE:
                 os << ' ';
                 oprToStr(os, c.param);
                 break;
