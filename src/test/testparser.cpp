@@ -34,6 +34,8 @@ static const TestEntry tests[] =
     //{ "${P/first_name} ${P/last_name}", true }, // not a query, doesn't accept this yet
 };
 
+// TODO: way to specify key exists, key not exists
+
 void testload(DataTree& tree)
 {
 char json[] = R""(

@@ -142,15 +142,21 @@ void VM::cmd_CheckKey(unsigned param, unsigned lit)
     VarCRef checklit(*this, &literals[lit]);
     Var::CompareMode cmp = Var::CompareMode(op);
 
+    const char* keystr = literals[key].asCString(*this);
     VarCRef* const ain = top.refs.data();
     VarCRef* aout = ain;
 
+    // FIXME: when there's an array on top, apply to all values
+
     for(size_t i = 0; i < N; ++i)
     {
-        Var::CompareResult res = ain[i].compare(cmp, checklit);
-        // Can't be compared, just skip it
+        VarCRef sub = ain[i].lookup(keystr);
+        if (!sub)
+            continue; // Key doesn't exist, skip
+
+        Var::CompareResult res = sub.compare(cmp, checklit);
         if (res == Var::CMP_RES_NA)
-            continue;
+            continue; // Can't be compared, skip
 
         unsigned success = (res & 1) ^ invert;
         if (success)
