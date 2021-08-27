@@ -23,18 +23,22 @@ void DeflateWriteStream::finish()
 {
     z.next_in = NULL;
     z.avail_in = 0;
-    packloop(MZ_FINISH);
+    int status;
+    do
+        status = packloop(MZ_FINISH);
+    while (status != MZ_STREAM_END); // make sure everything is flushed
 }
 
-void DeflateWriteStream::packloop(int flush)
+int DeflateWriteStream::packloop(int flush)
 {
+    int status;
     do
     {
         const BufInfo b = _sm.getBuffer();
         z.next_out = (unsigned char*)b.buf;
         z.avail_out = b.remain;
 
-        int status = mz_deflate(&z, flush);
+        status = mz_deflate(&z, flush);
         assert(status == MZ_OK || (flush == MZ_FINISH && status == MZ_STREAM_END));
 
         // The packer may or may not output bytes. If it does, forward them to the underlying stream
@@ -42,6 +46,7 @@ void DeflateWriteStream::packloop(int flush)
             _sm.advanceBuffer(packed);
     }
     while (z.avail_in);
+    return status;
 }
 
 size_t DeflateWriteStream::_Write(const void* src, size_t bytes, BufferedWriteStream* self)

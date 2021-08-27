@@ -12,7 +12,7 @@ public:
 
     void finish();
 private:
-    void packloop(int flush);
+    int packloop(int flush);
     static size_t _Write(const void* src, size_t bytes, BufferedWriteStream* self);
     mz_stream z;
     BufferedWriteStream& _sm;
