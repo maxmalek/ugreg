@@ -2,6 +2,7 @@
 #include <chrono>
 #include <assert.h>
 #include <thread>
+#include "safe_numerics.h"
 
 // Clang has this, other compilers may or may not
 #ifndef __has_builtin
@@ -64,6 +65,26 @@ NumConvertResult strtosizeNN(size_t* dst, const char* s, size_t len)
 NumConvertResult strtou64NN(u64* dst, const char* s, size_t len)
 {
     return strtounum_T_NN<u64>(dst, s, len);
+}
+
+NumConvertResult strtoi64NN(s64* dst, const char* s, size_t len)
+{
+    u64 tmp;
+    const bool neg = len && *s == '-';
+    s += neg;
+    len -= neg;
+    NumConvertResult res = strtounum_T_NN<u64>(&tmp, s, len);
+    if(res.ok())
+    {
+        if(isValidNumericCast<s64>(tmp))
+        {
+            res.used += neg;
+            *dst = neg ? -s64(tmp) : s64(tmp);
+        }
+        else
+            res.overflow = true;
+    }
+    return res;
 }
 
 

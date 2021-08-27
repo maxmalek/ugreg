@@ -3,10 +3,12 @@
 #include <utility>
 #include <limits>
 #include <string.h>
+#include <float.h>
 
 #include "variant.h"
 #include "treemem.h"
 #include "mem.h"
+#include "util.h"
 
 static _VarMap*_NewMap(TreeMem& mem, size_t prealloc)
 {
@@ -309,14 +311,14 @@ Var *Var::at(size_t idx)
     return _topbits() == BITS_ARRAY && idx < _size() ? &u.a[idx] : NULL;
 }
 
-inline Var& Var::operator[](size_t idx)
+Var& Var::operator[](size_t idx)
 {
     assert(_topbits() == BITS_ARRAY);
     assert(idx < _size());
     return u.a[idx];
 }
 
-inline const Var& Var::operator[](size_t idx) const
+const Var& Var::operator[](size_t idx) const
 {
     assert(_topbits() == BITS_ARRAY);
     assert(idx < _size());
@@ -362,6 +364,271 @@ Var::Type Var::type() const
     static const Type types[] = { TYPE_NULL, TYPE_STRING, TYPE_ARRAY, TYPE_MAP }; // first element is never used
     size_t b = _topbits();
     return b ? types[b] : (Type)meta;
+}
+
+static const char *s_typeNames[] =
+{
+    "null",
+    "bool",
+    "int",
+    "uint",
+    "float",
+    "ptr"
+    "string",
+    "array",
+    "map"
+    // keep in sync with enum Type in the .h file!
+};
+
+const char *Var::typestr() const
+{
+    Type t = type();
+    assert(t < Countof(s_typeNames));
+    return s_typeNames[t];
+}
+
+template<int P, typename T, Var::Type t>
+struct TypeHolder
+{
+    typedef typename T type;
+    static const Var::Type enumtype = t;
+    enum { priority = P };
+};
+template<typename T> struct FromCType;
+template<> struct FromCType<std::nullptr_t> : TypeHolder<0, std::nullptr_t, Var::TYPE_NULL> {};
+template<> struct FromCType<bool>           : TypeHolder<1, bool, Var::TYPE_BOOL> {};
+template<> struct FromCType<u64>            : TypeHolder<2, u64, Var::TYPE_UINT> {};
+template<> struct FromCType<s64>            : TypeHolder<3, s64, Var::TYPE_INT> {};
+template<> struct FromCType<double>         : TypeHolder<4, double, Var::TYPE_FLOAT> {};
+
+template<Var::Type t> struct FromEType;
+template<> struct FromEType<Var::TYPE_NULL>  : FromCType<std::nullptr_t> {};
+template<> struct FromEType<Var::TYPE_BOOL>  : FromCType<bool> {};
+template<> struct FromEType<Var::TYPE_UINT>  : FromCType<u64> {};
+template<> struct FromEType<Var::TYPE_INT>   : FromCType<s64> {};
+template<> struct FromEType<Var::TYPE_FLOAT> : FromCType<double> {};
+
+template<typename A, typename B>
+struct LargerOfBoth
+{
+    typedef typename std::conditional<
+        (FromCType<A>::priority > FromCType<B>::priority),
+        A,
+        B
+    >::type type;
+};
+
+template<typename A, typename B>
+struct NumericCompare3
+{
+    inline static int cmp(A a, B b)
+    {
+        return a < b ? -1 : (a == b ? 0 : 1);
+    }
+};
+
+template<>
+struct NumericCompare3<s64, u64>
+{
+    inline static int cmp(s64 a, u64 b)
+    {
+        if(a < 0)
+            return -1; // b is unsigned and can never be greater
+        return NumericCompare3<u64, u64>::cmp(a, b);
+    }
+};
+
+template<typename A, typename B, bool swap>
+struct NumericCompare2 {};
+
+template<typename A, typename B>
+struct NumericCompare2<A, B, false>
+{
+    static_assert(std::is_same<A, typename LargerOfBoth<A, B>::type>::value, "oops");
+    inline static int cmp(A a, B b)
+    {
+        return NumericCompare3<A, B>::cmp(a, b);
+    }
+};
+
+template<typename A, typename B>
+struct NumericCompare2<A, B, true>
+{
+    static int cmp(A a, B b)
+    {
+        return -(NumericCompare2<B, A, false>::cmp(b, a));
+    }
+};
+
+// make it so that A is always the larger type of the two
+template<typename A, typename B>
+struct NumericCompare : NumericCompare2<A, B, (FromCType<A>::priority < FromCType<B>::priority)>
+{
+};
+
+template<typename A, typename B>
+static inline int numericCmpT(A a, B b)
+{
+    return NumericCompare<A, B>::cmp(a, b);
+}
+
+template<typename T>
+struct GetValue
+{};
+
+template<>
+struct GetValue<u64>
+{
+    static u64 get(const Var& v) { return v.u.ui; }
+};
+
+template<>
+struct GetValue<bool>
+{
+    static bool get(const Var& v) { return v.u.ui; }
+};
+
+template<>
+struct GetValue<s64>
+{
+    static s64 get(const Var& v) { return v.u.i; }
+};
+
+template<>
+struct GetValue<double>
+{
+    static double get(const Var& v) { return v.u.f; }
+};
+
+template<Var::Type A, Var::Type B>
+static inline int numericCmp(const Var& a, const Var& b)
+{
+    typedef typename FromEType<A>::type TA;
+    typedef typename FromEType<B>::type TB;
+    return NumericCompare<TA, TB>::cmp(GetValue<TA>::get(a), GetValue<TB>::get(b));
+}
+int Var::numericCompare(const Var& b) const
+{
+    const Var::Type at = type();
+    const Var::Type bt = b.type();
+
+    // Only need to handle mismatching types here, the rest is already handled fine elsehwere
+#define $(A, B) if(at == A && bt == B) return (numericCmp<A, B>(*this, b))
+    $(TYPE_FLOAT, TYPE_INT);
+    $(TYPE_FLOAT, TYPE_UINT);
+    $(TYPE_INT, TYPE_FLOAT);
+    $(TYPE_INT, TYPE_UINT);
+    $(TYPE_UINT, TYPE_INT);
+    $(TYPE_UINT, TYPE_FLOAT);
+#undef $
+
+    assert(false);
+    return 0;
+}
+
+bool Var::equals(const TreeMem& mymem, const Var& o, const TreeMem& othermem) const
+{
+    if(this == &o)
+        return true;
+
+    const Type myt = type();
+    const Type ot = o.type();
+
+    if(myt != ot)
+    {
+        if ((myt == TYPE_INT || myt == TYPE_UINT || myt == TYPE_FLOAT)
+            && (ot == TYPE_INT || ot == TYPE_UINT || ot == TYPE_FLOAT))
+            return numericCompare(o) == 0;
+
+        return false;
+    }
+
+    // type is equal, now check what it is
+    switch(myt)
+    {
+        case TYPE_NULL:
+            return true;
+        case TYPE_INT:
+            return u.i == o.u.i;
+        case TYPE_UINT:
+            return u.ui == o.u.ui;
+        case TYPE_PTR:
+            return u.p == o.u.p;
+        case TYPE_FLOAT:
+            return abs(u.f - o.u.f) < 0.001; // some leeway with precision but this should be close enough, arbitrarily
+        case TYPE_STRING:
+        {
+            if(&mymem == &othermem)
+                return u.s == o.u.s;
+             PoolStr s = asString(mymem);
+             PoolStr os = o.asString(othermem);
+             return s.len == os.len && !memcmp(s.s, os.s, s.len);
+        }
+        case TYPE_ARRAY:
+        {
+            const size_t n = _size();
+            if(n != o._size())
+                return false;
+            const Var *a = array();
+            const Var *oa = o.array();
+            for(size_t i = 0; i < n; ++i)
+                if(!a[i].equals(mymem, oa[i], othermem))
+                    return false;
+            return true;
+        }
+
+        case TYPE_MAP:
+            return map()->equals(mymem, *o.map(), othermem);
+    }
+    return false;
+}
+
+
+
+Var::CompareResult Var::compare(CompareMode cmp, const TreeMem& mymem, const Var& o, const TreeMem& othermem) const
+{
+    if(cmp == CMP_EQ)
+        return CompareResult(equals(mymem, o, othermem));
+
+    const Type myt = type();
+    const Type ot = o.type();
+
+    // numeric comparison
+    if(cmp == CMP_LT || cmp == CMP_GT)
+    {
+        if((myt == TYPE_INT || myt == TYPE_UINT || myt == TYPE_FLOAT)
+        && (ot == TYPE_INT || ot == TYPE_UINT || ot == TYPE_FLOAT))
+        {
+            int c = numericCompare(o);
+            return CompareResult(cmp == CMP_LT ? c < 0 : c > 0);
+        }
+        return CMP_RES_NA;
+    }
+
+    // string comparisons
+    if(myt == TYPE_STRING && myt == TYPE_STRING)
+    {
+        const PoolStr pa = asString(mymem);
+        const PoolStr pb = o.asString(othermem);
+
+        if (pa.len < pb.len) // a must be at least as long as b, or longer
+            return CMP_RES_FALSE;
+
+        switch(cmp)
+        {
+            case CMP_STARTSWITH: // a starts with b
+                return CompareResult(!strncmp(pa.s, pb.s, pb.len));
+
+            case CMP_ENDSWITH: // a ends with b
+                return CompareResult(!strncmp(pa.s + (pa.len - pb.len), pb.s, pb.len));
+
+            case CMP_CONTAINS: // a contains b
+                return CompareResult(!!strstr(pa.s, pb.s));
+        }
+        assert(false);
+    }
+
+    return CMP_RES_NA;
 }
 
 size_t Var::size() const
@@ -469,6 +736,45 @@ Var& _VarMap::_InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k)
     return f->second;
 }
 
+bool _VarMap::equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othermem) const
+{
+    _checkmem(mymem);
+    o._checkmem(othermem);
+
+    if(this == &o)
+        return true;
+    if(size() != o.size())
+        return false;
+
+    // If the memory pool is the same, we can use the string refs as-is
+    if(&mymem == &othermem)
+    {
+        for (auto it = begin(); it != end(); ++it)
+        {
+            auto oi = o._storage.find(it->first);
+            if (oi == o.end())
+                return false;
+            if (!it->second.equals(mymem, oi->second, othermem))
+                return false;
+        }
+    }
+    else
+    {
+        for(auto it = begin(); it != end(); ++it)
+        {
+            // Different mem pool, translate string IDs
+            const PoolStr ps = mymem.getSL(it->first);
+            StrRef oref = othermem.lookup(ps.s, ps.len);
+            auto oi = o._storage.find(oref);
+            if(oi == o.end())
+                return false;
+            if(!it->second.equals(mymem, oi->second, othermem))
+                return false;
+        }
+    }
+    return true;
+}
+
 bool _VarMap::isExpired(u64 now) const
 {
     return _expiry && now < _expiry->ts;
@@ -564,20 +870,20 @@ Var& _VarMap::emplace(TreeMem& mem, StrRef k, Var&& x)
 
 VarRef& VarRef::makeMap()
 {
-    v->makeMap(mem);
+    v->makeMap(*mem);
     return *this;
 }
 
 VarRef& VarRef::makeArray(size_t n)
 {
-    v->makeArray(mem, n);
+    v->makeArray(*mem, n);
     return *this;
 }
 
 VarRef VarRef::operator[](const char* key)
 {
-    Var& sub = v->makeMap(mem)->putKey(mem, key, strlen(key));
-    return VarRef(mem, &sub);
+    Var& sub = v->makeMap(*mem)->putKey(*mem, key, strlen(key));
+    return VarRef(*mem, &sub);
 }
 
 bool VarRef::merge(const VarCRef& o, MergeFlags mergeflags)
@@ -586,7 +892,7 @@ bool VarRef::merge(const VarCRef& o, MergeFlags mergeflags)
 
     if(isNull())
     {
-        *v = std::move(o.v->clone(mem, o.mem));
+        *v = std::move(o.v->clone(*mem, *o.mem));
         return true;
     }
 
@@ -594,7 +900,7 @@ bool VarRef::merge(const VarCRef& o, MergeFlags mergeflags)
         return false;
 
     const Var::Map& om = *o.v->map_unsafe();
-    v->makeMap(mem, om.size())->merge(mem, om, o.mem, mergeflags);
+    v->makeMap(*mem, om.size())->merge(*mem, om, *o.mem, mergeflags);
     return true;
 
 }
@@ -602,28 +908,28 @@ bool VarRef::merge(const VarCRef& o, MergeFlags mergeflags)
 void VarRef::replace(const VarCRef& o)
 {
     assert(v && o.v);
-    v->clear(mem);
-    *v = std::move(o.v->clone(mem, o.mem));
+    v->clear(*mem);
+    *v = std::move(o.v->clone(*mem, *o.mem));
 }
 
 VarRef VarRef::at(size_t idx) const
 {
-    return VarRef(mem, v->at(idx));
+    return VarRef(*mem, v->at(idx));
 }
 
 VarRef VarRef::lookup(const char* key) const
 {
-    return VarRef(mem, v->lookup(mem.lookup(key, strlen(key))));
+    return VarRef(*mem, v->lookup(mem->lookup(key, strlen(key))));
 }
 
 VarCRef VarCRef::at(size_t idx) const
 {
-    return VarCRef(mem, v->at(idx));
+    return VarCRef(*mem, v->at(idx));
 }
 
 VarCRef VarCRef::lookup(const char* key) const
 {
-    return VarCRef(mem, v->lookup(mem.lookup(key, strlen(key))));
+    return VarCRef(*mem, v->lookup(mem->lookup(key, strlen(key))));
 }
 
 VarExpiry* VarExpiry::clone(TreeMem& mem)

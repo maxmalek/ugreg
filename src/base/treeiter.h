@@ -97,18 +97,18 @@ void treeIter_T(Functor& func, const VarCRef src)
                 Var::Map::Iterator end = m->end();
                 while (s.it.map != end)
                 {
-                    PoolStr k = src.mem.getSL(s.it.map->first);
+                    PoolStr k = src.mem->getSL(s.it.map->first);
                     func.Key(k.s, k.len);
                     const Var& vv = s.it.map->second;
                     ++s.it.map;
-                    if (func(VarCRef(src.mem, &vv)))
+                    if (func(VarCRef(*src.mem, &vv)))
                     {
                         stk.emplace_back(s); // resume it later
                         s = std::move(State(vv));
                         goto next;
                     }
                 }
-                func.EndObject(VarCRef(src.mem, s.v));
+                func.EndObject(VarCRef(*src.mem, s.v));
                 break;
             }
 

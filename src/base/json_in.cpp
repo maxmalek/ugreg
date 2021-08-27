@@ -218,11 +218,11 @@ bool JsonLoader::parseDestructive(BufferedReadStream& stream)
 bool loadJsonDestructive(VarRef dst, BufferedReadStream& stream)
 {
     stream.init();
-    JsonLoader ld(dst.mem);
+    JsonLoader ld(*dst.mem);
     if(!ld.parseDestructive(stream))
         return false;
 
-    dst.v->clear(dst.mem);
+    dst.v->clear(*dst.mem);
     *dst.v = std::move(ld.root);
     return true;
 }

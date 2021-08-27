@@ -23,6 +23,7 @@ struct NumConvertResult
 // pass maxlen == -1 to stop at \0, otherwise after maxlen chars.
 NumConvertResult strtosizeNN(size_t *dst, const char *s, size_t maxlen = -1);
 NumConvertResult strtou64NN(u64* dst, const char* s, size_t maxlen = -1);
+NumConvertResult strtoi64NN(s64* dst, const char* s, size_t maxlen = -1);
 
 // converts a time value to milliseconds and stores in dst.
 // accepted suffixes: d, h, m, s, ms

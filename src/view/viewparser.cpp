@@ -5,70 +5,57 @@
 #include "util.h"
 #include "safe_numerics.h"
 #include "treemem.h"
+#include "viewexec.h"
 
-/*
-enum TokenType
+namespace view {
+
+
+enum { MAX_OP_LEN = 2 };
+struct OpEntry
 {
-    TOK_INVALID,
-    TOK_END,
-    TOK_LSQUARE,
-    TOK_RSQUARE,
-    TOK_LCURLY,
-    TOK_RCURLY,
-    TOK_LPAREN,
-    TOK_RPAREN,
-    TOK_LANGLE,
-    TOK_RANGLE,
-    TOK_SINGLEQUOTE,
-    TOK_DOUBLEQUOTE,
-    TOK_EQ,
-    TOK_SLASH,
-    TOK_DOLLAR,
-    TOK_TEXT,
+    const char text[MAX_OP_LEN + 1]; // + \0
+    OpType op;
+    unsigned invert;
 };
 
-struct Token
+// need to check the longer ones first so that there's no collision (ie. checking < first and then returning, even though it was actually <=)
+// negation is handled in _parseOp()
+static const OpEntry ops[] =
 {
-    TokenType type;
-    unsigned line;
-    unsigned col;
-    unsigned textref;
-};
+    // anything
+    { "==",  OP_EQ, 0 },
+    { "=",  OP_EQ, 0 },
+    { "<>", OP_EQ, 1 }, // eh why not
 
-typedef std::vector<Token> TokenList;
-*/
+    // numeric (or lexical check for strings)
+    { ">=", OP_LT, 1 },
+    { "<=", OP_GT, 1 },
+    { "<",  OP_LT, 0 },
+    { ">",  OP_GT, 0 },
 
-enum CommandType
-{
-
-};
-
-struct Command
-{
-    CommandType type;
-    std::string text;
-};
-
-enum ParserStateType
-{
-    PARSE_NORMAL,
-    PARSE_SELECTOR, // inside [...]
-    PARSE_EVAL,     // inside {...}
+    // substring
+    { "??",  OP_CONTAINS, 0 },
+    { "?<",  OP_STARTSWITH, 0 },
+    { "?>",  OP_ENDSWITH, 0 },
 };
 
 struct ParserState
 {
-    //size_t stackidx;
     const char *ptr;
+    size_t cmdidx;
+    size_t literalidx;
+    size_t stridx;
 };
 
 class Parser
 {
 public:
-    Parser(TreeMem& mem) : mem(mem) {}
-    ParserState snapshot() const { return state; }
-    void rewind(const ParserState& ps) { state = ps; }
-    bool parse(const char *s);
+    Parser(Executable& exe)
+        : ptr(NULL), mem(exe.mem), exec(exe) {}
+
+    ParserState snapshot() const;
+    void rewind(const ParserState& ps);
+    size_t parse(const char *s); // returns index where execution of the parsed block starts, or 0 on error
 
 private:
 
@@ -78,42 +65,39 @@ private:
     bool _parseStr(Var& v);
     bool _parseNull();
     size_t _parseVerbatim(const char *in); // returns length of match if matched, otherwise 0
-    bool _parseLiteral();
+    bool _parseLiteral(Var& v);
     bool _parseValue(); // literal or eval
     bool _parseDecimal(u64& i);
     bool _addMantissa(double& f, u64 i);
     bool _parseSelector();
     bool _parseSelection();
+    bool _parseSimpleSelection();
     bool _parseEval();
     bool _parseSimpleEval();
     bool _parseExtendedEval();
-    bool _parseIdent();
-    bool _parseIdentList();
+    bool _parseIdent(Var& id); // write identifier name to id
+    bool _parseIdentOrStr(Var& id);
     bool _skipSpace(bool require = false);
     bool _eat(char c);
     bool _isSep() const; // next char is separator, ie. []/,space,etc or end of string
-    bool _parseExpr();
-    bool _parseOp();
+    bool _parseOp(Cmd& op);
 
-    /*bool _push(ParserStateType t) { statestack.push_back(t); return true; }
-    bool _pop(ParserStateType t)
-    {
-        ParserStateType cur = statestack.back();
-        statestack.pop_back();
-        return cur == t;
-    }*/
+    void _emit(CmdType cm, unsigned param, unsigned param2 = 0);
+    unsigned _addLiteral(Var&& lit); // return index into literals table
+    unsigned _emitPushVarRef(Var&& v);
+    unsigned _emitPushLiteral(Var&& v);
+    unsigned _emitGetKey(Var&& v);
+    void _emitCheckKey(Var&& key, Var&& lit, unsigned opparam);
 
-
-    ParserState state;
+    const char *ptr;
     TreeMem& mem;
-    std::vector<ParserStateType> statestack;
+    Executable& exec;
 
 };
 
-bool parseView(const char *s)
+size_t parse(Executable& exe, const char *s)
 {
-    TreeMem mem;
-    Parser p(mem);
+    Parser p(exe);
     return p.parse(s);
 }
 
@@ -124,7 +108,7 @@ static inline bool _IsSep(char c)
 
 bool Parser::_isSep() const
 {
-    return _IsSep(*state.ptr);
+    return _IsSep(*ptr);
 }
 
 
@@ -140,14 +124,40 @@ private:
     bool _accepted;
 };
 
-bool Parser::parse(const char *s)
+ParserState Parser::snapshot() const
 {
-    //statestack.resize(1);
-    //statestack[0] = PARSE_NORMAL;
-    state.ptr = s;
-    //state.stackidx = 0;
+    ParserState ps;
+    ps.ptr = ptr;
+    ps.cmdidx = exec.cmds.size();
+    ps.literalidx = exec.literals.size();
+    return ps;
+}
 
-    return _parseLookup() && _skipSpace() && *state.ptr == 0;
+void Parser::rewind(const ParserState& ps)
+{
+    ptr = ps.ptr;
+    assert(ps.cmdidx <= exec.cmds.size());
+    exec.cmds.resize(ps.cmdidx);
+    assert(ps.literalidx <= exec.literals.size());
+    exec.literals.resize(ps.literalidx);
+}
+
+size_t Parser::parse(const char *s)
+{
+    ptr = s;
+    size_t start = exec.cmds.size();
+    if(!start) // since we return 0 only on error, add at least 1 dummy opcode
+    {
+        _emit(CM_DONE, 0);
+        ++start;
+    }
+
+    if(_parseLookup() && _skipSpace() && *ptr == 0)
+    {
+        _emit(CM_DONE, 0);
+        return start;
+    }
+    return 0;
 }
 
 // 1337
@@ -189,7 +199,7 @@ bool Parser::_parseNum(Var& v)
 // FIXME: make this handle both ' and " and handle escapes inside
 bool Parser::_parseStr(Var& v)
 {
-    const char *s = state.ptr;
+    const char *s = ptr;
     if(*s++ != '\'')
         return false;
 
@@ -199,8 +209,8 @@ bool Parser::_parseStr(Var& v)
     {
         if(c == '\'' && !esc)
         {
-            v.setStr(mem, state.ptr, s - state.ptr - 1);
-            state.ptr = s + 1;
+            v.setStr(mem, begin, s - begin);
+            ptr = s + 1; // skip closing '
             return true;
         }
 
@@ -218,13 +228,13 @@ bool Parser::_parseNull()
 size_t Parser::_parseVerbatim(const char *in)
 {
     assert(*in);
-    const char * const s = state.ptr;
+    const char * const s = ptr;
     for (size_t k = 0;; ++k)
     {
         char c = *in++;
         if (!c) // all matched
         {
-            state.ptr = s + k;
+            ptr = s + k;
             return k;
         }
         if (s[k] != c)
@@ -233,32 +243,36 @@ size_t Parser::_parseVerbatim(const char *in)
     return 0;
 }
 
-bool Parser::_parseLiteral()
+bool Parser::_parseLiteral(Var& v)
 {
-    Var v;
-    bool ok = _parseStr(v) || _parseNum(v) || _parseNull();
-    // TODO: emit
-    v.clear(mem);
-    return ok;
+    return _parseStr(v) || _parseNum(v) || _parseNull();
 }
 
 bool Parser::_parseValue()
 {
-    return _parseEval() || _parseLiteral();
+    if(_parseEval())
+        return true;
+    Var v;
+    if(_parseLiteral(v))
+    {
+        _emitPushLiteral(std::move(v));
+        return true;
+    }
+    return false;
 }
 
 bool Parser::_parseDecimal(u64& i)
 {
-    NumConvertResult nr = strtou64NN(&i, state.ptr);
+    NumConvertResult nr = strtou64NN(&i, ptr);
     bool ok = nr.ok();
     if(ok)
-        state.ptr += nr.used;
+        ptr += nr.used;
     return ok;
 }
 
 bool Parser::_addMantissa(double& f, u64 i)
 {
-    const char *s = state.ptr;
+    const char *s = ptr;
     u64 m;
     NumConvertResult nr = strtou64NN(&m, s);
     if(!nr.ok())
@@ -271,7 +285,7 @@ bool Parser::_addMantissa(double& f, u64 i)
     while(--nr.used);
 
     f = double(i) + (double(m) / double(div));
-    state.ptr = s;
+    ptr = s;
     return true;
 }
 
@@ -286,23 +300,27 @@ bool Parser::_parseLookup(bool ignoreStartSlash)
         ++n;
         ignoreStartSlash = false;
     }
-
     return n && top.accept();
 }
 
 // /key
 bool Parser::_parseKey(bool ignoreStartSlash)
 {
-    const char *s = state.ptr;
-    if(s[0] == '/')
-        ++s;
+    const char *begin = ptr;
+    if(begin[0] == '/')
+        ++begin;
     else if(!ignoreStartSlash)
         return false;
     
+    const char *s = begin;
     for(char c; (c = *s) && c != '/' && c != '['; )
         ++s;
 
-    state.ptr = s;
+    // TODO: handle numeric keys?
+    Var k(mem, begin, s - begin);
+    _emitGetKey(std::move(k));
+
+    ptr = s;
     return true; // zero-length key is okay and is the empty string
 }
 
@@ -314,17 +332,25 @@ bool Parser::_parseSelector()
 }
 
 // $ident
-// ${lookup}
+// ${...}
 bool Parser::_parseEval()
 {
     ParserTop top(*this);
     return _eat('$') && (_parseExtendedEval() || _parseSimpleEval()) && top.accept();
 }
 
+// $name
 // lookup ident
 bool Parser::_parseSimpleEval()
 {
-    return _parseIdent();
+    Var id;
+    bool ok = _parseIdent(id);
+    if(ok)
+    {
+        unsigned lit = _addLiteral(std::move(id));
+        _emit(CM_GETVAR, lit);
+    }
+    return ok;
 }
 
 // {ident}
@@ -334,123 +360,176 @@ bool Parser::_parseSimpleEval()
 bool Parser::_parseExtendedEval()
 {
     ParserTop top(*this);
-    if(_eat('{') && _skipSpace() && (_parseIdent() || _parseLookup()))
-        while(_skipSpace() && _parseIdent()) {}
+    Var id;
+    if(_eat('{') && _skipSpace() && (_parseIdent(id) /*|| _parseLookup()*/))
+    {
+        _emitPushVarRef(std::move(id));
+        // all following things are transform names
+        while(_skipSpace() && _parseIdent(id))
+        {
+            unsigned tr = GetTransformID(id.asCString(mem));
+            _emit(CM_TRANSFORM, tr);
+        }
+    }
     return _skipSpace() && _eat('}') && top.accept();
 }
 
-bool Parser::_parseIdent()
+bool Parser::_parseIdent(Var& id)
 {
-    const char *s = state.ptr;
+    const char *s = ptr;
     char c;
     while((c = *s) && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'))
         ++s;
 
-    bool ok = s != state.ptr;
+    bool ok = s != ptr;
     if(ok)
-        state.ptr = s;
+    {
+        id.setStr(mem, ptr, s - ptr);
+        ptr = s;
+    }
     return ok;
 }
 
-bool Parser::_parseIdentList()
+bool Parser::_parseIdentOrStr(Var& id)
 {
-    ParserTop top(*this);
-    _skipSpace();
-    size_t n = 0;
-    for(;;)
-    {
-        if(_parseIdent())
-        {
-            ++n;
-            _skipSpace();
-        }
-        else
-            break;
-    }
-    return n && top.accept();
+    return _parseIdent(id) || (_parseLiteral(id) && id.type() == Var::TYPE_STRING);
 }
 
 bool Parser::_skipSpace(bool require)
 {
-    const char *s = state.ptr;
+    const char *s = ptr;
     for(char c; (c = *s) && (c == ' ' || c == '\t'); )
         ++s;
-    bool skipped = s != state.ptr;
-    state.ptr = s;
+    bool skipped = s != ptr;
+    ptr = s;
     return !require || skipped;
 }
 
 bool Parser::_eat(char c)
 {
-    bool eq = c == *state.ptr;
-    state.ptr += eq;
+    bool eq = c == *ptr;
+    ptr += eq;
     return eq;
 }
 
 // anything inside [], can be:
-// name=value
-// /path/to/subey < value
+// *              -- unpack array or map values
+// name=literal   -- key check
 // only simple ops for now, no precedence, no grouping with braces
 bool Parser::_parseSelection()
 {
     ParserTop top(*this);
-    // FIXME: parsing the lookup here does not stop at spaces! mandate wrapping it into '' if that is needed?
-    return  _skipSpace() && (_parseIdent() || _parseLookup(false)) && _skipSpace() && _parseOp() && _skipSpace() && _parseValue() && _skipSpace() && top.accept();
+    Var id;
+    _skipSpace();
+
+    bool ok = false;
+    if(_eat('*'))
+    {
+        _emit(CM_TRANSFORM, GetTransformID("unpack"));
+        ok = true;
+    }
+    else if(_parseSimpleSelection())
+    {
+        ok = true;
+    }
+
+    return ok &&  _skipSpace() && top.accept();
 }
 
-// primitive comparisons
-enum OpType
-{
-    OP_EQ,
-    OP_LT,
-    OP_GT,
-    OP_CONTAINS,
-    OP_STARTSWITH,
-    OP_ENDSWITH,
-};
-
-enum { MAX_OP_LEN = 2 };
-struct OpEntry
-{
-    const char text[MAX_OP_LEN + 1]; // + \0
-    OpType op;
-    int xor;
-};
-
-// need to check the longer ones first so that there's no collision (ie. checking < first and then returning, even though it was actually <=)
-// negation is handled in _parseOp()
-static const OpEntry ops[] =
-{
-    // anything
-    { "==",  OP_EQ, 0 },
-    { "=",  OP_EQ, 0 },
-    { "<>", OP_EQ, 1 }, // eh why not
-
-    // numeric (or lexical check for strings)
-    { ">=", OP_LT, 1 },
-    { "<=", OP_GT, 1 },
-    { "<",  OP_LT, 0 },
-    { ">",  OP_GT, 0 },
-
-    // substring
-    { "??",  OP_CONTAINS, 0 },
-    { "?<",  OP_STARTSWITH, 0 },
-    { "?>",  OP_ENDSWITH, 0 },
-};
-
-bool Parser::_parseOp()
+// inside []:
+// name=<literal>
+// name=$var
+// '/name with spaces'=..
+bool Parser::_parseSimpleSelection()
 {
     ParserTop top(*this);
-    unsigned xor = _eat('!'); // universal negation -- just stick ! in front of it
+    Var id, lit;
+    Cmd op;
+    bool ok = false;
+    if(_parseIdentOrStr(id) && _skipSpace() && _parseOp(op) && _skipSpace())
+    {
+        if(_parseLiteral(lit))
+        {
+            _emitCheckKey(std::move(id), std::move(lit), op.param);
+            ok = true;
+        }
+        /*else
+        {
+            // FIXME: this is probably broken
+            unsigned lit = _addLiteral(std::move(id));
+            _emit(CM_GETKEY, lit);
+            _emitPushVarRef(std::move(id));
+            if(!_parseValue())
+                return false;
+            exec.cmds.push_back(op);
+        }*/
+       
+    }
+    id.clear(mem);
+    lit.clear(mem);
+    return ok && _skipSpace() && top.accept();
+}
+
+bool Parser::_parseOp(Cmd& cm)
+{
+    ParserTop top(*this);
+    unsigned invert = _eat('!'); // universal negation -- just stick ! in front of it
     for(size_t i = 0; i < Countof(ops); ++i)
     {
         const char *os = ops[i].text;
         if(size_t n = _parseVerbatim(os))
         {
-            // TODO: emit op
+            cm.type = CM_OPERATOR;
+            cm.param = (ops[i].op << 1) | (invert ^ ops[i].invert);
             return top.accept();
         }
-            
     }
     return false;
 }
+
+void Parser::_emit(CmdType cm, unsigned param, unsigned param2)
+{
+    Cmd c { cm, param, param2 };
+    exec.cmds.push_back(c);
+}
+
+unsigned Parser::_addLiteral(Var&& lit)
+{
+    size_t sz = exec.literals.size();
+    exec.literals.push_back(std::move(lit));
+    return sz;
+}
+
+unsigned Parser::_emitPushVarRef(Var&& v)
+{
+    assert(v.type() == Var::TYPE_STRING);
+    unsigned lit = _addLiteral(std::move(v));
+    _emit(CM_GETVAR, lit);
+    return lit;
+}
+
+unsigned Parser::_emitPushLiteral(Var&& v)
+{
+    unsigned lit = _addLiteral(std::move(v));
+    _emit(CM_LITERAL, lit);
+    return lit;
+}
+
+unsigned Parser::_emitGetKey(Var&& v)
+{
+    assert(v.type() == Var::TYPE_STRING);
+    unsigned lit = _addLiteral(std::move(v));
+    _emit(CM_GETKEY, lit);
+    return lit;
+}
+
+void Parser::_emitCheckKey(Var&& key, Var&& lit, unsigned opparam)
+{
+    assert(key.type() == Var::TYPE_STRING);
+    assert((opparam >> 4) == 0); // if this fires we'd mix up bits with kidx below
+    unsigned kidx = _addLiteral(std::move(key));
+    unsigned litidx = _addLiteral(std::move(lit));
+    _emit(CM_CHECKKEY, opparam | (kidx << 4), litidx);
+}
+
+} // end namespace view

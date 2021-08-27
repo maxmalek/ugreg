@@ -19,6 +19,8 @@ set(src
     treemem.h
     mem.h
     refcounted.h
+    debugfunc.cpp
+    debugfunc.h
 )
 
 add_library(base ${src})

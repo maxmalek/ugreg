@@ -61,13 +61,35 @@ public:
     {
         TYPE_NULL, // Important that this is 0
         TYPE_BOOL,
+        // numeric types
         TYPE_INT,
         TYPE_UINT,
         TYPE_FLOAT,
-        TYPE_STRING,
+        // misc
         TYPE_PTR, // Not actually json but we use this type to store a userdata/void*
+        // containers
+        TYPE_STRING,
         TYPE_ARRAY,
         TYPE_MAP,
+        // keep in sync with c_typeNames in the .cpp file!
+    };
+
+    enum CompareMode
+    {
+        CMP_EQ, // generic equality (no casting). recurses into arrays/maps. will never return CMP_RES_NA.
+        CMP_LT, // numeric less than
+        CMP_GT, // numeric greater than
+        // string ops
+        CMP_CONTAINS,
+        CMP_STARTSWITH,
+        CMP_ENDSWITH,
+    };
+
+    enum CompareResult
+    {
+        CMP_RES_NA = -1,    // can't compare / not applicable
+        CMP_RES_FALSE = 0,  // not equal
+        CMP_RES_TRUE = 1,   // equal
     };
 
     enum Topbits
@@ -127,6 +149,10 @@ public:
     Var clone(TreeMem& dstmem, const TreeMem& srcmem) const;
 
     Type type() const;
+    const char *typestr() const;
+
+    bool equals(const TreeMem& mymem, const Var& o, const TreeMem& othermem) const;
+    CompareResult compare(CompareMode cmp, const TreeMem& mymem, const Var& o, const TreeMem& othermem) const;
 
     // transmute into type (does not lose data if the type is not changed)
     bool setBool(TreeMem& mem, bool x);
@@ -158,8 +184,8 @@ public:
     const Var *array_unsafe() const;
           Var *at(size_t n);            // checked access, NULL if not array or invalid index
     const Var *at(size_t n) const;
-    inline       Var& operator[](size_t i); // unchecked, asserts that it's an array and that the index is valid
-    inline const Var& operator[](size_t i) const;
+          Var& operator[](size_t i); // unchecked, asserts that it's an array and that the index is valid
+    const Var& operator[](size_t i) const;
 
     // map ops
     inline       Var::Map* map()       { return _topbits() == BITS_MAP ? u.m : 0; }
@@ -177,6 +203,9 @@ public:
     Var(double x);
     Var(TreeMem& mem, const char* s);
     Var(TreeMem& mem, const char* s, size_t len);
+
+private:
+    int numericCompare(const Var& b) const; // -1 if less, 0 if eq, +1 if greater
 };
 
 // -------------------------------------------------
@@ -237,6 +266,8 @@ public:
     inline Iterator begin() const { return _storage.begin(); }
     inline Iterator end() const { return _storage.end(); }
 
+    bool equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othermem) const;
+
     // return true when object is expired and should be deleted
     bool isExpired(u64 now) const;
     u64 getExpiryTime() const { return _expiry ? _expiry->ts : 0; }
@@ -274,9 +305,11 @@ class VarRef
 {
 public:
     Var * const v;
-    TreeMem& mem;
+    TreeMem *mem;
 
-    VarRef(TreeMem& mem, Var *x) : v(x), mem(mem) {}
+    VarRef() : v(0), mem(0) {}
+    VarRef(TreeMem& mem, Var *x) : v(x), mem(&mem) {}
+    VarRef(TreeMem *mem, Var* x) : v(x), mem(mem) {}
 
     inline operator Var*()              { return v; }
     inline operator const Var* () const { return v; }
@@ -285,8 +318,8 @@ public:
     bool isNull() const { return v->isNull(); }
     const s64* asInt() const { return v->asInt(); }
     const u64* asUint() const { return v->asUint(); }
-    PoolStr asString() const { return v->asString(mem); } // (does not convert to string)
-    const char* asCString() const { return v->asCString(mem); }
+    PoolStr asString() const { return v->asString(*mem); } // (does not convert to string)
+    const char* asCString() const { return v->asCString(*mem); }
     const double* asFloat() const { return v->asFloat(); };
     bool asBool() const { return v->asBool(); }
 
@@ -316,34 +349,38 @@ public:
     // TODO: also optimize related code paths for this->mem == o.mem
 
     // value assignment
-    void clear() { v->clear(mem); }
-    inline VarRef& operator=(std::nullptr_t)     { v->clear(mem);       return *this; }
-    inline VarRef& operator=(bool x)        { v->setBool(mem, x);  return *this; }
-    inline VarRef& operator=(s64 x)         { v->setInt(mem, x);   return *this; }
-    inline VarRef& operator=(u64 x)         { v->setUint(mem, x);  return *this; }
-    inline VarRef& operator=(double x)      { v->setFloat(mem, x); return *this; }
-    inline VarRef& operator=(const char *s) { v->setStr(mem, s);   return *this; }
+    void clear() { v->clear(*mem); }
+    inline VarRef& operator=(std::nullptr_t)     { v->clear(*mem);       return *this; }
+    inline VarRef& operator=(bool x)        { v->setBool(*mem, x);  return *this; }
+    inline VarRef& operator=(s64 x)         { v->setInt(*mem, x);   return *this; }
+    inline VarRef& operator=(u64 x)         { v->setUint(*mem, x);  return *this; }
+    inline VarRef& operator=(double x)      { v->setFloat(*mem, x); return *this; }
+    inline VarRef& operator=(const char *s) { v->setStr(*mem, s);   return *this; }
 };
 
 // Like VarRef, except immutable and can be constructed from VarRef
 class VarCRef
 {
 public:
-    const Var* const v;
-    const TreeMem& mem;
+    const Var* v;
+    const TreeMem *mem;
 
-    VarCRef(const TreeMem& mem, const Var* x) : v(x), mem(mem) {}
+    VarCRef() : v(0), mem(0) {}
+    VarCRef(const TreeMem& mem, const Var* x) : v(x), mem(&mem) {}
+    VarCRef(const TreeMem *mem, const Var* x) : v(x), mem(mem) {}
     VarCRef(VarRef r) : v(r.v), mem(r.mem) {}
 
     inline operator const Var* () const { return v; }
+
+    bool operator==(VarCRef& o);
 
     Var::Type type() const { return v->type(); }
     size_t size() const { return v->size(); }
     bool isNull() const { return v->isNull(); }
     const s64* asInt() const { return v->asInt(); }
     const u64* asUint() const { return v->asUint(); }
-    PoolStr asString() const { return v->asString(mem); } // (does not convert to string)
-    const char* asCString() const { return v->asCString(mem); }
+    PoolStr asString() const { return v->asString(*mem); } // (does not convert to string)
+    const char* asCString() const { return v->asCString(*mem); }
     const double* asFloat() const { return v->asFloat(); };
     bool asBool() const { return v->asBool(); }
 
