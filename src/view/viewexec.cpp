@@ -59,7 +59,7 @@ static void transformToInt(TreeMem& mem, StackFrame& newframe, const StackFrame&
 
             case Var::TYPE_UINT:
             {
-                u64 tmp = *src.asUint(); 
+                u64 tmp = *src.asUint();
                 if(!isValidNumericCast<s64>(tmp))
                     continue;
                 val = tmp;
@@ -87,7 +87,8 @@ VM::VM(const Executable& ex, VarCRef constants)
 {
     // the constants are likely allocated in a different (shared!) memory space. copy everything so we have a private working copy.
     // this is especially important to make sure we can do fast string comparisons.
-    vars = std::move(constants.v->clone(*this, *constants.mem));
+    if(constants)
+        vars = std::move(constants.v->clone(*this, *constants.mem));
 
     // vars must be a map
     if(vars.type() != Var::TYPE_MAP)

@@ -94,7 +94,7 @@ void testexec()
 
     TreeMem exm;
     view::Executable exe(exm);
-    size_t start = view::parse(exe, "/rooms");
+    size_t start = view::parse(exe, "/rooms[open=true]");
     assert(start);
     disasm(exe);
 
@@ -102,6 +102,13 @@ void testexec()
     vm.push(tree.root());
     vm.exec(start);
     const view::VarRefs& out = vm.results();
+
+    printf("VM out: %u vars\n", (unsigned)out.size());
+    for (const VarCRef& v : out)
+    {
+        dump(v);
+        puts("-----");
+    }
 
 }
 

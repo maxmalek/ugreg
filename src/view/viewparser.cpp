@@ -64,6 +64,7 @@ private:
     bool _parseNum(Var& v);
     bool _parseStr(Var& v);
     bool _parseNull();
+    bool _parseBool(Var& v);
     size_t _parseVerbatim(const char *in); // returns length of match if matched, otherwise 0
     bool _parseLiteral(Var& v);
     bool _parseValue(); // literal or eval
@@ -225,6 +226,16 @@ bool Parser::_parseNull()
     return _parseVerbatim("null") && top.accept();
 }
 
+bool Parser::_parseBool(Var& v)
+{
+    ParserTop top(*this);
+    bool val = false;
+    bool ok = (val = _parseVerbatim("true")) || _parseVerbatim("false");
+    if (ok)
+        v.setBool(mem, val);
+    return ok && top.accept();
+}
+
 size_t Parser::_parseVerbatim(const char *in)
 {
     assert(*in);
@@ -245,7 +256,7 @@ size_t Parser::_parseVerbatim(const char *in)
 
 bool Parser::_parseLiteral(Var& v)
 {
-    return _parseStr(v) || _parseNum(v) || _parseNull();
+    return _parseStr(v) || _parseNum(v) || _parseBool(v) || _parseNull();
 }
 
 bool Parser::_parseValue()
