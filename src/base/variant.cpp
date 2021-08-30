@@ -552,6 +552,7 @@ bool Var::equals(const TreeMem& mymem, const Var& o, const TreeMem& othermem) co
         case TYPE_INT:
             return u.i == o.u.i;
         case TYPE_UINT:
+        case TYPE_BOOL:
             return u.ui == o.u.ui;
         case TYPE_PTR:
             return u.p == o.u.p;
@@ -581,6 +582,7 @@ bool Var::equals(const TreeMem& mymem, const Var& o, const TreeMem& othermem) co
         case TYPE_MAP:
             return map()->equals(mymem, *o.map(), othermem);
     }
+    assert(false); // unreachable
     return false;
 }
 

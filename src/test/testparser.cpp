@@ -96,7 +96,7 @@ void testexec()
 
     TreeMem exm;
     view::Executable exe(exm);
-    size_t start = view::parse(exe, "/rooms[open=true]");
+    size_t start = view::parse(exe, "/rooms[open=true]/id");
     assert(start);
     disasm(exe);
 

@@ -129,6 +129,42 @@ void VM::cmd_GetKey(unsigned param)
     top.refs.resize(aout - ain);
 }
 
+// templated adapter to get a const Var* from whatever iterator
+template<typename T>
+struct GetElem;
+
+template<>
+struct GetElem<const Var*>
+{
+    static inline const Var *get(const Var *p) { return p; }
+};
+template<>
+struct GetElem<Var::Map::Iterator>
+{
+    static inline const Var* get(Var::Map::Iterator it) { return &it->second; }
+};
+
+template<typename Iter>
+static void filterElements(VarRefs& out, const TreeMem& mem, Iter begin, Iter end, Var::CompareMode cmp, VarCRef literal, const char *keystr, unsigned invert)
+{
+    typedef typename GetElem<Iter> Get;
+    for(Iter it = begin; it != end; ++it)
+    {
+        VarCRef elem(mem, Get::get(it));
+        VarCRef sub = elem.lookup(keystr);
+        if (!sub)
+            continue; // Key doesn't exist, not map, etc -> skip
+
+        Var::CompareResult res = sub.compare(cmp, literal);
+        if (res == Var::CMP_RES_NA)
+            continue; // Can't be compared, skip
+
+        unsigned success = (res ^ invert) & 1;
+        if (success)
+            out.push_back(elem);
+    }
+}
+
 // keep elements in top only when a subkey has operator relation to a literal
 void VM::cmd_CheckKey(unsigned param, unsigned lit)
 {
@@ -138,31 +174,26 @@ void VM::cmd_CheckKey(unsigned param, unsigned lit)
 
     StackFrame& top = _topframe();
     size_t wpos = 0;
-    const size_t N = top.refs.size();
+
     VarCRef checklit(*this, &literals[lit]);
     Var::CompareMode cmp = Var::CompareMode(op);
 
     const char* keystr = literals[key].asCString(*this);
-    VarCRef* const ain = top.refs.data();
-    VarCRef* aout = ain;
+    VarRefs oldrefs;
+    std::swap(oldrefs, top.refs);
+    const size_t N = oldrefs.size();
 
-    // FIXME: when there's an array on top, apply to all values
+    // when there's an array or list of arrays on top, apply to all values
 
     for(size_t i = 0; i < N; ++i)
     {
-        VarCRef sub = ain[i].lookup(keystr);
-        if (!sub)
-            continue; // Key doesn't exist, skip
-
-        Var::CompareResult res = sub.compare(cmp, checklit);
-        if (res == Var::CMP_RES_NA)
-            continue; // Can't be compared, skip
-
-        unsigned success = (res & 1) ^ invert;
-        if (success)
-            *aout++ = ain[i];
+        VarCRef elem = oldrefs[i];
+        if(const Var *a = elem.v->array())
+            filterElements(top.refs, *elem.mem, a, a + elem.v->_size(), cmp, checklit, keystr, invert);
+        else if(const Var::Map *m = elem.v->map())
+            filterElements(top.refs, *elem.mem, m->begin(), m->end(), cmp, checklit, keystr, invert);
+        // else can't select subkey, so drop elem
     }
-    top.refs.resize(aout - ain);
 }
 
 void VM::push(VarCRef v)
