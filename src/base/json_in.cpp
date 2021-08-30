@@ -162,7 +162,7 @@ bool JsonLoader::_emit(Var&& x)
         {
             if(!f.vals.capacity())
                 f.vals.reserve(32); // semi-educated guess to reduce allocations for small arrays
-            f.vals.emplace_back(std::move(x));
+            f.vals.push_back(std::move(x));
         }
     }
     else
@@ -176,7 +176,7 @@ bool JsonLoader::_emit(Var&& x)
 JsonLoader::Frame& JsonLoader::_pushframe(bool ismap)
 {
     if(frames.size() <= frameidx)
-        frames.emplace_back(Frame(_mem));
+        frames.emplace_back(_mem);
 
     Frame& f = frames[frameidx++];
     if(ismap)

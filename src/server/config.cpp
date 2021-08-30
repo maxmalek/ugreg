@@ -9,7 +9,7 @@ ServerConfig::ServerConfig()
     , expose_debug_apis(false)
 {
     Listen def { "127.0.0.1", 8080, false };
-    listen.emplace_back(def);
+    listen.push_back(def);
     reply_cache.rows = 0;
     reply_cache.columns = 0;
     reply_cache.maxtime = 0;
@@ -34,7 +34,7 @@ bool ServerConfig::apply(VarCRef root)
                 if(xport && xport.asUint())
                 {
                     Listen lis { host, unsigned(*xport.asUint()), ssl };
-                    listen.emplace_back(lis);
+                    listen.push_back(lis);
                 }
             }
 
