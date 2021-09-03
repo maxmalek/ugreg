@@ -121,17 +121,16 @@ static const TransformEntry s_transforms[] =
 };
 
 
-VM::VM(const Executable& ex, VarCRef constants)
+VM::VM(const Executable& ex, const EntryPoint *eps, size_t numep)
     : cmds(ex.cmds)
 {
-    // the constants are likely allocated in a different (shared!) memory space. copy everything so we have a private working copy.
-    // this is especially important to make sure we can do fast string comparisons.
-    if(constants)
-        vars = std::move(constants.v->clone(*this, *constants.mem));
-
-    // vars must be a map
-    if(vars.type() != Var::TYPE_MAP)
-        vars.makeMap(*this);
+    evals.makeMap(*this);
+    if(numep)
+    {
+        VarRef evalmap(*this, &evals);
+        for(size_t i = 0; i < numep; ++i)
+            evalmap[eps[i].name.c_str()].v->setUint(*this, eps[i].idx);
+    }
 
     // literals are only ever referred to by index, copy those as well
     const size_t N = ex.literals.size();
@@ -192,7 +191,7 @@ struct GetElem<Var::Map::Iterator>
 };
 
 template<typename Iter>
-static void filterElements(VarRefs& out, const TreeMem& mem, Iter begin, Iter end, Var::CompareMode cmp, VarCRef literal, const char *keystr, unsigned invert)
+static void filterElements(VarRefs& out, const TreeMem& mem, Iter begin, Iter end, Var::CompareMode cmp, VarCRef *values, size_t numvalues, const char *keystr, unsigned invert)
 {
     typedef typename GetElem<Iter> Get;
     const Var null;
@@ -219,25 +218,58 @@ static void filterElements(VarRefs& out, const TreeMem& mem, Iter begin, Iter en
             sub = nullref; // handle missing key as if the value was null
         }
 
-        Var::CompareResult res = sub.compare(cmp, literal);
-        if (res == Var::CMP_RES_NA)
-            continue; // Can't be compared, skip
+        for(size_t k = 0; k < numvalues; ++k)
+        {
+            Var::CompareResult res = sub.compare(cmp, values[k]);
+            if (res == Var::CMP_RES_NA)
+                continue; // Can't be compared, skip
 
-        unsigned success = (res ^ invert) & 1;
-        if (success)
-            out.push_back(elem);
+            unsigned success = (res ^ invert) & 1;
+            if (success)
+            {
+                out.push_back(elem);
+                break;
+            }
+            // else keep checking
+        }
+    }
+}
+
+void VM::cmd_Filter(unsigned param)
+{
+    unsigned invert = param & 1;
+    unsigned op = (param >> 1) & 7;
+    unsigned key = param >> 4;
+    Var::CompareMode cmp = Var::CompareMode(op);
+
+    StackFrame vs = _popframe(); // check new top vs. this
+    StackFrame& top = _topframe();
+
+    const char* keystr = literals[key].asCString(*this);
+    VarRefs oldrefs;
+    std::swap(oldrefs, top.refs);
+    const size_t N = oldrefs.size();
+
+    // apply to all values on top
+    for (size_t i = 0; i < N; ++i)
+    {
+        VarCRef elem = oldrefs[i];
+        if (const Var* a = elem.v->array())
+            filterElements(top.refs, *elem.mem, a, a + elem.v->_size(), cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
+        else if (const Var::Map* m = elem.v->map())
+            filterElements(top.refs, *elem.mem, m->begin(), m->end(), cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
+        // else can't select subkey, so drop elem
     }
 }
 
 // keep refs in top only when a subkey has operator relation to a literal
-void VM::cmd_CheckKey(unsigned param, unsigned lit)
+void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
 {
     unsigned invert = param & 1;
     unsigned op = (param >> 1) & 7;
     unsigned key = param >> 4;
 
     StackFrame& top = _topframe();
-    size_t wpos = 0;
 
     VarCRef checklit(*this, &literals[lit]);
     Var::CompareMode cmp = Var::CompareMode(op);
@@ -253,9 +285,9 @@ void VM::cmd_CheckKey(unsigned param, unsigned lit)
     {
         VarCRef elem = oldrefs[i];
         if(const Var *a = elem.v->array())
-            filterElements(top.refs, *elem.mem, a, a + elem.v->_size(), cmp, checklit, keystr, invert);
+            filterElements(top.refs, *elem.mem, a, a + elem.v->_size(), cmp, &checklit, 1, keystr, invert);
         else if(const Var::Map *m = elem.v->map())
-            filterElements(top.refs, *elem.mem, m->begin(), m->end(), cmp, checklit, keystr, invert);
+            filterElements(top.refs, *elem.mem, m->begin(), m->end(), cmp, &checklit, 1, keystr, invert);
         // else can't select subkey, so drop elem
     }
 }
@@ -307,7 +339,7 @@ bool VM::exec(size_t ip)
                 cmd_GetKey(c.param);
                 break;
             case CM_CHECKKEY:
-                cmd_CheckKey(c.param, c.param2);
+                cmd_CheckKeyVsSingleLiteral(c.param, c.param2);
                 break;
             case CM_LITERAL:
                 push(VarCRef(*this, &literals[c.param]));
@@ -320,8 +352,6 @@ bool VM::exec(size_t ip)
             }
             break;
 
-            case CM_DONE:
-                return true;
 
             case CM_GETVAR:
                 cmd_PushVar(c.param);
@@ -331,8 +361,12 @@ bool VM::exec(size_t ip)
                 cmd_Transform(c.param);
                 break;
 
-            case CM_COMPARE:
-                assert(false);
+            case CM_FILTER:
+                cmd_Filter(c.param);
+                break;
+
+            case CM_DONE:
+                return true;
         }
     }
 }
@@ -344,7 +378,7 @@ void VM::reset()
         _popframe().clear(*this);
 
     // clear variables
-    Var::Map* m = vars.map();
+    Var::Map* m = evals.map();
     for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
     {
         if(void* p = it->second.asPtr())
@@ -354,7 +388,7 @@ void VM::reset()
             this->Free(frm, sizeof(*frm));
         }
     }
-    vars.clear(*this);
+    evals.clear(*this);
     _base.v = NULL;
     _base.mem = NULL;
 }
@@ -367,7 +401,7 @@ const VarRefs& VM::results() const
 StackFrame *VM::storeTop(StrRef s)
 {
     StackFrame *frm = detachTop();
-    Var& val = vars.map()->getOrCreate(*this, s);
+    Var& val = evals.map()->getOrCreate(*this, s);
     val.setPtr(*this, frm);
     return frm;
 }
@@ -406,8 +440,13 @@ StackFrame* VM::_evalVar(StrRef key, size_t pc)
 
 StackFrame* VM::_getVar(StrRef key)
 {
-    Var* v = vars.lookup(key);
-    assert(v);
+    Var* v = evals.lookup(key);
+    if(!v)
+    {
+        printf("Attempt to get var [%s], but does not exist\n",
+            this->getS(key));
+        return NULL;
+    }
     StackFrame* frm = NULL;
     switch(v->type())
     {
@@ -450,7 +489,7 @@ static const char *s_opcodeNames[] =
     "GETKEY",
     "GETVAR",
     "TRANSFORM",
-    "COMPARE",
+    "FILTER",
     "LITERAL",
     "DUP",
     "CHECKKEY",
@@ -505,7 +544,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
             case CM_TRANSFORM:
                 os << " (func #" << c.param << ")";
                 break;
-            case CM_COMPARE:
+            case CM_FILTER:
                 os << ' ';
                 oprToStr(os, c.param);
                 break;

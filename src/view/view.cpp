@@ -11,30 +11,52 @@ View::~View()
 {
 }
 
+bool View::compile(const char *s, VarCRef val)
+{
+    printf("%s\n", s);
+
+    if (const char *code = val.asCString())
+    {
+        if (size_t idx = view::parse(exe, val.asCString()))
+        {
+            view::EntryPoint e { s, idx };
+            ep.push_back(std::move(e));
+            return true;
+        }
+        else
+            printf("Failed to parse %s: %s\n", s, code);
+    }
+    else
+        printf("Key %s is not string value; skipped\n", s);
+    return false;
+}
+
 bool View::load(VarCRef v)
 {
+    bool ok = true;
+    if(VarCRef result = v.lookup("result"))
+    {
+        ok = compile("result", result) && ok;
+    }
+    else
+    {
+        printf("Key 'result' not present, abort\n");
+        ok = false;
+    }
+
     if(VarCRef lookup = v.lookup("lookup"))
     {
         if(lookup.type() != Var::TYPE_MAP)
-            return false;
+            ok = false;
 
         const Var::Map *m = lookup.v->map();
         for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
         {
-            printf("lookup/%s\n", v.mem->getS(it->first));
-
-            if(it->second.type() == Var::TYPE_STRING)
-            {
-                if(!view::parse(exe, it->second.asCString(*v.mem)))
-                    printf("Failed to parse lookup/%s: %s\n",
-                        v.mem->getS(it->first), it->second.asCString(*v.mem));
-            }
-            else
-                printf("Key lookup/%s is not string value; skipped\n", v.mem->getS(it->first));
+            ok = compile(v.mem->getS(it->first), VarCRef(v.mem, &it->second)) && ok;
         }
 
     }
-    return true;
+    return ok;
 }
 
 bool View::initVM(view::VM& vm)

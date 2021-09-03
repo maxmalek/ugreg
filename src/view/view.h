@@ -13,5 +13,9 @@ public:
     bool initVM(view::VM& vm);
 
     view::Executable exe;
+    std::vector<view::EntryPoint> ep;
+
+private:
+    bool compile(const char* s, VarCRef val);
 };
 

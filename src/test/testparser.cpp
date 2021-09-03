@@ -67,7 +67,7 @@ char json[] = R""(
         "ids": "/rooms[open=true]/id",
         "P" : "/users[room=$ids]"
     },
-    "result" : "$names",
+    "result" : "$P",
 }
 )"";
 
@@ -95,14 +95,27 @@ static void disasm(const view::Executable& exe)
 
 void testview()
 {
-    DataTree tre;
-    testload(tre);
-    View vw(tre);
-    Var viewdata = testview(tre);
-    vw.load(VarCRef(tre, &viewdata));
+    DataTree tree;
+    testload(tree);
+    View vw(tree);
+    Var viewdata = testview(tree);
+    vw.load(VarCRef(tree, &viewdata));
     disasm(vw.exe);
 
-    viewdata.clear(tre);
+    view::VM vm(vw.exe, vw.ep.data(), vw.ep.size());
+    bool ok = vm.run(tree.root());
+    assert(ok);
+
+    const view::VarRefs& out = vm.results();
+
+    printf("VM out: %u vars\n", (unsigned)out.size());
+    for (const VarCRef& v : out)
+    {
+        dump(v);
+        puts("-----");
+    }
+
+    viewdata.clear(tree);
 }
 
 void testparse()
@@ -134,7 +147,7 @@ void testexec()
     assert(start);
     disasm(exe);
 
-    view::VM vm(exe, VarCRef());
+    view::VM vm(exe, NULL, 0);
     vm.run(tree.root());
     const view::VarRefs& out = vm.results();
 

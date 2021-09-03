@@ -18,6 +18,12 @@ struct StackFrame
     void clear(TreeMem& mem);
 };
 
+struct EntryPoint
+{
+    std::string name;
+    size_t idx;
+};
+
 // A transform must fully write newframe. oldframe will be destroyed after the call,
 // and any pointers remaining to its store would cause a segfault.
 typedef void (*TransformFunc)(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
@@ -27,7 +33,7 @@ enum CmdType
     CM_GETKEY,     // param = index into literals table (to look up name of key). replace top with top[key].
     CM_GETVAR,     // param = index into literals table (to look up variable name). push value of variable.
     CM_TRANSFORM,  // param = function ID. transform top in place.
-    CM_COMPARE,    // param = (OpType << 1) | invert. pop A, B; push op(A, B)
+    CM_FILTER,     // param = (OpType << 1) | invert. pop A, keep elements in top only when op(top, A) is true
     CM_LITERAL,    // param = index intro literals table. push literal on top of the stack
     CM_DUP,        // copy stack frame contents at stack[stack.size() - param - 1] on top as new frame
     CM_CHECKKEY,   // shortcut. key can be a json pointer (if it starts with '/', or just a regular key name)
@@ -65,7 +71,7 @@ public:
 class VM : private TreeMem  // each VM has its own memory space to work independently
 {
 public:
-    VM(const Executable& ex, VarCRef constants);
+    VM(const Executable& ex, const EntryPoint *eps, size_t numep);
     ~VM();
 
     bool run(VarCRef v);
@@ -96,14 +102,16 @@ private:
     std::vector<StackFrame> stack;
 
     VarCRef _base;
-    Var vars;     // always map (changes while executing). values are either uint or ptr. ptr is a StackFrame*, uint is the Position to start executing if stackframe wasn't resolved yet
+    Var evals;     // always map (changes while executing). values are either uint or ptr. ptr is a StackFrame*, uint is the Position to start executing if stackframe wasn't resolved yet
     Var literals; // always array (constant after init)
     const Commands& cmds;
 
     void cmd_GetKey(unsigned param);
-    void cmd_CheckKey(unsigned param, unsigned lit);
+    void cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit);
     void cmd_PushVar(unsigned param);
     void cmd_Transform(unsigned param);
+    //void cmd_Compare(unsigned param);
+    void cmd_Filter(unsigned param);
 };
 
 } // end namespace view

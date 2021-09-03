@@ -160,7 +160,7 @@ size_t Parser::parse(const char *s)
         ++start;
     }
 
-    if(_parseLookup() && _skipSpace() && *ptr == 0)
+    if((_parseEval() || _parseLookup()) && _skipSpace() && *ptr == 0)
     {
         _emit(CM_DONE, 0);
         top.accept();
@@ -474,16 +474,11 @@ bool Parser::_parseSimpleSelection()
             _emitCheckKey(std::move(id), std::move(lit), op.param);
             ok = true;
         }
-        /*else
+        else if(_parseEval())
         {
-            // FIXME: this is probably broken
-            unsigned lit = _addLiteral(std::move(id));
-            _emit(CM_GETKEY, lit);
-            _emitPushVarRef(std::move(id));
-            if(!_parseValue())
-                return false;
             exec.cmds.push_back(op);
-        }*/
+            ok = true;
+        }
 
     }
     id.clear(mem);
@@ -500,7 +495,7 @@ bool Parser::_parseBinOp(Cmd& cm)
         const char *os = ops[i].text;
         if(size_t n = _parseVerbatim(os))
         {
-            cm.type = CM_COMPARE;
+            cm.type = CM_FILTER;
             cm.param = (ops[i].op << 1) | (invert ^ ops[i].invert);
             return top.accept();
         }
