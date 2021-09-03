@@ -85,6 +85,7 @@ public:
         CMP_STARTSWITH,
         CMP_ENDSWITH,
         // keep in sync with s_operatorNames[] in viewexec.cpp
+        CMP_EXISTS,
     };
 
     enum CompareResult
@@ -171,6 +172,7 @@ public:
     bool isNull() const { return meta == TYPE_NULL; }
     const s64 *asInt() const;
     const u64 *asUint() const;
+    StrRef asStrRef() const;
     PoolStr asString(const TreeMem& mem) const; // (does not convert to string)
     const char *asCString(const TreeMem& mem) const;
     const double *asFloat() const;

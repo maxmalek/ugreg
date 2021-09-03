@@ -263,6 +263,11 @@ const u64 *Var::asUint() const
     return NULL;
 }
 
+StrRef Var::asStrRef() const
+{
+    return _topbits() == BITS_STRING ? u.s : 0;
+}
+
 const double *Var::asFloat() const
 {
     return meta == TYPE_FLOAT ? &u.f : NULL;

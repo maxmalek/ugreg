@@ -18,7 +18,9 @@ struct StackFrame
     void clear(TreeMem& mem);
 };
 
-typedef void (*TransformFunc)(TreeMem& mem, StackFrame& newframe, const StackFrame& oldframe);
+// A transform must fully write newframe. oldframe will be destroyed after the call,
+// and any pointers remaining to its store would cause a segfault.
+typedef void (*TransformFunc)(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
 
 enum CmdType
 {
@@ -36,7 +38,8 @@ enum CmdType
     CM_DONE        // terminate execution at this point.
 };
 
-unsigned GetTransformID(const char* s);
+// >= 0 when successful. < 0 when there is no transform with that name
+int GetTransformID(const char* s);
 
 struct Cmd
 {
@@ -65,26 +68,42 @@ public:
     VM(const Executable& ex, VarCRef constants);
     ~VM();
 
+    bool run(VarCRef v);
+    const VarRefs& results() const; // only valid until reset() or re-run
+
+protected:
     void push(VarCRef v);
     bool exec(size_t ip);
+
+    // Clear stack and variables, but not literals
     void reset();
 
-    const VarRefs& results() const;
+    StackFrame *storeTop(StrRef s); // detach & store
+    StackFrame *detachTop(); // move current top to newly allocated frame
 
 private:
 
     StackFrame& _topframe();
     StackFrame _popframe();
 
+    // recurse into sub-expr of that var and alloc new frame for the result
+    StackFrame* _evalVar(StrRef s, size_t pc);
+
+    // look up a frame or eval it if not present
+    StackFrame* _getVar(StrRef s);
+
     // It's a stack machine. This is the stack of lists to process. The top is operated on.
     std::vector<StackFrame> stack;
 
-    Var vars;     // always map (changes while executing)
+    VarCRef _base;
+    Var vars;     // always map (changes while executing). values are either uint or ptr. ptr is a StackFrame*, uint is the Position to start executing if stackframe wasn't resolved yet
     Var literals; // always array (constant after init)
     const Commands& cmds;
 
     void cmd_GetKey(unsigned param);
     void cmd_CheckKey(unsigned param, unsigned lit);
+    void cmd_PushVar(unsigned param);
+    void cmd_Transform(unsigned param);
 };
 
 } // end namespace view

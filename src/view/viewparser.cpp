@@ -27,7 +27,7 @@ static const OpEntry ops[] =
     { "=",  Var::CMP_EQ, 0 },
     { "<>", Var::CMP_EQ, 1 }, // eh why not
 
-    // numeric (or lexical check for strings)
+    // numeric
     { ">=", Var::CMP_LT, 1 },
     { "<=", Var::CMP_GT, 1 },
     { "<",  Var::CMP_LT, 0 },
@@ -38,6 +38,8 @@ static const OpEntry ops[] =
     { "?<",  Var::CMP_STARTSWITH, 0 },
     { "?>",  Var::CMP_ENDSWITH, 0 },
 };
+
+
 
 struct ParserState
 {
@@ -81,7 +83,7 @@ private:
     bool _skipSpace(bool require = false);
     bool _eat(char c);
     bool _isSep() const; // next char is separator, ie. []/,space,etc or end of string
-    bool _parseOp(Cmd& op);
+    bool _parseBinOp(Cmd& op);
 
     void _emit(CmdType cm, unsigned param, unsigned param2 = 0);
     unsigned _addLiteral(Var&& lit); // return index into literals table
@@ -140,11 +142,16 @@ void Parser::rewind(const ParserState& ps)
     assert(ps.cmdidx <= exec.cmds.size());
     exec.cmds.resize(ps.cmdidx);
     assert(ps.literalidx <= exec.literals.size());
-    exec.literals.resize(ps.literalidx);
+    while(exec.literals.size() > ps.literalidx)
+    {
+        exec.literals.back().clear(mem);
+        exec.literals.pop_back();
+    }
 }
 
 size_t Parser::parse(const char *s)
 {
+    ParserTop top(*this);
     ptr = s;
     size_t start = exec.cmds.size();
     if(!start) // since we return 0 only on error, add at least 1 dummy opcode
@@ -156,6 +163,7 @@ size_t Parser::parse(const char *s)
     if(_parseLookup() && _skipSpace() && *ptr == 0)
     {
         _emit(CM_DONE, 0);
+        top.accept();
         return start;
     }
     return 0;
@@ -378,8 +386,10 @@ bool Parser::_parseExtendedEval()
         // all following things are transform names
         while(_skipSpace() && _parseIdent(id))
         {
-            unsigned tr = GetTransformID(id.asCString(mem));
-            _emit(CM_TRANSFORM, tr);
+            int tr = GetTransformID(id.asCString(mem));
+            if (tr < 0)
+                return false;
+            _emit(CM_TRANSFORM, (unsigned)tr);
         }
     }
     return _skipSpace() && _eat('}') && top.accept();
@@ -457,7 +467,7 @@ bool Parser::_parseSimpleSelection()
     Var id, lit;
     Cmd op;
     bool ok = false;
-    if(_parseIdentOrStr(id) && _skipSpace() && _parseOp(op) && _skipSpace())
+    if(_parseIdentOrStr(id) && _skipSpace() && _parseBinOp(op) && _skipSpace())
     {
         if(_parseLiteral(lit))
         {
@@ -481,7 +491,7 @@ bool Parser::_parseSimpleSelection()
     return ok && _skipSpace() && top.accept();
 }
 
-bool Parser::_parseOp(Cmd& cm)
+bool Parser::_parseBinOp(Cmd& cm)
 {
     ParserTop top(*this);
     unsigned invert = _eat('!'); // universal negation -- just stick ! in front of it

@@ -8,6 +8,7 @@
 #include "json_out.h"
 #include "jsonstreamwrapper.h"
 #include "debugfunc.h"
+#include "view/view.h"
 
 struct TestEntry
 {
@@ -58,6 +59,27 @@ char json[] = R""(
     assert(ok);
 }
 
+Var testview(TreeMem& mem)
+{
+char json[] = R""(
+{
+    "lookup": {
+        "ids": "/rooms[open=true]/id",
+        "P" : "/users[room=$ids]"
+    },
+    "result" : "$names",
+}
+)"";
+
+    Var ret;
+    VarRef ref(mem, &ret);
+    InplaceStringStream in(&json[0], sizeof(json));
+    bool ok = loadJsonDestructive(ref, in);
+    assert(ok);
+    return ret;
+}
+
+
 static void dump(VarCRef ref)
 {
     puts(dumpjson(ref, true).c_str());
@@ -69,6 +91,18 @@ static void disasm(const view::Executable& exe)
     exe.disasm(dis);
     for (size_t i = 1; i < dis.size(); ++i)
         printf("  [%u] %s\n", unsigned(i), dis[i].c_str());
+}
+
+void testview()
+{
+    DataTree tre;
+    testload(tre);
+    View vw(tre);
+    Var viewdata = testview(tre);
+    vw.load(VarCRef(tre, &viewdata));
+    disasm(vw.exe);
+
+    viewdata.clear(tre);
 }
 
 void testparse()
@@ -101,8 +135,7 @@ void testexec()
     disasm(exe);
 
     view::VM vm(exe, VarCRef());
-    vm.push(tree.root());
-    vm.exec(start);
+    vm.run(tree.root());
     const view::VarRefs& out = vm.results();
 
     printf("VM out: %u vars\n", (unsigned)out.size());
@@ -117,7 +150,8 @@ void testexec()
 int main(int argc, char** argv)
 {
     //testparse();
-    testexec();
+    //testexec();
+    testview();
 
 
     return 0;

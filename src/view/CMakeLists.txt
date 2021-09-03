@@ -3,6 +3,8 @@ set(src
     viewparser.h
     viewexec.cpp
     viewexec.h
+    view.cpp
+    view.h
 )
 
 add_library(viewengine ${src})
