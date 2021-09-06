@@ -474,10 +474,17 @@ bool Parser::_parseSimpleSelection()
             _emitCheckKey(std::move(id), std::move(lit), op.param);
             ok = true;
         }
-        else if(_parseEval())
+        else 
         {
-            exec.cmds.push_back(op);
-            ok = true;
+            //_emit(CM_DUP, 0);
+            //_emitGetKey(std::move(id));
+            if (_parseEval())
+            {
+                unsigned kidx = _addLiteral(std::move(id));
+                op.param |= kidx << 4;
+                exec.cmds.push_back(op);
+                ok = true;
+            }
         }
 
     }

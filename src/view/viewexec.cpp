@@ -8,6 +8,12 @@
 #include "debugfunc.h"
 #include "mem.h"
 
+#ifndef NDEBUG
+#define DEBUG_PRINT printf
+#else
+#define DEBUG_PRINT /* crickets */
+#endif
+
 namespace view {
 
 void StackFrame::clear(TreeMem& mem)
@@ -143,6 +149,18 @@ VM::~VM()
 {
     reset();
     literals.clear(*this);
+
+    Var::Map* m = evals.map();
+    for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+    {
+        if (void* p = it->second.asPtr())
+        {
+            StackFrame* frm = static_cast<StackFrame*>(p);
+            frm->~StackFrame();
+            this->Free(frm, sizeof(*frm));
+        }
+    }
+    evals.clear(*this);
 }
 
 bool VM::run(VarCRef v)
@@ -169,7 +187,8 @@ void VM::cmd_GetKey(unsigned param)
     for (size_t i = 0; i < N; ++i)
         if(const Var *sub = ain[i].lookup(ps.s)) // NULL if not map
         {
-            aout->v = sub; // we're just going deeper, the mem stays the same
+            aout->mem = ain[i].mem;
+            aout->v = sub;
             ++aout;
         }
     top.refs.resize(aout - ain);
@@ -250,6 +269,8 @@ void VM::cmd_Filter(unsigned param)
     std::swap(oldrefs, top.refs);
     const size_t N = oldrefs.size();
 
+    DEBUG_PRINT("Filter %u refs using %u refs\n", (unsigned)N, (unsigned)vs.refs.size());
+
     // apply to all values on top
     for (size_t i = 0; i < N; ++i)
     {
@@ -260,6 +281,8 @@ void VM::cmd_Filter(unsigned param)
             filterElements(top.refs, *elem.mem, m->begin(), m->end(), cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
         // else can't select subkey, so drop elem
     }
+
+    DEBUG_PRINT("... %u refs passed the filter\n", (unsigned)top.refs.size());
 }
 
 // keep refs in top only when a subkey has operator relation to a literal
@@ -377,18 +400,6 @@ void VM::reset()
     while(stack.size())
         _popframe().clear(*this);
 
-    // clear variables
-    Var::Map* m = evals.map();
-    for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
-    {
-        if(void* p = it->second.asPtr())
-        {
-            StackFrame* frm = static_cast<StackFrame*>(p);
-            frm->~StackFrame();
-            this->Free(frm, sizeof(*frm));
-        }
-    }
-    evals.clear(*this);
     _base.v = NULL;
     _base.mem = NULL;
 }
@@ -434,7 +445,7 @@ StackFrame* VM::_evalVar(StrRef key, size_t pc)
         stack.resize(stk);
         return NULL;
     }
-    assert(stack.size() + 1 == stk);
+    assert(stack.size() == stk + 1);
     return detachTop();
 }
 
@@ -443,7 +454,7 @@ StackFrame* VM::_getVar(StrRef key)
     Var* v = evals.lookup(key);
     if(!v)
     {
-        printf("Attempt to get var [%s], but does not exist\n",
+        printf("Attempt to eval [%s], but does not exist\n",
             this->getS(key));
         return NULL;
     }
@@ -452,10 +463,14 @@ StackFrame* VM::_getVar(StrRef key)
     {
         case Var::TYPE_PTR:
             frm = static_cast<StackFrame*>(v->asPtr());
+            DEBUG_PRINT("Eval [%s] cached, frame refs size = %u\n", this->getS(key), (unsigned)frm->refs.size());
             break;
         case Var::TYPE_UINT:
+            DEBUG_PRINT("Eval [%s], not stored, exec ip = %u\n",
+                this->getS(key), (unsigned)*v->asUint());
             frm = _evalVar(key, *v->asUint());
             v->setPtr(*this, frm);
+            DEBUG_PRINT("Eval [%s] done, frame refs size = %u\n", this->getS(key), (unsigned)frm->refs.size());
             break;
         default:
             assert(false);
@@ -545,9 +560,13 @@ size_t Executable::disasm(std::vector<std::string>& out) const
                 os << " (func #" << c.param << ")";
                 break;
             case CM_FILTER:
+            {
+                unsigned key = c.param >> 4;
                 os << ' ';
-                oprToStr(os, c.param);
+                oprToStr(os, c.param & 0xf);
+                os << " (key: " << literals[key].asCString(mem) << ")";
                 break;
+            }
 
             case CM_CHECKKEY:
             {

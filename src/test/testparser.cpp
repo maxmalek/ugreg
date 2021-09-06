@@ -65,7 +65,7 @@ char json[] = R""(
 {
     "lookup": {
         "ids": "/rooms[open=true]/id",
-        "P" : "/users[room=$ids]"
+        "P" : "/people[room=$ids]/name"
     },
     "result" : "$P",
 }

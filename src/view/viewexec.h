@@ -81,7 +81,7 @@ protected:
     void push(VarCRef v);
     bool exec(size_t ip);
 
-    // Clear stack and variables, but not literals
+    // Clear stack and variables, but not literals or evals
     void reset();
 
     StackFrame *storeTop(StrRef s); // detach & store
