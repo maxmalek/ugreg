@@ -61,6 +61,7 @@ public:
 
 private:
 
+    bool _parseExpr();
     bool _parseLookup(bool ignoreStartSlash = false);
     bool _parseKey(bool ignoreStartSlash = false);
     bool _parseNum(Var& v);
@@ -160,7 +161,7 @@ size_t Parser::parse(const char *s)
         ++start;
     }
 
-    if((_parseEval() || _parseLookup()) && _skipSpace() && *ptr == 0)
+    if(_skipSpace() && _parseExpr() && _skipSpace() && *ptr == 0)
     {
         _emit(CM_DONE, 0);
         top.accept();
@@ -306,6 +307,12 @@ bool Parser::_addMantissa(double& f, u64 i)
     f = double(i) + (double(m) / double(div));
     ptr = s;
     return true;
+}
+
+bool Parser::_parseExpr()
+{
+    // eval alone, eval followed by lookup or a lookup alone
+    return _parseEval() | _parseLookup();
 }
 
 // /path/to/thing[...]/blah
@@ -474,7 +481,7 @@ bool Parser::_parseSimpleSelection()
             _emitCheckKey(std::move(id), std::move(lit), op.param);
             ok = true;
         }
-        else 
+        else
         {
             //_emit(CM_DUP, 0);
             //_emitGetKey(std::move(id));
