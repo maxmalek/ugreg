@@ -9,8 +9,7 @@ class Executable;
 
 /* Rough DSL grammar sketch (not accounting for whitespace):
 
-expr         = lookup | eval
-lookup       = lookuproot lookupnext?...
+expr         = lookuproot lookupnext?...
 lookuproot   = subkey | selector | eval
 lookupnext   = subkey | selector
 subkey       = '/' [^\[/]+         <--- this one doesn't ignore whitespace!

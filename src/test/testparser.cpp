@@ -32,6 +32,8 @@ static const TestEntry tests[] =
     { "/hello/world[s ?> '>']", true },
     { "/hello/world[s !?? 'secret']", true },
     { "/hello/world[nope=null]", true },
+    { "$x/subkey", true },
+    { "$x[val=42]", true },
     //{ "/hello[$x]", true },   // TOOD: support this (use all in $x as key)
     //{ "/hello/world['/sub/key'=42]", true }, // probably still broken
     //{ "/rooms[name=$Q]/id", true },

@@ -60,7 +60,7 @@ public:
     void rewind(const ParserState& ps);
     size_t parse(const char *s); // returns index where execution of the parsed block starts, or 0 on error
 
-    bool _parseLookup();
+    bool _parseExpr();
     bool _parseLookupRoot();
     bool _parseLookupNext();
     bool _parseKey(bool ignoreStartSlash = false);
@@ -180,7 +180,7 @@ size_t Parser::parse(const char *s)
         ++start;
     }
 
-    if((_parseEval() || _parseLookup()) && _skipSpace() && *ptr == 0)
+    if(_skipSpace() && _parseExpr() && _skipSpace() && *ptr == 0)
     {
         _emit(CM_DONE, 0);
         top.accept();
@@ -330,7 +330,7 @@ bool Parser::_addMantissa(double& f, u64 i)
 
 // /path/to/thing[...]/blah
 // -> any number of keys and selectors
-bool Parser::_parseLookup()
+bool Parser::_parseExpr()
 {
     ParserTop top(*this);
     if(!_parseLookupRoot())
@@ -503,7 +503,7 @@ bool Parser::_parseSimpleSelection()
             _emitCheckKey(std::move(id), std::move(lit), op.param);
             ok = top2.accept();
         }
-        else 
+        else
         {
             //_emit(CM_DUP, 0);
             //_emitGetKey(std::move(id));
