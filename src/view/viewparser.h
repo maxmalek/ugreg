@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include "variant.h"
 
 namespace view {
@@ -9,7 +10,9 @@ class Executable;
 /* Rough DSL grammar sketch (not accounting for whitespace):
 
 expr         = lookup | eval
-lookup       = subkey | selector
+lookup       = lookuproot lookupnext?...
+lookuproot   = subkey | selector | eval
+lookupnext   = subkey | selector
 subkey       = '/' [^\[/]+         <--- this one doesn't ignore whitespace!
 ident        = [a-zA-Z0-9_]+
 idsub        = ident | subkey
@@ -26,6 +29,6 @@ literal-null = 'null'
 */
 
 // Return entry point (index) when successfuly parsed, 0 on error
-size_t parse(Executable& exe, const char *s);
+size_t parse(Executable& exe, const char *s, std::string& error);
 
 }

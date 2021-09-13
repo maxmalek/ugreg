@@ -26,6 +26,7 @@ struct EntryPoint
 
 // A transform must fully write newframe. oldframe will be destroyed after the call,
 // and any pointers remaining to its store would cause a segfault.
+// To keep the store, move it to newframe.
 typedef void (*TransformFunc)(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
 
 enum CmdType
@@ -76,6 +77,8 @@ public:
 
     bool run(VarCRef v);
     const VarRefs& results() const; // only valid until reset() or re-run
+    Var resultsAsArray();
+    Var resultsAsArray(TreeMem& mem);
 
 protected:
     void push(VarCRef v);

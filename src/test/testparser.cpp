@@ -18,6 +18,10 @@ struct TestEntry
 
 static const TestEntry tests[] =
 {
+    // negative tests (should fail to parse)
+    { "/hello/world[name=fail]", false },
+
+    // positive tests
     { "/hello/world", true },
     { "[name='test']/ids[*]", true },
     { "/hello/world[name='test']", true },
@@ -90,7 +94,7 @@ static void disasm(const view::Executable& exe)
     std::vector<std::string> dis;
     exe.disasm(dis);
     for (size_t i = 1; i < dis.size(); ++i)
-        printf("  [%u] %s\n", unsigned(i), dis[i].c_str());
+        puts(dis[i].c_str());
 }
 
 void testview()
@@ -122,17 +126,21 @@ void testparse()
 {
     bool allok = true;
     TreeMem mem;
+    std::string errs;
     for (size_t i = 0; i < Countof(tests); ++i)
     {
         view::Executable exe(mem);
-        size_t start = view::parse(exe, tests[i].str);
+        size_t start = view::parse(exe, tests[i].str, errs);
         bool ok = !!start == tests[i].ok;
         printf("%s:%s: %s\n", ok ? "GOOD" : "FAIL", tests[i].ok ? "valid  " : "invalid", tests[i].str);
         allok = allok && ok;
         if (start)
             disasm(exe);
     }
-    printf("### all good = %d\n", allok);
+    if(errs.length());
+        printf("Parse errors:\n%s\n", errs.c_str());
+    if(allok)
+        puts("All good!");
 }
 
 void testexec()
@@ -141,9 +149,15 @@ void testexec()
     testload(tree);
     //dump(tree.subtree("/rooms"));
 
+    std::string err;
     TreeMem exm;
     view::Executable exe(exm);
-    size_t start = view::parse(exe, "/rooms[open=true]/id");
+    size_t start = view::parse(exe, "/rooms[open=true]/id", err);
+    if(!start)
+    {
+        printf("Parse error:\n%s\n", err.c_str());
+        return;
+    }
     assert(start);
     disasm(exe);
 
@@ -162,9 +176,9 @@ void testexec()
 
 int main(int argc, char** argv)
 {
-    //testparse();
+    testparse();
     //testexec();
-    testview();
+    //testview();
 
 
     return 0;
