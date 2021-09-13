@@ -80,8 +80,9 @@ class CacheTable
 {
 public:
     typedef Hashed<K> Key;
-    const bool enabled;
+    inline bool enabled() const { return _enabled; }
 private:
+    bool _enabled;
     size_t _cols; // power of 2
     u32 _rng;
     u32 _mask; // (power of 2) - 1
@@ -101,13 +102,18 @@ private:
         return s & (_cols - 1);
     }
 public:
-    CacheTable(u32 slots, u32 cols)
-        : enabled(slots && cols), _cols(0), _rng(6581), _mask(0)
+    CacheTable()
+        : _enabled(false), _cols(0), _rng(6581), _mask(0)
     {
-        if(enabled)
+    }
+
+    void resize(u32 rows, u32 cols)
+    {
+        _enabled = rows && cols;
+        if(_enabled)
         {
             _cols = roundPow2(cols);
-            _mask = (roundPow2(slots) - 1) | 1;
+            _mask = (roundPow2(rows) - 1) | 1;
 
             const size_t N = (size_t(_mask) + 1) * cols;
             _keys.resize(N);
