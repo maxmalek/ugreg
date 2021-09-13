@@ -40,11 +40,12 @@ static const TestEntry tests[] =
     { "$x/subkey", true },
     { "$x[val=42]", true },
 
-    //{ "/hello[$x]", true },   // TOOD: support this (use all in $x as key)
-    //{ "/hello/world['/sub/key'=42]", true }, // probably still broken
-    //{ "/rooms[name=$Q]/id", true },
-    //{ "/users[room=${ids toint}]", true },
-    //{ "${P/first_name} ${P/last_name}", true }, // not a query, doesn't accept this yet
+    //{ "/hello[$x]", true },   // TOOD: support this? (use all in $x as key)
+    // ^ not sure if we should. that would introduce a data-based lookup.
+
+    { "/hello/world['/sub/key'=42]", true }, // probably still broken
+    { "/rooms[name=$Q]/id", true },
+    { "/users[room=${ids toint}]", true },
 };
 
 // TODO: way to specify key exists, key not exists
@@ -77,9 +78,9 @@ char json[] = R""(
 {
     "lookup": {
         "ids": "/rooms[open=true]/id",
-        "P" : "/people[room=$ids]/name"
+        "P" : "/people[room=$ids]"
     },
-    "result" : "$P",
+    "result" : "$P/name",
 }
 )"";
 
@@ -135,11 +136,14 @@ void testparse()
     bool allok = true;
     TreeMem mem;
     std::string errs;
+    std::vector<size_t> failed;
     for (size_t i = 0; i < Countof(tests); ++i)
     {
         view::Executable exe(mem);
         size_t start = view::parse(exe, tests[i].str, errs);
         bool ok = !!start == tests[i].ok;
+        if(!ok)
+            failed.push_back(i);
         printf("%s:%s: %s\n", ok ? "GOOD" : "FAIL", tests[i].ok ? "valid  " : "invalid", tests[i].str);
         allok = allok && ok;
         if (start)
@@ -149,6 +153,12 @@ void testparse()
         printf("Parse errors:\n%s\n", errs.c_str());
     if(allok)
         puts("All good!");
+    else
+    {
+        puts("!! Tests failed:");
+        for(size_t i = 0; i < failed.size(); ++i)
+            puts(tests[failed[i]].str);
+    }
 }
 
 void testexec()
@@ -184,9 +194,9 @@ void testexec()
 
 int main(int argc, char** argv)
 {
-    testparse();
+    //testparse();
     //testexec();
-    //testview();
+    testview();
 
 
     return 0;

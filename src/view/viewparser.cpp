@@ -420,6 +420,7 @@ bool Parser::_parseExtendedEval()
             _emit(CM_TRANSFORM, (unsigned)tr);
         }
     }
+    id.clear(mem);
     return _skipSpace() && _eat('}') && top.accept();
 }
 

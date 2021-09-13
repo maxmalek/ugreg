@@ -69,7 +69,10 @@ bool WebServer::start(const ServerConfig& cfg)
 
     mg_context *ctx = mg_start(&cb, NULL, options);
     if(!ctx)
+    {
+        printf("mg_start() failed! (Is something already listening on our port?)\n");
         return false;
+    }
 
     _ctx = ctx;
     puts("WS: Started.");
