@@ -136,9 +136,8 @@ VM::VM(const Executable& ex, const EntryPoint *eps, size_t numep)
         VarRef evalmap(*this, &evals);
         for(size_t i = 0; i < numep; ++i)
         {
-            DEBUG_PRINT("Eval entrypoint: [%s] = %u\n", eps[i].name.c_str(), eps[i].idx);
+            DEBUG_PRINT("Eval entrypoint: [%s] = %u\n", eps[i].name.c_str(), (unsigned)eps[i].idx);
             evalmap[eps[i].name.c_str()].v->setUint(*this, eps[i].idx);
-
         }
     }
 

@@ -79,7 +79,7 @@ public:
     bool _parseEval();
     bool _parseSimpleEval();
     bool _parseExtendedEval();
-    bool _parseIdent(Var& id); // write identifier name to id
+    bool _parseIdent(Var& id); // write identifier name to id (as string)
     bool _parseIdentOrStr(Var& id);
     bool _skipSpace(bool require = false);
     bool _eat(char c);
@@ -391,7 +391,7 @@ bool Parser::_parseEval()
 bool Parser::_parseSimpleEval()
 {
     Var id;
-    bool ok = _parseIdent(id);
+    bool ok = _parseIdentOrStr(id);
     if(ok)
     {
         unsigned lit = _addLiteral(std::move(id));
@@ -408,11 +408,11 @@ bool Parser::_parseExtendedEval()
 {
     ParserTop top(*this);
     Var id;
-    if(_eat('{') && _skipSpace() && (_parseIdent(id) /*|| _parseLookup()*/))
+    if(_eat('{') && _skipSpace() && (_parseIdentOrStr(id) /*|| _parseLookup()*/))
     {
         _emitPushVarRef(std::move(id));
         // all following things are transform names
-        while(_skipSpace() && _parseIdent(id))
+        while(_skipSpace() && _parseIdentOrStr(id))
         {
             int tr = GetTransformID(id.asCString(mem));
             if (tr < 0)

@@ -19,7 +19,11 @@ struct TestEntry
 static const TestEntry tests[] =
 {
     // negative tests (should fail to parse)
-    { "/hello/world[name=fail]", false },
+    { "/hello/world[name=this_should_fail]", false }, // expected literal or var
+    { "/hello/world[this_should_fail", false },       // missing =
+    { "/hello/world['this_should_fail'", false },     // unterminated [
+    { "/hello/world['this_should_fail", false },      // unterminated '
+    { "/hello/world[this should fail = 0]", false },  // spaces in identifier not allowed unless it's a string literal
 
     // positive tests
     { "/hello/world", true },
@@ -32,8 +36,10 @@ static const TestEntry tests[] =
     { "/hello/world[s ?> '>']", true },
     { "/hello/world[s !?? 'secret']", true },
     { "/hello/world[nope=null]", true },
+    { "/hello/world['this is fine'=0]", true },
     { "$x/subkey", true },
     { "$x[val=42]", true },
+
     //{ "/hello[$x]", true },   // TOOD: support this (use all in $x as key)
     //{ "/hello/world['/sub/key'=42]", true }, // probably still broken
     //{ "/rooms[name=$Q]/id", true },
