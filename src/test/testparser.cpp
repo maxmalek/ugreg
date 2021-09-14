@@ -18,6 +18,14 @@ struct TestEntry
 
 static const TestEntry tests[] =
 {
+    // negative tests (should fail to parse)
+    { "/hello/world[name=this_should_fail]", false }, // expected literal or var
+    { "/hello/world[this_should_fail", false },       // missing =
+    { "/hello/world['this_should_fail'", false },     // unterminated [
+    { "/hello/world['this_should_fail", false },      // unterminated '
+    { "/hello/world[this should fail = 0]", false },  // spaces in identifier not allowed unless it's a string literal
+
+    // positive tests
     { "/hello/world", true },
     { "[name='test']/ids[*]", true },
     { "/hello/world[name='test']", true },
@@ -28,13 +36,16 @@ static const TestEntry tests[] =
     { "/hello/world[s ?> '>']", true },
     { "/hello/world[s !?? 'secret']", true },
     { "/hello/world[nope=null]", true },
+    { "/hello/world['this is fine'=0]", true },
     { "$x/subkey", true },
     { "$x[val=42]", true },
-    //{ "/hello[$x]", true },   // TOOD: support this (use all in $x as key)
-    //{ "/hello/world['/sub/key'=42]", true }, // probably still broken
-    //{ "/rooms[name=$Q]/id", true },
-    //{ "/users[room=${ids toint}]", true },
-    //{ "${P/first_name} ${P/last_name}", true }, // not a query, doesn't accept this yet
+
+    //{ "/hello[$x]", true },   // TOOD: support this? (use all in $x as key)
+    // ^ not sure if we should. that would introduce a data-based lookup.
+
+    { "/hello/world['/sub/key'=42]", true }, // probably still broken
+    { "/rooms[name=$Q]/id", true },
+    { "/users[room=${ids toint}]", true },
 };
 
 // TODO: way to specify key exists, key not exists
@@ -67,9 +78,9 @@ char json[] = R""(
 {
     "lookup": {
         "ids": "/rooms[open=true]/id",
-        "P" : "/people[room=$ids]/name"
+        "P" : "/people[room=$ids]"
     },
-    "result" : "$P",
+    "result" : "$P/name",
 }
 )"";
 
@@ -92,7 +103,7 @@ static void disasm(const view::Executable& exe)
     std::vector<std::string> dis;
     exe.disasm(dis);
     for (size_t i = 1; i < dis.size(); ++i)
-        printf("  [%u] %s\n", unsigned(i), dis[i].c_str());
+        puts(dis[i].c_str());
 }
 
 void testview()
@@ -124,17 +135,30 @@ void testparse()
 {
     bool allok = true;
     TreeMem mem;
+    std::string errs;
+    std::vector<size_t> failed;
     for (size_t i = 0; i < Countof(tests); ++i)
     {
         view::Executable exe(mem);
-        size_t start = view::parse(exe, tests[i].str);
+        size_t start = view::parse(exe, tests[i].str, errs);
         bool ok = !!start == tests[i].ok;
+        if(!ok)
+            failed.push_back(i);
         printf("%s:%s: %s\n", ok ? "GOOD" : "FAIL", tests[i].ok ? "valid  " : "invalid", tests[i].str);
         allok = allok && ok;
         if (start)
             disasm(exe);
     }
-    printf("### all good = %d\n", allok);
+    if(errs.length());
+        printf("Parse errors:\n%s\n", errs.c_str());
+    if(allok)
+        puts("All good!");
+    else
+    {
+        puts("!! Tests failed:");
+        for(size_t i = 0; i < failed.size(); ++i)
+            puts(tests[failed[i]].str);
+    }
 }
 
 void testexec()
@@ -143,9 +167,15 @@ void testexec()
     testload(tree);
     //dump(tree.subtree("/rooms"));
 
+    std::string err;
     TreeMem exm;
     view::Executable exe(exm);
-    size_t start = view::parse(exe, "/rooms[open=true]/id");
+    size_t start = view::parse(exe, "/rooms[open=true]/id", err);
+    if(!start)
+    {
+        printf("Parse error:\n%s\n", err.c_str());
+        return;
+    }
     assert(start);
     disasm(exe);
 

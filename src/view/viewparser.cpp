@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <assert.h>
+#include <sstream>
 #include "util.h"
 #include "safe_numerics.h"
 #include "treemem.h"
@@ -53,16 +54,15 @@ class Parser
 {
 public:
     Parser(Executable& exe)
-        : ptr(NULL), mem(exe.mem), exec(exe) {}
+        : ptr(NULL), maxptr(NULL), mem(exe.mem), exec(exe) {}
 
     ParserState snapshot() const;
     void rewind(const ParserState& ps);
     size_t parse(const char *s); // returns index where execution of the parsed block starts, or 0 on error
 
-private:
-
     bool _parseExpr();
-    bool _parseLookup(bool ignoreStartSlash = false);
+    bool _parseLookupRoot();
+    bool _parseLookupNext();
     bool _parseKey(bool ignoreStartSlash = false);
     bool _parseNum(Var& v);
     bool _parseStr(Var& v);
@@ -79,7 +79,7 @@ private:
     bool _parseEval();
     bool _parseSimpleEval();
     bool _parseExtendedEval();
-    bool _parseIdent(Var& id); // write identifier name to id
+    bool _parseIdent(Var& id); // write identifier name to id (as string)
     bool _parseIdentOrStr(Var& id);
     bool _skipSpace(bool require = false);
     bool _eat(char c);
@@ -94,15 +94,32 @@ private:
     void _emitCheckKey(Var&& key, Var&& lit, unsigned opparam);
 
     const char *ptr;
+    const char *maxptr; // for error reporting only
     TreeMem& mem;
     Executable& exec;
 
 };
 
-size_t parse(Executable& exe, const char *s)
+size_t parse(Executable& exe, const char *s, std::string& error)
 {
     Parser p(exe);
-    return p.parse(s);
+    size_t res = p.parse(s);
+    if(!res)
+    {
+        if(p.maxptr)
+        {
+            size_t pos = p.maxptr - s;
+            std::ostringstream os;
+            os << s << "\n";
+            for(size_t i = 0; i < pos; ++i)
+                os << ' ';
+            os << "^-- Parse error here\n";
+            error += os.str();
+        }
+        else
+             error += "? Parse error somewhere\n";
+    }
+    return res;
 }
 
 static inline bool _IsSep(char c)
@@ -139,6 +156,7 @@ ParserState Parser::snapshot() const
 
 void Parser::rewind(const ParserState& ps)
 {
+    maxptr = std::max(maxptr, ps.ptr);
     ptr = ps.ptr;
     assert(ps.cmdidx <= exec.cmds.size());
     exec.cmds.resize(ps.cmdidx);
@@ -152,8 +170,9 @@ void Parser::rewind(const ParserState& ps)
 
 size_t Parser::parse(const char *s)
 {
+    ptr = s; // this must be done before creating top
     ParserTop top(*this);
-    ptr = s;
+
     size_t start = exec.cmds.size();
     if(!start) // since we return 0 only on error, add at least 1 dummy opcode
     {
@@ -317,16 +336,24 @@ bool Parser::_parseExpr()
 
 // /path/to/thing[...]/blah
 // -> any number of keys and selectors
-bool Parser::_parseLookup(bool ignoreStartSlash)
+bool Parser::_parseExpr()
 {
     ParserTop top(*this);
-    size_t n = 0;
-    while(_parseKey() || _parseSelector())
-    {
-        ++n;
-        ignoreStartSlash = false;
-    }
-    return n && top.accept();
+    if(!_parseLookupRoot())
+        return false;
+
+    while(_parseLookupNext()) {}
+    return top.accept();
+}
+
+bool Parser::_parseLookupRoot()
+{
+    return _parseEval() || _parseKey() || _parseSelector();
+}
+
+bool Parser::_parseLookupNext()
+{
+    return _parseKey() || _parseSelector();
 }
 
 // /key
@@ -370,7 +397,7 @@ bool Parser::_parseEval()
 bool Parser::_parseSimpleEval()
 {
     Var id;
-    bool ok = _parseIdent(id);
+    bool ok = _parseIdentOrStr(id);
     if(ok)
     {
         unsigned lit = _addLiteral(std::move(id));
@@ -387,11 +414,11 @@ bool Parser::_parseExtendedEval()
 {
     ParserTop top(*this);
     Var id;
-    if(_eat('{') && _skipSpace() && (_parseIdent(id) /*|| _parseLookup()*/))
+    if(_eat('{') && _skipSpace() && (_parseIdentOrStr(id) /*|| _parseLookup()*/))
     {
         _emitPushVarRef(std::move(id));
         // all following things are transform names
-        while(_skipSpace() && _parseIdent(id))
+        while(_skipSpace() && _parseIdentOrStr(id))
         {
             int tr = GetTransformID(id.asCString(mem));
             if (tr < 0)
@@ -399,6 +426,7 @@ bool Parser::_parseExtendedEval()
             _emit(CM_TRANSFORM, (unsigned)tr);
         }
     }
+    id.clear(mem);
     return _skipSpace() && _eat('}') && top.accept();
 }
 
@@ -476,10 +504,11 @@ bool Parser::_parseSimpleSelection()
     bool ok = false;
     if(_parseIdentOrStr(id) && _skipSpace() && _parseBinOp(op) && _skipSpace())
     {
+        ParserTop top2(*this);
         if(_parseLiteral(lit))
         {
             _emitCheckKey(std::move(id), std::move(lit), op.param);
-            ok = true;
+            ok = top2.accept();
         }
         else
         {
@@ -490,7 +519,7 @@ bool Parser::_parseSimpleSelection()
                 unsigned kidx = _addLiteral(std::move(id));
                 op.param |= kidx << 4;
                 exec.cmds.push_back(op);
-                ok = true;
+                ok = top2.accept();
             }
         }
 

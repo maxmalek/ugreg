@@ -108,9 +108,9 @@ int main(int argc, char** argv)
     if (!srv.start(cfg))
         bail("Failed to start server!", "");
 
-    TreeHandler hcfg(cfgtree, 7, cfg); // strlen("/config")
+    TreeHandler hcfg(cfgtree, "/config", cfg);
     if(cfg.expose_debug_apis)
-        srv.registerHandler("/config", hcfg.Handler, &hcfg);
+        srv.registerHandler(hcfg);
 
     // TEST DATA START
     DataTree tree;
@@ -131,12 +131,9 @@ int main(int argc, char** argv)
     }
     // TEST DATA END
 
-
-    // FIXME: this is ugly
-    TreeHandler htree(tree, 4, cfg); // strlen("/get")
-    srv.registerHandler("/get", htree.Handler, &htree);
-
-
+    TreeHandler htree(tree, "/get", cfg);
+    htree.setupCache(cfg.reply_cache.rows, cfg.reply_cache.columns, cfg.reply_cache.maxtime);
+    srv.registerHandler(htree);
 
     puts("Ready!");
 

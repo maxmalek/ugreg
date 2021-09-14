@@ -17,17 +17,18 @@ bool View::compile(const char *s, VarCRef val)
 
     if (const char *code = val.asCString())
     {
-        if (size_t idx = view::parse(exe, val.asCString()))
+        std::string err;
+        if (size_t idx = view::parse(exe, code, err))
         {
             view::EntryPoint e { s, idx };
             ep.push_back(std::move(e));
             return true;
         }
         else
-            printf("Failed to parse %s: %s\n", s, code);
+            printf("Key [%s] parse error:\n%s\n", s, err.c_str());
     }
     else
-        printf("Key %s is not string value; skipped\n", s);
+        printf("Key [%s] is not string value; skipped\n", s);
     return false;
 }
 

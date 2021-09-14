@@ -135,7 +135,10 @@ VM::VM(const Executable& ex, const EntryPoint *eps, size_t numep)
     {
         VarRef evalmap(*this, &evals);
         for(size_t i = 0; i < numep; ++i)
+        {
+            DEBUG_PRINT("Eval entrypoint: [%s] = %u\n", eps[i].name.c_str(), (unsigned)eps[i].idx);
             evalmap[eps[i].name.c_str()].v->setUint(*this, eps[i].idx);
+        }
     }
 
     // literals are only ever referred to by index, copy those as well
@@ -409,6 +412,22 @@ const VarRefs& VM::results() const
     return stack.back().refs;
 }
 
+Var VM::resultsAsArray()
+{
+    return resultsAsArray(*this);
+}
+
+Var VM::resultsAsArray(TreeMem& mem)
+{
+    const VarRefs& r = results();
+    const size_t n = r.size();
+    Var a;
+    Var *aa = a.makeArray(mem, n);
+    for(size_t i = 0; i < n; ++i)
+        aa[i] = r[i].v->clone(mem, *this);
+    return a;
+}
+
 StackFrame *VM::storeTop(StrRef s)
 {
     StackFrame *frm = detachTop();
@@ -466,11 +485,17 @@ StackFrame* VM::_getVar(StrRef key)
             DEBUG_PRINT("Eval [%s] cached, frame refs size = %u\n", this->getS(key), (unsigned)frm->refs.size());
             break;
         case Var::TYPE_UINT:
-            DEBUG_PRINT("Eval [%s], not stored, exec ip = %u\n",
-                this->getS(key), (unsigned)*v->asUint());
-            frm = _evalVar(key, *v->asUint());
+        {
+            unsigned ip = *v->asUint();
+            v->clear(*this); // detect self-referencing
+            DEBUG_PRINT("Eval [%s], not stored, exec ip = %u\n", this->getS(key), ip);
+            frm = _evalVar(key, ip);
             v->setPtr(*this, frm);
             DEBUG_PRINT("Eval [%s] done, frame refs size = %u\n", this->getS(key), (unsigned)frm->refs.size());
+            break;
+        }
+        case Var::TYPE_NULL:
+            printf("Eval [%s] not stored and self-referencing, abort\n", this->getS(key));
             break;
         default:
             assert(false);
@@ -541,6 +566,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
     {
         const Cmd& c = cmds[i];
         std::ostringstream os;
+        os << " [" << i << "] ";
         os << s_opcodeNames[c.type];
 
         switch(cmds[i].type)
@@ -586,6 +612,19 @@ size_t Executable::disasm(std::vector<std::string>& out) const
 
         out.push_back(os.str());
     }
+    {
+        std::ostringstream os;
+        os << "--- Literals[" << literals.size() << "]---";
+        out.push_back(os.str());
+    }
+    for(size_t i = 0; i < literals.size(); ++i)
+    {
+        std::ostringstream os;
+        os << " [" << i << "] = ";
+        varToString(os, VarCRef(mem, &literals[i]));
+        out.push_back(os.str());
+    }
+
     return n;
 }
 

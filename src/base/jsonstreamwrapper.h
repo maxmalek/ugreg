@@ -140,7 +140,7 @@ public:
     Ch* const _buf;
 
     size_t _count;  //!< Number of characters written, total
-    const WriteFunc _writef;
+    WriteFunc _writef;
     bool _err; // if this is ever set, the disk is full or something
     const InitFunc _initf;
 };
