@@ -149,7 +149,7 @@ void testparse()
         if (start)
             disasm(exe);
     }
-    if(errs.length());
+    if(errs.length())
         printf("Parse errors:\n%s\n", errs.c_str());
     if(allok)
         puts("All good!");
