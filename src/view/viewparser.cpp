@@ -328,12 +328,6 @@ bool Parser::_addMantissa(double& f, u64 i)
     return true;
 }
 
-bool Parser::_parseExpr()
-{
-    // eval alone, eval followed by lookup or a lookup alone
-    return _parseEval() | _parseLookup();
-}
-
 // /path/to/thing[...]/blah
 // -> any number of keys and selectors
 bool Parser::_parseExpr()
