@@ -258,7 +258,7 @@ int RequestHandler::_onRequest(mg_connection* conn) const
         k = std::move(r);
     }
 
-    char buf[16 * 1024];
+    char buf[8 * 1024];
 
     if(!_cache.enabled())
     {
@@ -307,7 +307,7 @@ int RequestHandler::_onRequest(mg_connection* conn) const
         rq->body.shrink_to_fit();
 
         // When a max. cache time is set, see whether the object expires on its own earlier than
-        // the maxtime. Adjust accordinly.
+        // the maxtime. Adjust accordingly.
         if (maxcachetime)
         {
             u64 t = rq->expiryTime;

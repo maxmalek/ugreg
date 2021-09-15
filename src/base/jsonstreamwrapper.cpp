@@ -54,11 +54,13 @@ BufferedWriteStream::BufferedWriteStream(InitFunc initf, WriteFunc wf, char* buf
 
 BufferedWriteStream::~BufferedWriteStream()
 {
-    Flush();
+    if(_dst)
+        Flush();
 }
 
 void BufferedWriteStream::Flush()
 {
+    assert(_dst);
     if (!_err && _dst != _buf)
     {
         const size_t avail = _dst - _buf;

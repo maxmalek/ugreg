@@ -25,6 +25,8 @@ public:
 
     int _onRequest(mg_connection* conn) const;
 
+    // Derived classes override this to serve the request.
+    // Possibly called by many threads at once.
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const = 0;
 
     int onRequest_deflate(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const;
