@@ -15,6 +15,8 @@
 #include "subproc.h"
 #include "treefunc.h"
 #include "util.h"
+#include "handler_view.h"
+#include "view/viewmgr.h"
 
 #ifndef SIGQUIT
 #define SIGQUIT 3
@@ -102,6 +104,20 @@ int main(int argc, char** argv)
         );
     }
 
+    view::Mgr vmgr;
+    {
+        VarCRef views = cfgtree.subtree("/view");
+        if(const Var::Map *m = views ? views.v->map() : NULL)
+            for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+            {
+                const char *key = cfgtree.getS(it->first);
+                if(vmgr.addViewDef(key, VarCRef(cfgtree, &it->second)))
+                    printf("Added view [%s]\n", key);
+                else
+                    printf("FAILED to add view [%s]\n", key);
+            }
+    }
+
     // Can start the webserver early while we're still loading up other things.
     WebServer::StaticInit();
     WebServer srv;
@@ -114,6 +130,11 @@ int main(int argc, char** argv)
 
     // TEST DATA START
     DataTree tree;
+
+    ViewHandler hview(vmgr, tree, "/view", cfg);
+    hview.setupCache(cfg.reply_cache.rows, cfg.reply_cache.columns, cfg.reply_cache.maxtime);
+    srv.registerHandler(hview);
+
     {
         loadAndMergeJsonFromFile(&tree, "test/citylots.json", "/citylots", MERGE_FLAT);
         loadAndMergeJsonFromFile(&tree, "test/mock_users.json", "/users", MERGE_FLAT);

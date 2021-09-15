@@ -5,6 +5,8 @@ set(src
     viewexec.h
     view.cpp
     view.h
+    viewmgr.cpp
+    viewmgr.h
 )
 
 add_library(viewengine ${src})

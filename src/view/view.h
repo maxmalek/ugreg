@@ -3,19 +3,26 @@
 #include "variant.h"
 #include "viewexec.h"
 
+namespace view {
+
+// A View is a collection of entrypoints into an associated Executable.
+// Pass this to a VM ctor for a complete init. The View can be deleted later,
+// a VM makes its own copy of the data.
+// Avoid using this directly; it's a part of view::Mgr
 class View
 {
 public:
     View(TreeMem& mem);
+    View(View&& o) noexcept;
     ~View();
 
-    bool load(VarCRef v);
-    bool initVM(view::VM& vm);
+    bool load(VarCRef v); // load JSON structure describing the view
 
-    view::Executable exe;
-    std::vector<view::EntryPoint> ep;
+    Executable exe;
+    std::vector<EntryPoint> ep;
 
 private:
     bool compile(const char* s, VarCRef val);
 };
 
+} // end namespace view

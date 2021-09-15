@@ -41,5 +41,5 @@ public:
     Var _root;
 
 public:
-    std::shared_mutex mutex;
+    mutable std::shared_mutex mutex;
 };

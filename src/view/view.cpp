@@ -1,9 +1,16 @@
 #include "view.h"
 #include "viewparser.h"
 
+namespace view {
 
 View::View(TreeMem& mem)
     : exe(mem)
+{
+}
+
+View::View(View&& o) noexcept
+    : exe(std::move(o.exe))
+    , ep(std::move(o.ep))
 {
 }
 
@@ -55,12 +62,14 @@ bool View::load(VarCRef v)
         {
             ok = compile(v.mem->getS(it->first), VarCRef(v.mem, &it->second)) && ok;
         }
-
     }
+
+    // TODO: check up-front that all referenced variables are there
+    // also: add extra key: "external": ["a", ...] to make
+    // variables that must be passed into the query (?a=...) explicit
+    // so we can bail early when the client didn't supply one
+
     return ok;
 }
 
-bool View::initVM(view::VM& vm)
-{
-    return false;
-}
+} // end namespace view

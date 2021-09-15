@@ -10,6 +10,8 @@
 #include "debugfunc.h"
 #include "view/view.h"
 
+using namespace view;
+
 struct TestEntry
 {
     const char *str;
@@ -115,7 +117,8 @@ void testview()
     vw.load(VarCRef(tree, &viewdata));
     disasm(vw.exe);
 
-    view::VM vm(vw.exe, vw.ep.data(), vw.ep.size());
+    view::VM vm;
+    vm.init(vw.exe, vw.ep.data(), vw.ep.size());
     bool ok = vm.run(tree.root());
     assert(ok);
 
@@ -179,7 +182,8 @@ void testexec()
     assert(start);
     disasm(exe);
 
-    view::VM vm(exe, NULL, 0);
+    view::VM vm;
+    vm.init(exe, NULL, 0);
     vm.run(tree.root());
     const view::VarRefs& out = vm.results();
 

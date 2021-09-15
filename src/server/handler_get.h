@@ -10,12 +10,12 @@ struct ServerConfig;
 class TreeHandler : public RequestHandler
 {
 public:
-    TreeHandler(DataTree &tree, const char *prefix, const ServerConfig& cfg);
+    TreeHandler(const DataTree &tree, const char *prefix, const ServerConfig& cfg);
     ~TreeHandler();
 
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 
-    DataTree& tree;
+    const DataTree& tree;
 
 };
 

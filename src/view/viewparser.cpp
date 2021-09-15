@@ -54,7 +54,7 @@ class Parser
 {
 public:
     Parser(Executable& exe)
-        : ptr(NULL), maxptr(NULL), mem(exe.mem), exec(exe) {}
+        : ptr(NULL), maxptr(NULL), mem(*exe.mem), exec(exe) {}
 
     ParserState snapshot() const;
     void rewind(const ParserState& ps);

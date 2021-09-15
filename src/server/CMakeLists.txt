@@ -18,6 +18,8 @@ set(src
     request.h
     zstream.cpp
     zstream.h
+    handler_view.cpp
+    handler_view.h
 )
 
 add_executable(ugreg ${src})

@@ -126,15 +126,35 @@ static const TransformEntry s_transforms[] =
     { transformToInt, "toint" },
 };
 
-
-VM::VM(const Executable& ex, const EntryPoint *eps, size_t numep)
-    : cmds(ex.cmds)
+VM::VM()
 {
+}
+
+VM::~VM()
+{
+    reset();
+    literals.clear(*this);
+
+    if(Var::Map* m = evals.map())
+        for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+            if (void* p = it->second.asPtr())
+            {
+                StackFrame* frm = static_cast<StackFrame*>(p);
+                frm->~StackFrame();
+                this->Free(frm, sizeof(*frm));
+            }
+    evals.clear(*this);
+}
+
+void VM::init(const Executable& ex, const EntryPoint* eps, size_t numep)
+{
+    cmds = ex.cmds; // make a copy
+
     evals.makeMap(*this);
-    if(numep)
+    if (numep)
     {
         VarRef evalmap(*this, &evals);
-        for(size_t i = 0; i < numep; ++i)
+        for (size_t i = 0; i < numep; ++i)
         {
             DEBUG_PRINT("Eval entrypoint: [%s] = %u\n", eps[i].name.c_str(), (unsigned)eps[i].idx);
             evalmap[eps[i].name.c_str()].v->setUint(*this, eps[i].idx);
@@ -143,27 +163,9 @@ VM::VM(const Executable& ex, const EntryPoint *eps, size_t numep)
 
     // literals are only ever referred to by index, copy those as well
     const size_t N = ex.literals.size();
-    Var *a = literals.makeArray(*this, N);
-    for(size_t i = 0; i < N; ++i)
-        a[i] = std::move(ex.literals[i].clone(*this, ex.mem));
-}
-
-VM::~VM()
-{
-    reset();
-    literals.clear(*this);
-
-    Var::Map* m = evals.map();
-    for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
-    {
-        if (void* p = it->second.asPtr())
-        {
-            StackFrame* frm = static_cast<StackFrame*>(p);
-            frm->~StackFrame();
-            this->Free(frm, sizeof(*frm));
-        }
-    }
-    evals.clear(*this);
+    Var* a = literals.makeArray(*this, N);
+    for (size_t i = 0; i < N; ++i)
+        a[i] = std::move(ex.literals[i].clone(*this, *ex.mem));
 }
 
 bool VM::run(VarCRef v)
@@ -486,9 +488,9 @@ StackFrame* VM::_getVar(StrRef key)
             break;
         case Var::TYPE_UINT:
         {
-            unsigned ip = *v->asUint();
+            size_t ip = *v->asUint();
             v->clear(*this); // detect self-referencing
-            DEBUG_PRINT("Eval [%s], not stored, exec ip = %u\n", this->getS(key), ip);
+            DEBUG_PRINT("Eval [%s], not stored, exec ip = %u\n", this->getS(key), (unsigned)ip);
             frm = _evalVar(key, ip);
             v->setPtr(*this, frm);
             DEBUG_PRINT("Eval [%s] done, frame refs size = %u\n", this->getS(key), (unsigned)frm->refs.size());
@@ -512,14 +514,31 @@ int GetTransformID(const char* s)
 }
 
 Executable::Executable(TreeMem& mem)
-    : mem(mem)
+    : mem(&mem)
 {
+}
+
+Executable::Executable(Executable&& o) noexcept
+    : cmds(std::move(o.cmds))
+    , literals(std::move(o.literals))
+    , mem(o.mem)
+{
+    o.mem = NULL;
 }
 
 Executable::~Executable()
 {
-    for(size_t i = 0; i < literals.size(); ++i)
-        literals[i].clear(mem);
+    clear();
+}
+void Executable::clear()
+{
+    if(mem)
+    {
+        for(size_t i = 0; i < literals.size(); ++i)
+            literals[i].clear(*mem);
+        literals.clear();
+        mem = NULL;
+    }
 }
 
 // ----------------------------------------------
@@ -575,7 +594,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
             case CM_DONE:
                 break; // do nothing
             case CM_GETVAR:
-                os << ' ' << literals[c.param].asCString(mem);
+                os << ' ' << literals[c.param].asCString(*mem);
                 break;
             case CM_GETKEY:
             case CM_LITERAL:
@@ -590,14 +609,14 @@ size_t Executable::disasm(std::vector<std::string>& out) const
                 unsigned key = c.param >> 4;
                 os << ' ';
                 oprToStr(os, c.param & 0xf);
-                os << " (key: " << literals[key].asCString(mem) << ")";
+                os << " (key: " << literals[key].asCString(*mem) << ")";
                 break;
             }
 
             case CM_CHECKKEY:
             {
                 unsigned key = c.param >> 4;
-                os << " [ " << literals[key].asCString(mem);
+                os << " [ " << literals[key].asCString(*mem);
                 oprToStr(os, c.param & 0xf);
                 os << ' ';
                 varToString(os, VarCRef(mem, &literals[c.param2]));

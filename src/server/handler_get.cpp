@@ -8,7 +8,7 @@
 #include "config.h"
 
 
-TreeHandler::TreeHandler(DataTree& tree, const char *prefix, const ServerConfig& cfg )
+TreeHandler::TreeHandler(const DataTree& tree, const char *prefix, const ServerConfig& cfg )
     : RequestHandler(prefix), tree(tree)
 {
 }

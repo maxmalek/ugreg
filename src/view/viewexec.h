@@ -57,25 +57,29 @@ struct Cmd
 
 typedef std::vector<Cmd> Commands;
 
+// An executable contains the bytecode to be run by the VM
 class Executable
 {
 public:
     Executable(TreeMem& mem);
+    Executable(Executable&& o) noexcept;
     ~Executable();
     size_t disasm(std::vector<std::string>& out) const;
+    void clear();
 
     Commands cmds;
     std::vector<Var> literals;
-    TreeMem& mem;
+    TreeMem *mem;
 };
 
-class VM : private TreeMem  // each VM has its own memory space to work independently
+class VM : public TreeMem  // each VM has its own memory space to work independently
 {
 public:
-    VM(const Executable& ex, const EntryPoint *eps, size_t numep);
+    VM();
     ~VM();
+    void init(const Executable& ex, const EntryPoint* eps, size_t numep);
 
-    bool run(VarCRef v);
+    bool run(VarCRef v); // pass root of tree to operate on
     const VarRefs& results() const; // only valid until reset() or re-run
     Var resultsAsArray();
     Var resultsAsArray(TreeMem& mem);
@@ -107,7 +111,7 @@ private:
     VarCRef _base;
     Var evals;     // always map (changes while executing). values are either uint or ptr. ptr is a StackFrame*, uint is the Position to start executing if stackframe wasn't resolved yet
     Var literals; // always array (constant after init)
-    const Commands& cmds;
+    Commands cmds; // copied(!) from Executable
 
     void cmd_GetKey(unsigned param);
     void cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit);
