@@ -267,6 +267,7 @@ int RequestHandler::_onRequest(mg_connection* conn) const
         {
             {
                 ThrowingSocketWriteStream wr(conn, buf, sizeof(buf), s_directOut[k.obj.compression].header, s_directOut[k.obj.compression].headerSize - 1); // don't include \0
+                wr.init();
                 const StreamWriteMth writer = s_directOut[k.obj.compression].writer;
                 status = (this->*writer)(wr, conn, k.obj);
                 wr.Flush();
@@ -329,5 +330,6 @@ int RequestHandler::onRequest_deflate(BufferedWriteStream& dst, mg_connection* c
 {
     char zbuf[8 * 1024];
     DeflateWriteStream z(dst, 1, zbuf, sizeof(zbuf)); // TODO: use compression level from config
+    z.init();
     return this->onRequest(z, conn, rq);
 }

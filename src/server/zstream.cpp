@@ -21,12 +21,14 @@ DeflateWriteStream::~DeflateWriteStream()
 
 void DeflateWriteStream::finish()
 {
+    Flush();
     z.next_in = NULL;
     z.avail_in = 0;
     int status;
     do
         status = packloop(MZ_FINISH);
     while (status != MZ_STREAM_END); // make sure everything is flushed
+    _dst = NULL; // make sure the BufferedWriteStream dtor doesn't flush
 }
 
 int DeflateWriteStream::packloop(int flush)
@@ -39,7 +41,7 @@ int DeflateWriteStream::packloop(int flush)
         z.avail_out = b.remain;
 
         status = mz_deflate(&z, flush);
-        if(status < 0) // error? gtfo
+         if(status < 0) // error? gtfo
             break;
         assert(status == MZ_OK || (flush == MZ_FINISH && status == MZ_STREAM_END));
 
@@ -58,5 +60,6 @@ size_t DeflateWriteStream::_Write(const void* src, size_t bytes, BufferedWriteSt
     z->next_in = (const unsigned char*)src;
     z->avail_in = bytes;
     me->packloop(MZ_NO_FLUSH);
+    assert(z->avail_in == 0); // make sure everything was consumed
     return bytes;
 }
