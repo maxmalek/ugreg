@@ -113,9 +113,9 @@ int main(int argc, char** argv)
                 const char *key = cfgtree.getS(it->first);
                 printf("Adding view [%s] ...\n", key);
                 if(vmgr.addViewDef(key, VarCRef(cfgtree, &it->second)))
-                    printf("-> OK\n", key);
+                    printf("-> OK\n");
                 else
-                    printf("-> FAILED\n", key);
+                    printf("-> FAILED\n");
             }
     }
 
@@ -136,6 +136,9 @@ int main(int argc, char** argv)
     hview.setupCache(cfg.reply_cache.rows, cfg.reply_cache.columns, cfg.reply_cache.maxtime);
     srv.registerHandler(hview);
 
+    ViewDebugHandler htestview(tree, "/testview", cfg);
+    srv.registerHandler(htestview);
+
     {
         //loadAndMergeJsonFromFile(&tree, "test/citylots.json", "/citylots", MERGE_FLAT);
         loadAndMergeJsonFromFile(&tree, "test/mock_users.json", "/users", MERGE_FLAT);
@@ -145,11 +148,11 @@ int main(int argc, char** argv)
             cfg.args.push_back("./twitter.sh");
             loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/twitter", MERGE_FLAT);
         }
-        {
+        /*{
             AsyncLaunchConfig cfg;
             cfg.args.push_back("./matrix.sh");
             loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/matrix", MERGE_FLAT);
-        }
+        }*/
     }
     // TEST DATA END
 

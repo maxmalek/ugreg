@@ -11,7 +11,7 @@ class TreeHandler : public RequestHandler
 {
 public:
     TreeHandler(const DataTree &tree, const char *prefix, const ServerConfig& cfg);
-    ~TreeHandler();
+    virtual ~TreeHandler();
 
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 

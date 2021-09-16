@@ -2,6 +2,7 @@
 #include "handler_view.h"
 #include "view/viewmgr.h"
 #include "view/viewexec.h"
+#include "view/viewparser.h"
 #include "civetweb/civetweb.h"
 #include "json_out.h"
 
@@ -61,6 +62,89 @@ int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
     // res is a copy of the data, so we don't need a lock here anymore
     writeToStream(dst, VarCRef(vm, &res), rq);
     res.clear(vm);
+
+    return 0;
+}
+
+
+ViewDebugHandler::ViewDebugHandler(const DataTree& tree, const char* prefix, const ServerConfig& cfg)
+    : RequestHandler(prefix)
+    , _tree(tree)
+{
+}
+
+ViewDebugHandler::~ViewDebugHandler()
+{
+}
+
+static void writeStr(BufferedWriteStream& out, const char *s)
+{
+    while(*s)
+        out.Put(*s++);
+}
+
+int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+{
+    const char *query = rq.query.c_str();
+    printf("ViewDebugHandler: %s\n", query);
+    view::VM vm;
+    view::Executable exe(vm);
+    std::string err;
+    size_t start = view::parse(exe, query, err);
+    if (!start)
+    {
+        mg_send_http_error(conn, 400, "Query parse error\n");
+        writeStr(dst, err.c_str());
+        return 400;
+    }
+
+    {
+        writeStr(dst, "--- Disasm ---\n");
+        std::vector<std::string> dis;
+        exe.disasm(dis);
+        for (size_t i = 1; i < dis.size(); ++i)
+        {
+            writeStr(dst, dis[i].c_str());
+            dst.Put('\n');
+        }
+    }
+
+    vm.init(exe, NULL, 0);
+
+    // --- LOCK READ ---
+    std::shared_lock<std::shared_mutex> lock(_tree.mutex);
+
+    if(!vm.run(_tree.root()))
+    {
+        mg_send_http_error(conn, 500, "VM run failed\n");
+        // TODO: dump state
+        return 500;
+    }
+
+    const view::VarRefs& out = vm.results();
+
+    dst.Put('\n');
+    {
+        char buf[64];
+        sprintf(buf, "--- Results: %u ---\n", (unsigned)out.size());
+        writeStr(dst, buf);
+        if(out.size() > 0)
+            writeStr(dst, "--- WARNING: Reduce the number of results to 1 for live data, else this will fail!\n");
+
+    }
+    dst.Put('\n');
+
+    for (const view::VarEntry& e : out)
+    {
+        dst.Put('<');
+        const char *k = vm.getS(e.key);
+        writeStr(dst, k ? k : "(no key name)");
+        dst.Put('>');
+        dst.Put('\n');
+
+        writeStr(dst, dumpjson(e.ref, true).c_str());
+        dst.Put('\n');
+    }
 
     return 0;
 }

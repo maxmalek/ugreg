@@ -56,7 +56,7 @@ static void transformUnpack(TreeMem& mem, StackFrame& newframe, StackFrame& oldf
 {
     newframe.store = std::move(oldframe.store);
 
-    const size_t n = oldframe.store.size();
+    const size_t n = oldframe.refs.size();
 
     // figure out new size after everything is unpacked
     size_t nn = 0;
@@ -591,6 +591,13 @@ int GetTransformID(const char* s)
     return -1;
 }
 
+const char* GetTransformName(int id)
+{
+    return id >= 0 && id < Countof(s_transforms)
+        ? s_transforms[id].name
+        : NULL;
+}
+
 Executable::Executable(TreeMem& mem)
     : mem(&mem)
 {
@@ -680,7 +687,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
                 varToString(os, VarCRef(mem, &literals[c.param]));
                 break;
             case CM_TRANSFORM:
-                os << " (func #" << c.param << ")";
+                os << " " << GetTransformName(c.param) << " (func #" << c.param << ")";
                 break;
             case CM_FILTER:
             {

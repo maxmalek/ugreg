@@ -60,6 +60,7 @@ enum CmdType
 
 // >= 0 when successful. < 0 when there is no transform with that name
 int GetTransformID(const char* s);
+const char *GetTransformName(int id);
 
 struct Cmd
 {
