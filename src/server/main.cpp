@@ -137,7 +137,8 @@ int main(int argc, char** argv)
     srv.registerHandler(hview);
 
     ViewDebugHandler htestview(tree, "/testview", cfg);
-    srv.registerHandler(htestview);
+    if (cfg.expose_debug_apis)
+        srv.registerHandler(htestview);
 
     {
         //loadAndMergeJsonFromFile(&tree, "test/citylots.json", "/citylots", MERGE_FLAT);

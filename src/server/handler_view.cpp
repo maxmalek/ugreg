@@ -47,6 +47,8 @@ int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
         ok = vm.run(_tree.root());
         if(ok)
         {
+            // Until after the export is done, the VM may still hold refs
+            // to the tree, so we need to keep the lock held until then.
             ok = vm.exportResult(res);
             err = "View returns more than one element. Consolidate into array or map. This is a server-side problem.";
         }
@@ -121,6 +123,8 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
         return 500;
     }
 
+    // out can still contain refs directly into the tree, so
+    // we need to keep the lock enabled for now.
     const view::VarRefs& out = vm.results();
 
     dst.Put('\n');
