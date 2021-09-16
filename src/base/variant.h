@@ -208,6 +208,8 @@ public:
     Var(TreeMem& mem, const char* s);
     Var(TreeMem& mem, const char* s, size_t len);
 
+    static const Var Null;
+
 private:
     int numericCompare(const Var& b) const; // -1 if less, 0 if eq, +1 if greater
 };
@@ -265,7 +267,7 @@ public:
 
     Var& putKey(TreeMem& mem, const char* key, size_t len);
 
-    Var& emplace(TreeMem& mem, StrRef k, Var&& x); // increases refcount if new key stored
+    Var& put(TreeMem& mem, StrRef k, Var&& x); // increases refcount if new key stored
 
     inline Iterator begin() const { return _storage.begin(); }
     inline Iterator end() const { return _storage.end(); }
@@ -373,6 +375,11 @@ public:
     VarCRef(const TreeMem& mem, const Var* x) : v(x), mem(&mem) {}
     VarCRef(const TreeMem *mem, const Var* x) : v(x), mem(mem) {}
     VarCRef(VarRef r) : v(r.v), mem(r.mem) {}
+
+    static inline VarCRef Null(const TreeMem& m) { return VarCRef(m, &Var::Null); }
+    static inline VarCRef Null(const TreeMem *m) { return VarCRef(m, &Var::Null); }
+    inline void makenull() { v = &Var::Null; }
+
 
     inline operator const Var* () const { return v; }
 

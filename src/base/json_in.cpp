@@ -155,7 +155,7 @@ bool JsonLoader::_emit(Var&& x)
         if(f.m)
         {
             assert(f.lastkey);
-            f.m->emplace(_mem, f.lastkey, std::move(x));
+            f.m->put(_mem, f.lastkey, std::move(x));
             f.lastkey = 0;
         }
         else

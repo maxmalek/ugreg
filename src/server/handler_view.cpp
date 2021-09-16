@@ -38,18 +38,22 @@ int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
     }
 
     bool ok;
+    const char *err = "Error executing view";
     Var res;
     {
         // --- LOCK READ ---
         std::shared_lock<std::shared_mutex> lock(_tree.mutex);
         ok = vm.run(_tree.root());
         if(ok)
-            res = std::move(vm.resultsAsArray());
+        {
+            ok = vm.exportResult(res);
+            err = "View returns more than one element. Consolidate into array or map. This is a server-side problem.";
+        }
     }
 
     if(!ok)
     {
-        mg_send_http_error(conn, 500, "Error executing view");
+        mg_send_http_error(conn, 500, err);
         // TODO: dump disasm and state in debug mode
         return 500;
     }

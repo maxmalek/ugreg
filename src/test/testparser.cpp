@@ -80,9 +80,9 @@ char json[] = R""(
 {
     "lookup": {
         "ids": "/rooms[open=true]/id",
-        "P" : "/people[room=$ids]"
+        "P" : "/people[room=$ids]/name"
     },
-    "result" : "$P/name",
+    "result" : "${P compact array}",
 }
 )"";
 
@@ -125,10 +125,10 @@ void testview()
     const view::VarRefs& out = vm.results();
 
     printf("VM out: %u vars\n", (unsigned)out.size());
-    for (const VarCRef& v : out)
+    for (const VarEntry& e : out)
     {
-        dump(v);
-        puts("-----");
+        printf("[%s]\n", vm.getS(e.key));
+        dump(e.ref);
     }
 
     viewdata.clear(tree);
@@ -188,10 +188,10 @@ void testexec()
     const view::VarRefs& out = vm.results();
 
     printf("VM out: %u vars\n", (unsigned)out.size());
-    for (const VarCRef& v : out)
+    for (const VarEntry& e : out)
     {
-        dump(v);
-        puts("-----");
+        printf("[%s]\n", vm.getS(e.key));
+        dump(e.ref);
     }
 
 }

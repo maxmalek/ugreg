@@ -111,10 +111,11 @@ int main(int argc, char** argv)
             for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             {
                 const char *key = cfgtree.getS(it->first);
+                printf("Adding view [%s] ...\n", key);
                 if(vmgr.addViewDef(key, VarCRef(cfgtree, &it->second)))
-                    printf("Added view [%s]\n", key);
+                    printf("-> OK\n", key);
                 else
-                    printf("FAILED to add view [%s]\n", key);
+                    printf("-> FAILED\n", key);
             }
     }
 
@@ -136,7 +137,7 @@ int main(int argc, char** argv)
     srv.registerHandler(hview);
 
     {
-        loadAndMergeJsonFromFile(&tree, "test/citylots.json", "/citylots", MERGE_FLAT);
+        //loadAndMergeJsonFromFile(&tree, "test/citylots.json", "/citylots", MERGE_FLAT);
         loadAndMergeJsonFromFile(&tree, "test/mock_users.json", "/users", MERGE_FLAT);
         loadAndMergeJsonFromFile(&tree, "test/mock_rooms.json", "/rooms", MERGE_FLAT);
         {
@@ -144,11 +145,11 @@ int main(int argc, char** argv)
             cfg.args.push_back("./twitter.sh");
             loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/twitter", MERGE_FLAT);
         }
-        /*{
+        {
             AsyncLaunchConfig cfg;
             cfg.args.push_back("./matrix.sh");
             loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/matrix", MERGE_FLAT);
-        }*/
+        }
     }
     // TEST DATA END
 

@@ -10,6 +10,8 @@
 #include "mem.h"
 #include "util.h"
 
+const Var Var::Null;
+
 static _VarMap*_NewMap(TreeMem& mem, size_t prealloc)
 {
     (void)prealloc; // TODO: use this
@@ -870,7 +872,7 @@ Var& _VarMap::getOrCreate(TreeMem& mem, StrRef key)
     return _InsertAndRefcount(mem, _storage, key);
 }
 
-Var& _VarMap::emplace(TreeMem& mem, StrRef k, Var&& x)
+Var& _VarMap::put(TreeMem& mem, StrRef k, Var&& x)
 {
     _checkmem(mem);
     auto it = _storage.insert(std::make_pair(k, std::move(x)));

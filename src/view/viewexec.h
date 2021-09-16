@@ -6,10 +6,23 @@
 
 namespace view {
 
+// For the VM stack contents, keep each value together with its key (in case the value came from a map)
+struct VarEntry
+{
+    VarCRef ref;
+    StrRef key;
+};
+
 // VarList has pointers for vectorized operation. A CmdType always affects all entries in a list
-typedef std::vector<VarCRef> VarRefs;
+
+typedef std::vector<VarEntry> VarRefs;
 typedef std::vector<Var> VarStore;
 
+
+// Invariants:
+// - StackFrame.refs may reference any store in its own frame or a StackFrame below it
+// - refs may come from anywhere, except higher stackframes
+// - a frame can have refs to many different memory spaces, but anything in store has the same memory space as the VM.
 struct StackFrame
 {
     VarRefs refs;
@@ -81,8 +94,7 @@ public:
 
     bool run(VarCRef v); // pass root of tree to operate on
     const VarRefs& results() const; // only valid until reset() or re-run
-    Var resultsAsArray();
-    Var resultsAsArray(TreeMem& mem);
+    bool exportResult(Var& dst) const;
 
 protected:
     void push(VarCRef v);

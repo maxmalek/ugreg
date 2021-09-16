@@ -28,50 +28,73 @@ void StackFrame::clear(TreeMem& mem)
 // because pushing to frame.store may realloc the vector, either reserve frame.store
 // with the correct size beforehand and then use addAbs(),
 // or use addRel() to add stuff and call makeAbs() when done
-void addRel(TreeMem& mem, StackFrame& frame, Var&& v)
+void addRel(TreeMem& mem, StackFrame& frame, Var&& v, StrRef k)
 {
-    frame.refs.push_back(VarCRef(mem, (const Var*)(uintptr_t)(frame.store.size())));
+    VarEntry e { VarCRef(mem, (const Var*)(uintptr_t)(frame.store.size())), k };
+    frame.refs.push_back(std::move(e));
     frame.store.push_back(std::move(v));
 }
-void addAbs(TreeMem& mem, StackFrame& frame, Var&& v)
+void addAbs(TreeMem& mem, StackFrame& frame, Var&& v, StrRef k)
 {
+    assert(frame.store.size() < frame.store.capacity() && "vector would reallocate");
     frame.store.push_back(std::move(v));
-    frame.refs.push_back(VarCRef(mem, &frame.store.back()));
+    VarEntry e{ VarCRef(mem, &frame.store.back()), k };
+    frame.refs.push_back(std::move(e));
 }
 void makeAbs(StackFrame& frame)
 {
     const Var *base = frame.store.data();
     const size_t n = frame.refs.size();
     for(size_t i = 0; i < n; ++i)
-    {
-        frame.refs[i].v = base + (uintptr_t)(frame.refs[i].v);
-    }
+        frame.refs[i].ref.v = base + (uintptr_t)(frame.refs[i].ref.v);
 }
 
 // TODO: move transforms to own file?
 
-// unpack arrays, skip anything else
+// unpack arrays and maps, skip anything else
 static void transformUnpack(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
 {
     newframe.store = std::move(oldframe.store);
 
     const size_t n = oldframe.store.size();
+
+    // figure out new size after everything is unpacked
     size_t nn = 0;
     for (size_t i = 0; i < n; ++i)
     {
-        const VarCRef& src = oldframe.refs[i];
-        if(src.type() == Var::TYPE_ARRAY)
-            nn += src.size();
+        const VarEntry& src = oldframe.refs[i];
+        if(src.ref.v->isContainer())
+            nn += src.ref.size();
     }
 
     newframe.refs.reserve(nn);
 
     for (size_t i = 0; i < n; ++i)
     {
-        const VarCRef& src = oldframe.refs[i];
-        if (src.type() == Var::TYPE_ARRAY)
-            for(size_t k = 0; k < nn; ++k)
-                newframe.refs.push_back(src.at(k));
+        const VarEntry& src = oldframe.refs[i];
+        switch(src.ref.type())
+        {
+            case Var::TYPE_ARRAY:
+                for(size_t k = 0; k < nn; ++k)
+                {
+                    VarEntry e { src.ref.at(k), 0 };
+                    newframe.refs.push_back(std::move(e));
+                }
+            break;
+
+            case Var::TYPE_MAP:
+            {
+                const Var::Map *m = src.ref.v->map_unsafe();
+                for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+                {
+                    VarEntry e { VarCRef(src.ref.mem, &it->second), it->first };
+                    newframe.refs.push_back(std::move(e));
+                }
+            }
+            break;
+
+            default: assert(false); break;
+        }
     }
 }
 
@@ -82,36 +105,98 @@ static void transformToInt(TreeMem& mem, StackFrame& newframe, StackFrame& oldfr
 
     for(size_t i = 0; i < n; ++i)
     {
-        s64 val;
-        const VarCRef& src = oldframe.refs[i];
-        switch(src.type())
+        VarEntry& src = oldframe.refs[i];
+        Var newval;
+        switch(src.ref.type())
         {
             case Var::TYPE_INT:
-                val = *src.asInt();
-                break;
-
             case Var::TYPE_UINT:
-            {
-                u64 tmp = *src.asUint();
-                if(!isValidNumericCast<s64>(tmp))
-                    continue;
-                val = tmp;
-            }
-            break;
+                newframe.refs.push_back(std::move(src));
+                continue;
 
             case Var::TYPE_STRING:
             {
-                const PoolStr ps = src.asString();
+                const PoolStr ps = src.ref.asString();
+                s64 val;
                 if(!strtoi64NN(&val, ps.s, ps.len).ok())
-                    continue;
+                    break; // null val
+                newval.setInt(mem, val);
             }
             break;
 
-            default:
-                continue;
+            default: ;
+                // null val
         }
-        addAbs(mem, newframe, std::move(Var(val)));
+        addAbs(mem, newframe, std::move(newval), src.key);
     }
+
+    assert(newframe.refs.size() == oldframe.refs.size());
+}
+
+static void transformCompact(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
+{
+    newframe.store = std::move(oldframe.store);
+    const size_t n = oldframe.refs.size();
+    newframe.refs.reserve(n);
+
+    size_t w = 0;
+    for (size_t i = 0; i < n; ++i)
+        if(!oldframe.refs[i].ref.isNull())
+            oldframe.refs[w++] = oldframe.refs[i];
+
+    oldframe.refs.resize(w);
+    newframe.refs = std::move(oldframe.refs);
+}
+
+static void transformAsArray(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
+{
+    Var arr;
+    const size_t N = oldframe.refs.size();
+    Var *a = arr.makeArray(mem, N);
+    const Var *mybegin = &oldframe.store.front();
+    const Var *myend = &oldframe.store.back();
+    for(size_t i = 0; i < N; ++i)
+    {
+        // We're making an array, so any keys get lost
+        VarCRef r = oldframe.refs[i].ref;
+        if(r.mem == &mem && mybegin <= r.v && r.v <= myend) // if we own the memory, we can just move the thing
+            a[i] = std::move(*const_cast<Var*>(r.v));
+        else // but if it's in some other memory space, we must clone it
+            a[i] = std::move(r.v->clone(mem, *r.mem));
+    }
+    newframe.store.reserve(1);
+    addAbs(mem, newframe, std::move(arr), 0);
+}
+
+static void transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
+{
+    Var mp;
+    const size_t N = oldframe.refs.size();
+    Var::Map* m = mp.makeMap(mem, N);
+    const Var* mybegin = &oldframe.store.front();
+    const Var* myend = &oldframe.store.back();
+    for (size_t i = 0; i < N; ++i)
+    {
+        // If the element didn't originally come from a map, drop it.
+        // Since we don't know the key to save this under there's nothing we can do
+        // TODO: error out instead?
+        if(!oldframe.refs[i].key)
+            continue;
+
+        VarCRef r = oldframe.refs[i].ref;
+        StrRef k = oldframe.refs[i].key;
+        if (r.mem == &mem && mybegin <= r.v && r.v < myend) // if we own the memory, we can just move the thing
+            m->put(mem, k, std::move(*const_cast<Var*>(r.v)));
+        else // but if it's in some other memory space, we must clone it
+        {
+            PoolStr ps = r.mem->getSL(k);
+            assert(ps.s);
+            Var& dst = m->putKey(mem, ps.s, ps.len);
+            dst = std::move(r.v->clone(mem, *r.mem));
+        }
+    }
+    newframe.store.reserve(1);
+    addAbs(mem, newframe, std::move(mp), 0);
 }
 
 struct TransformEntry
@@ -124,6 +209,9 @@ static const TransformEntry s_transforms[] =
 {
     { transformUnpack, "unpack" }, // referenced in parser
     { transformToInt, "toint" },
+    { transformCompact, "compact" },
+    { transformAsArray, "array" },
+    { transformAsMap, "map" },
 };
 
 VM::VM()
@@ -183,17 +271,18 @@ void VM::cmd_GetKey(unsigned param)
 
     StackFrame& top = _topframe();
     const size_t N = top.refs.size();
-    VarCRef * const ain = top.refs.data();
-    VarCRef *aout = ain;
+    VarEntry * const ain = top.refs.data();
+    VarEntry *aout = ain;
 
-    // TODO: make variant for json ptr
+    // TODO: make variant for json ptr?
     assert(ps.s[0] != '/');
 
     for (size_t i = 0; i < N; ++i)
-        if(const Var *sub = ain[i].lookup(ps.s)) // NULL if not map
+        if(const Var *sub = ain[i].ref.lookup(ps.s)) // NULL if not map
         {
-            aout->mem = ain[i].mem;
-            aout->v = sub;
+            aout->ref.mem = ain[i].ref.mem;
+            aout->ref.v = sub;
+            aout->key = ain[i].key;
             ++aout;
         }
     top.refs.resize(aout - ain);
@@ -207,28 +296,28 @@ template<>
 struct GetElem<const Var*>
 {
     static inline const Var *get(const Var *p) { return p; }
+    static inline const StrRef key(const Var *p) { return 0; }
 };
 template<>
 struct GetElem<Var::Map::Iterator>
 {
     static inline const Var* get(Var::Map::Iterator it) { return &it->second; }
+    static inline const StrRef key(Var::Map::Iterator it) { return it->first; }
 };
 
 template<typename Iter>
-static void filterElements(VarRefs& out, const TreeMem& mem, Iter begin, Iter end, Var::CompareMode cmp, VarCRef *values, size_t numvalues, const char *keystr, unsigned invert)
+static void filterElements(VarRefs& out, const TreeMem& mem, Iter begin, Iter end, Var::CompareMode cmp, const VarEntry *values, size_t numvalues, const char *keystr, unsigned invert)
 {
     typedef typename GetElem<Iter> Get;
-    const Var null;
-    const VarCRef nullref(mem, &null);
     for(Iter it = begin; it != end; ++it)
     {
-        VarCRef elem(mem, Get::get(it));
+        const VarEntry e { VarCRef(mem, Get::get(it)), Get::key(it) };
 
         // trying to look up key in something that's not a map -> always skip
-        if (elem.type() != Var::TYPE_MAP)
+        if (e.ref.type() != Var::TYPE_MAP)
             continue;
 
-        VarCRef sub = elem.lookup(keystr);
+        VarCRef sub = e.ref.lookup(keystr);
         // There are two ways to handle this.
         // We could handle things so that "key does not exist" and
         // "key exists but value is null" are two different things.
@@ -239,19 +328,19 @@ static void filterElements(VarRefs& out, const TreeMem& mem, Iter begin, Iter en
         {
             //continue; // Key doesn't exist, not map, etc -> skip
 
-            sub = nullref; // handle missing key as if the value was null
+            sub.makenull(); // handle missing key as if the value was null
         }
 
         for(size_t k = 0; k < numvalues; ++k)
         {
-            Var::CompareResult res = sub.compare(cmp, values[k]);
+            Var::CompareResult res = sub.compare(cmp, values[k].ref);
             if (res == Var::CMP_RES_NA)
                 continue; // Can't be compared, skip
 
             unsigned success = (res ^ invert) & 1;
             if (success)
             {
-                out.push_back(elem);
+                out.push_back(e);
                 break;
             }
             // else keep checking
@@ -261,10 +350,10 @@ static void filterElements(VarRefs& out, const TreeMem& mem, Iter begin, Iter en
 
 void VM::cmd_Filter(unsigned param)
 {
-    unsigned invert = param & 1;
-    unsigned op = (param >> 1) & 7;
-    unsigned key = param >> 4;
-    Var::CompareMode cmp = Var::CompareMode(op);
+    const unsigned invert = param & 1;
+    const unsigned op = (param >> 1) & 7;
+    const unsigned key = param >> 4;
+    const Var::CompareMode cmp = Var::CompareMode(op);
 
     StackFrame vs = _popframe(); // check new top vs. this
     StackFrame& top = _topframe();
@@ -279,11 +368,11 @@ void VM::cmd_Filter(unsigned param)
     // apply to all values on top
     for (size_t i = 0; i < N; ++i)
     {
-        VarCRef elem = oldrefs[i];
-        if (const Var* a = elem.v->array())
-            filterElements(top.refs, *elem.mem, a, a + elem.v->_size(), cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
-        else if (const Var::Map* m = elem.v->map())
-            filterElements(top.refs, *elem.mem, m->begin(), m->end(), cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
+        VarEntry e = oldrefs[i];
+        if (const Var* a = e.ref.v->array())
+            filterElements(top.refs, *e.ref.mem, a, a + e.ref.v->_size(), cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
+        else if (const Var::Map* m = e.ref.v->map())
+            filterElements(top.refs, *e.ref.mem, m->begin(), m->end(), cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
         // else can't select subkey, so drop elem
     }
 
@@ -293,14 +382,13 @@ void VM::cmd_Filter(unsigned param)
 // keep refs in top only when a subkey has operator relation to a literal
 void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
 {
-    unsigned invert = param & 1;
-    unsigned op = (param >> 1) & 7;
-    unsigned key = param >> 4;
+    const unsigned invert = param & 1;
+    const unsigned op = (param >> 1) & 7;
+    const unsigned key = param >> 4;
+    const Var::CompareMode cmp = Var::CompareMode(op);
 
+    const VarEntry checklit { VarCRef(*this, &literals[lit]), 0 };
     StackFrame& top = _topframe();
-
-    VarCRef checklit(*this, &literals[lit]);
-    Var::CompareMode cmp = Var::CompareMode(op);
 
     const char* keystr = literals[key].asCString(*this);
     VarRefs oldrefs;
@@ -311,11 +399,11 @@ void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
 
     for(size_t i = 0; i < N; ++i)
     {
-        VarCRef elem = oldrefs[i];
-        if(const Var *a = elem.v->array())
-            filterElements(top.refs, *elem.mem, a, a + elem.v->_size(), cmp, &checklit, 1, keystr, invert);
-        else if(const Var::Map *m = elem.v->map())
-            filterElements(top.refs, *elem.mem, m->begin(), m->end(), cmp, &checklit, 1, keystr, invert);
+        VarEntry e = oldrefs[i];
+        if(const Var *a = e.ref.v->array())
+            filterElements(top.refs, *e.ref.mem, a, a + e.ref.v->_size(), cmp, &checklit, 1, keystr, invert);
+        else if(const Var::Map *m = e.ref.v->map())
+            filterElements(top.refs, *e.ref.mem, m->begin(), m->end(), cmp, &checklit, 1, keystr, invert);
         // else can't select subkey, so drop elem
     }
 }
@@ -347,7 +435,8 @@ void VM::cmd_Transform(unsigned param)
 void VM::push(VarCRef v)
 {
     StackFrame frm;
-    frm.refs.push_back(v);
+    VarEntry e { v, 0 };
+    frm.refs.push_back(std::move(e));
     stack.push_back(std::move(frm));
 }
 
@@ -414,20 +503,9 @@ const VarRefs& VM::results() const
     return stack.back().refs;
 }
 
-Var VM::resultsAsArray()
+bool VM::exportResult(Var& dst) const
 {
-    return resultsAsArray(*this);
-}
-
-Var VM::resultsAsArray(TreeMem& mem)
-{
-    const VarRefs& r = results();
-    const size_t n = r.size();
-    Var a;
-    Var *aa = a.makeArray(mem, n);
-    for(size_t i = 0; i < n; ++i)
-        aa[i] = r[i].v->clone(mem, *this);
-    return a;
+    return false;
 }
 
 StackFrame *VM::storeTop(StrRef s)
