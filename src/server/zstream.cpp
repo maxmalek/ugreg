@@ -29,7 +29,7 @@ void DeflateWriteStream::finish()
         int status;
         do
             status = packloop(MZ_FINISH);
-        while (status != MZ_STREAM_END); // make sure everything is flushed
+        while (status > 0 && status != MZ_STREAM_END); // make sure everything is flushed
         _dst = NULL; // make sure the BufferedWriteStream dtor doesn't flush
     }
 }
