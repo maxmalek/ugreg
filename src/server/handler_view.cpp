@@ -1,4 +1,5 @@
 #include <string.h>
+#include <sstream>
 #include "handler_view.h"
 #include "view/viewmgr.h"
 #include "view/viewexec.h"
@@ -95,8 +96,9 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
     size_t start = view::parse(exe, query, err);
     if (!start)
     {
-        mg_send_http_error(conn, 400, "Query parse error\n");
-        writeStr(dst, err.c_str());
+        std::ostringstream os;
+        os << "Query parse error:\n" << err;
+        mg_send_http_error(conn, 400, os.str().c_str());
         return 400;
     }
 
@@ -118,7 +120,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
 
     if(!vm.run(_tree.root()))
     {
-        mg_send_http_error(conn, 500, "VM run failed\n");
+        writeStr(dst, "!!! Error during VM run. This is bad.\n");
         // TODO: dump state
         return 500;
     }

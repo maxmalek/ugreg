@@ -21,13 +21,16 @@ DeflateWriteStream::~DeflateWriteStream()
 
 void DeflateWriteStream::finish()
 {
-    Flush();
-    z.next_in = NULL;
-    z.avail_in = 0;
-    int status;
-    do
-        status = packloop(MZ_FINISH);
-    while (status != MZ_STREAM_END); // make sure everything is flushed
+    if(_dst && z.total_in) // Only output something if we ever got any data
+    {
+        Flush();
+        z.next_in = NULL;
+        z.avail_in = 0;
+        int status;
+        do
+            status = packloop(MZ_FINISH);
+        while (status != MZ_STREAM_END); // make sure everything is flushed
+    }
     _dst = NULL; // make sure the BufferedWriteStream dtor doesn't flush
 }
 

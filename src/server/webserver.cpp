@@ -270,9 +270,9 @@ int RequestHandler::_onRequest(mg_connection* conn) const
                 wr.init();
                 const StreamWriteMth writer = s_directOut[k.obj.compression].writer;
                 status = (this->*writer)(wr, conn, k.obj);
-                wr.Flush();
             }
-            mg_send_chunk(conn, "", 0); // terminating chunk
+            if(!status) // 0 means the handler didn't error out
+                mg_send_chunk(conn, "", 0); // terminating chunk
         }
         catch (ThrowingSocketWriteStream::WriteFail ex)
         {
