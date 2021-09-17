@@ -75,7 +75,9 @@ public:
     bool _addMantissa(double& f, u64 i);
     bool _parseSelector();
     bool _parseSelection();
-    bool _parseSimpleSelection();
+    bool _parseKeyCmp();
+    bool _parseKeySel();
+    bool _parseKeySelEntry(Var::Map& m, bool allowRename);
     bool _parseEval();
     bool _parseSimpleEval();
     bool _parseExtendedEval();
@@ -465,6 +467,8 @@ bool Parser::_eat(char c)
 // anything inside [], can be:
 // *              -- unpack array or map values
 // name=literal   -- key check
+// name < 5       -- oprators for key check (spaces optional)
+// keep name newname=oldname -- 
 // only simple ops for now, no precedence, no grouping with braces
 bool Parser::_parseSelection()
 {
@@ -473,13 +477,13 @@ bool Parser::_parseSelection()
     _skipSpace();
 
     bool ok = false;
-    if(_eat('*'))
+    if(_parseKeyCmp() || _parseKeySel())
     {
-        _emit(CM_TRANSFORM, GetTransformID("unpack"));
         ok = true;
     }
-    else if(_parseSimpleSelection())
+    else if (_eat('*'))
     {
+        _emit(CM_TRANSFORM, GetTransformID("unpack"));
         ok = true;
     }
 
@@ -490,7 +494,7 @@ bool Parser::_parseSelection()
 // name=<literal>
 // name=$var
 // '/name with spaces'=..
-bool Parser::_parseSimpleSelection()
+bool Parser::_parseKeyCmp()
 {
     ParserTop top(*this);
     Var id, lit;
@@ -521,6 +525,58 @@ bool Parser::_parseSimpleSelection()
     id.clear(mem);
     lit.clear(mem);
     return ok && _skipSpace() && top.accept();
+}
+
+bool Parser::_parseKeySel()
+{
+    ParserTop top(*this);
+
+    unsigned keep = 0;
+    if(_parseVerbatim("keep"))
+        keep = 1;
+    else if(!_parseVerbatim("drop"))
+        return false;
+
+    if(!_skipSpace(true))
+        return false;
+
+    size_t n = 0;
+    Var entries;
+    Var::Map *m = entries.makeMap(mem);
+    while(_parseKeySelEntry(*m, !!keep) && _skipSpace())
+        ++n;
+
+    if(!n)
+        return false;
+
+    unsigned lit = _addLiteral(std::move(entries));
+    _emit(CM_KEYSEL, (lit << 1) | keep, 0);
+
+    return top.accept();
+}
+
+bool Parser::_parseKeySelEntry(Var::Map& m, bool allowRename)
+{
+    ParserTop top(*this);
+
+    Var k, v, *pv = &k;
+    if(!_parseIdentOrStr(k))
+        return false;
+
+    if(allowRename && _skipSpace() && _parseVerbatim("=") && _skipSpace())
+    {
+        if(!_parseIdentOrStr(v))
+            return false;
+        pv = &v;
+    }
+    _skipSpace();
+
+
+    StrRef kr = k.asStrRef();
+    m.put(mem, kr, std::move(*pv));
+    k.clear(mem);
+    v.clear(mem);
+    return top.accept();
 }
 
 bool Parser::_parseBinOp(Cmd& cm)

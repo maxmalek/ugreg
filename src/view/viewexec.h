@@ -53,6 +53,7 @@ enum CmdType
     CM_CHECKKEY,   // shortcut. key can be a json pointer (if it starts with '/', or just a regular key name)
                    // param = invert | (OpType << 1) | (index << 4); index into literals table (to look up name of key)
                    // param2 = index of the literal to check against in the literals table
+    CM_KEYSEL,     // param = (keep | (index << 1)); index into literals table. keep = 1 keeps the keys, 0 drops them
 
     // ALWAYS LAST
     CM_DONE        // terminate execution at this point.
@@ -132,6 +133,7 @@ private:
     void cmd_Transform(unsigned param);
     //void cmd_Compare(unsigned param);
     void cmd_Filter(unsigned param);
+    void cmd_Keysel(unsigned param);
 };
 
 } // end namespace view

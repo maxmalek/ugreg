@@ -7,6 +7,7 @@
 #include "safe_numerics.h"
 #include "debugfunc.h"
 #include "mem.h"
+#include "json_out.h"
 
 #ifndef NDEBUG
 #define DEBUG_PRINT printf
@@ -379,6 +380,69 @@ void VM::cmd_Filter(unsigned param)
     DEBUG_PRINT("... %u refs passed the filter\n", (unsigned)top.refs.size());
 }
 
+void VM::cmd_Keysel(unsigned param)
+{
+    const unsigned keep = param & 1;
+    const unsigned index = param >> 1u;
+    Var& lit = literals[index];
+    assert(lit.type() == Var::TYPE_MAP);
+
+    Var::Map *Lm = lit.map();
+    StackFrame& top = _topframe();
+
+    StackFrame newtop;
+    TreeMem * const mymem = this;
+    if(keep)
+    {
+        for(const VarEntry& e : top.refs)
+            if(const Var::Map *src = e.ref.v->map())
+            {
+                Var mm;
+                Var::Map *newmap = mm.makeMap(*this);
+                for(Var::Map::Iterator it = Lm->begin(); it != Lm->end(); ++it)
+                {
+                    StrRef readk = it->second.asStrRef();
+                    StrRef writek = it->first;
+                    const Var *x;
+                    if(mymem != e.ref.mem)
+                    {
+                        PoolStr ps = this->getSL(readk);
+                        readk = e.ref.mem->lookup(ps.s, ps.len);
+                        if(!readk)
+                            continue;
+                    }
+                    if(const Var *x = src->get(readk))
+                        newmap->put(*mymem, it->first, std::move(x->clone(*mymem, *e.ref.mem)));
+                }
+                addRel(*this, newtop, std::move(mm), e.key);
+            }
+    }
+    else
+    {
+        for (const VarEntry& e : top.refs)
+            if (const Var::Map* src = e.ref.v->map())
+            {
+                Var mm;
+                Var::Map* newmap = mm.makeMap(*this);
+                for (Var::Map::Iterator it = src->begin(); it != src->end(); ++it)
+                {
+                    StrRef k = it->first;
+                    PoolStr ps = e.ref.mem->getSL(k);
+                    StrRef myk = this->lookup(ps.s, ps.len);
+                    if(!myk || !Lm->get(myk))
+                    {
+                        Var& dst = newmap->putKey(*mymem, ps.s, ps.len);
+                        dst = std::move(it->second.clone(*mymem, *e.ref.mem));
+                    }
+                }
+                addRel(*this, newtop, std::move(mm), e.key);
+            }
+    }
+
+    makeAbs(newtop);
+    top = std::move(newtop);
+}
+
 // keep refs in top only when a subkey has operator relation to a literal
 void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
 {
@@ -481,6 +545,9 @@ bool VM::exec(size_t ip)
             case CM_FILTER:
                 cmd_Filter(c.param);
                 break;
+
+            case CM_KEYSEL:
+                cmd_Keysel(c.param);
 
             case CM_DONE:
                 return true;
@@ -637,6 +704,7 @@ static const char *s_opcodeNames[] =
     "LITERAL",
     "DUP",
     "CHECKKEY",
+    "KEYSEL",
     "DONE"
 };
 static_assert(Countof(s_opcodeNames) == CM_DONE+1, "opcode enum vs name table mismatch");
@@ -695,8 +763,8 @@ size_t Executable::disasm(std::vector<std::string>& out) const
                 os << ' ';
                 oprToStr(os, c.param & 0xf);
                 os << " (key: " << literals[key].asCString(*mem) << ")";
-                break;
             }
+            break;
 
             case CM_CHECKKEY:
             {
@@ -706,6 +774,14 @@ size_t Executable::disasm(std::vector<std::string>& out) const
                 os << ' ';
                 varToString(os, VarCRef(mem, &literals[c.param2]));
                 os << " ]";
+            }
+            break;
+
+            case CM_KEYSEL:
+            {
+                unsigned index = c.param >> 1u;
+                unsigned keep = c.param & 1;
+                os << (keep ? " KEEP " : " DROP ") << dumpjson(VarCRef(mem, &literals[index]), false);
             }
             break;
 

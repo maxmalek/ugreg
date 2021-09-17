@@ -103,7 +103,8 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
     }
 
     {
-        writeStr(dst, "--- Disasm ---\n");
+        writeStr(dst, query);
+        writeStr(dst, "\n\n--- Disasm ---\n");
         std::vector<std::string> dis;
         exe.disasm(dis);
         for (size_t i = 1; i < dis.size(); ++i)
