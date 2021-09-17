@@ -412,7 +412,7 @@ void VM::cmd_Keysel(unsigned param)
                             continue;
                     }
                     if(const Var *x = src->get(readk))
-                        newmap->put(*mymem, it->first, std::move(x->clone(*mymem, *e.ref.mem)));
+                        newmap->put(*this, it->first, std::move(x->clone(*this, *e.ref.mem)));
                 }
                 addRel(*this, newtop, std::move(mm), e.key);
             }
@@ -428,12 +428,10 @@ void VM::cmd_Keysel(unsigned param)
                 {
                     StrRef k = it->first;
                     PoolStr ps = e.ref.mem->getSL(k);
-                    StrRef myk = this->lookup(ps.s, ps.len);
-                    if(!myk || !Lm->get(myk))
-                    {
-                        Var& dst = newmap->putKey(*mymem, ps.s, ps.len);
-                        dst = std::move(it->second.clone(*mymem, *e.ref.mem));
-                    }
+                    StrRef myk = this->putNoRefcount(ps.s, ps.len);
+                    assert(myk);
+                    if(!Lm->get(myk))
+                        newmap->getOrCreate(*this, myk) = std::move(it->second.clone(*mymem, *e.ref.mem));
                 }
                 addRel(*this, newtop, std::move(mm), e.key);
             }
