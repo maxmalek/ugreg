@@ -331,5 +331,7 @@ int RequestHandler::onRequest_deflate(BufferedWriteStream& dst, mg_connection* c
     char zbuf[8 * 1024];
     DeflateWriteStream z(dst, 1, zbuf, sizeof(zbuf)); // TODO: use compression level from config
     z.init();
-    return this->onRequest(z, conn, rq);
+    int ret = this->onRequest(z, conn, rq);
+    z.finish();
+    return ret;
 }
