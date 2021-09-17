@@ -21,7 +21,7 @@ DeflateWriteStream::~DeflateWriteStream()
 
 void DeflateWriteStream::finish()
 {
-    if(_dst && z.total_in) // Only output something if we ever got any data
+    if(_dst) // Only output something if we ever got any data
     {
         Flush();
         z.next_in = NULL;
@@ -30,8 +30,8 @@ void DeflateWriteStream::finish()
         do
             status = packloop(MZ_FINISH);
         while (status != MZ_STREAM_END); // make sure everything is flushed
+        _dst = NULL; // make sure the BufferedWriteStream dtor doesn't flush
     }
-    _dst = NULL; // make sure the BufferedWriteStream dtor doesn't flush
 }
 
 int DeflateWriteStream::packloop(int flush)
