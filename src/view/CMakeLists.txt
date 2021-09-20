@@ -7,6 +7,8 @@ set(src
     view.h
     viewmgr.cpp
     viewmgr.h
+    viewxform.cpp
+    viewxform.h
 )
 
 add_library(viewengine ${src})

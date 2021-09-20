@@ -29,6 +29,13 @@ struct StackFrame
     VarStore store; // in case we do a transform, this holds the transformed values
 
     void clear(TreeMem& mem);
+
+    // because pushing to frame.store may realloc the vector, either reserve frame.store
+    // with the correct size beforehand and then use addAbs(),
+    // or use addRel() to add stuff and call makeAbs() when done
+    void addRel(TreeMem& mem, Var&& v, StrRef k);
+    void addAbs(TreeMem& mem, Var&& v, StrRef k);
+    void makeAbs();
 };
 
 struct EntryPoint
@@ -36,11 +43,6 @@ struct EntryPoint
     std::string name;
     size_t idx;
 };
-
-// A transform must fully write newframe. oldframe will be destroyed after the call,
-// and any pointers remaining to its store would cause a segfault.
-// To keep the store, move it to newframe.
-typedef void (*TransformFunc)(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
 
 enum CmdType
 {

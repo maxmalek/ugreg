@@ -8,6 +8,7 @@
 #include "debugfunc.h"
 #include "mem.h"
 #include "json_out.h"
+#include "viewxform.h"
 
 #ifndef NDEBUG
 #define DEBUG_PRINT printf
@@ -17,6 +18,27 @@
 
 namespace view {
 
+void StackFrame::addRel(TreeMem& mem, Var&& v, StrRef k)
+{
+    VarEntry e{ VarCRef(mem, (const Var*)(uintptr_t)(store.size())), k };
+    refs.push_back(std::move(e));
+    store.push_back(std::move(v));
+}
+void StackFrame::addAbs(TreeMem& mem, Var&& v, StrRef k)
+{
+    assert(store.size() < store.capacity() && "vector would reallocate");
+    store.push_back(std::move(v));
+    VarEntry e{ VarCRef(mem, &store.back()), k };
+    refs.push_back(std::move(e));
+}
+void StackFrame::makeAbs()
+{
+    const Var* base = store.data();
+    const size_t n = refs.size();
+    for (size_t i = 0; i < n; ++i)
+        refs[i].ref.v = base + (uintptr_t)(refs[i].ref.v);
+}
+
 void StackFrame::clear(TreeMem& mem)
 {
     const size_t n = store.size();
@@ -24,180 +46,6 @@ void StackFrame::clear(TreeMem& mem)
         store[i].clear(mem);
     store.clear();
     refs.clear();
-}
-
-// because pushing to frame.store may realloc the vector, either reserve frame.store
-// with the correct size beforehand and then use addAbs(),
-// or use addRel() to add stuff and call makeAbs() when done
-void addRel(TreeMem& mem, StackFrame& frame, Var&& v, StrRef k)
-{
-    VarEntry e { VarCRef(mem, (const Var*)(uintptr_t)(frame.store.size())), k };
-    frame.refs.push_back(std::move(e));
-    frame.store.push_back(std::move(v));
-}
-void addAbs(TreeMem& mem, StackFrame& frame, Var&& v, StrRef k)
-{
-    assert(frame.store.size() < frame.store.capacity() && "vector would reallocate");
-    frame.store.push_back(std::move(v));
-    VarEntry e{ VarCRef(mem, &frame.store.back()), k };
-    frame.refs.push_back(std::move(e));
-}
-void makeAbs(StackFrame& frame)
-{
-    const Var *base = frame.store.data();
-    const size_t n = frame.refs.size();
-    for(size_t i = 0; i < n; ++i)
-        frame.refs[i].ref.v = base + (uintptr_t)(frame.refs[i].ref.v);
-}
-
-// TODO: move transforms to own file?
-
-// unpack arrays and maps, skip anything else
-static void transformUnpack(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
-{
-    newframe.store = std::move(oldframe.store);
-
-    const size_t n = oldframe.refs.size();
-
-    // figure out new size after everything is unpacked
-    size_t nn = 0;
-    for (size_t i = 0; i < n; ++i)
-    {
-        const VarEntry& src = oldframe.refs[i];
-        if(src.ref.v->isContainer())
-            nn += src.ref.size();
-    }
-
-    newframe.refs.reserve(nn);
-
-    for (size_t i = 0; i < n; ++i)
-    {
-        const VarEntry& src = oldframe.refs[i];
-        switch(src.ref.type())
-        {
-            case Var::TYPE_ARRAY:
-                for(size_t k = 0; k < nn; ++k)
-                {
-                    VarEntry e { src.ref.at(k), 0 };
-                    newframe.refs.push_back(std::move(e));
-                }
-            break;
-
-            case Var::TYPE_MAP:
-            {
-                const Var::Map *m = src.ref.v->map_unsafe();
-                for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
-                {
-                    VarEntry e { VarCRef(src.ref.mem, &it->second), it->first };
-                    newframe.refs.push_back(std::move(e));
-                }
-            }
-            break;
-
-            default: assert(false); break;
-        }
-    }
-}
-
-static void transformToInt(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
-{
-    const size_t n = oldframe.store.size();
-    newframe.store.reserve(n);
-
-    for(size_t i = 0; i < n; ++i)
-    {
-        VarEntry& src = oldframe.refs[i];
-        Var newval;
-        switch(src.ref.type())
-        {
-            case Var::TYPE_INT:
-            case Var::TYPE_UINT:
-                newframe.refs.push_back(std::move(src));
-                continue;
-
-            case Var::TYPE_STRING:
-            {
-                const PoolStr ps = src.ref.asString();
-                s64 val;
-                if(!strtoi64NN(&val, ps.s, ps.len).ok())
-                    break; // null val
-                newval.setInt(mem, val);
-            }
-            break;
-
-            default: ;
-                // null val
-        }
-        addAbs(mem, newframe, std::move(newval), src.key);
-    }
-
-    assert(newframe.refs.size() == oldframe.refs.size());
-}
-
-static void transformCompact(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
-{
-    newframe.store = std::move(oldframe.store);
-    const size_t n = oldframe.refs.size();
-    newframe.refs.reserve(n);
-
-    size_t w = 0;
-    for (size_t i = 0; i < n; ++i)
-        if(!oldframe.refs[i].ref.isNull())
-            oldframe.refs[w++] = oldframe.refs[i];
-
-    oldframe.refs.resize(w);
-    newframe.refs = std::move(oldframe.refs);
-}
-
-static void transformAsArray(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
-{
-    Var arr;
-    const size_t N = oldframe.refs.size();
-    Var *a = arr.makeArray(mem, N);
-    const Var *mybegin = &oldframe.store.front();
-    const Var *myend = &oldframe.store.back();
-    for(size_t i = 0; i < N; ++i)
-    {
-        // We're making an array, so any keys get lost
-        VarCRef r = oldframe.refs[i].ref;
-        if(r.mem == &mem && mybegin <= r.v && r.v <= myend) // if we own the memory, we can just move the thing
-            a[i] = std::move(*const_cast<Var*>(r.v));
-        else // but if it's in some other memory space, we must clone it
-            a[i] = std::move(r.v->clone(mem, *r.mem));
-    }
-    newframe.store.reserve(1);
-    addAbs(mem, newframe, std::move(arr), 0);
-}
-
-static void transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
-{
-    Var mp;
-    const size_t N = oldframe.refs.size();
-    Var::Map* m = mp.makeMap(mem, N);
-    const Var* mybegin = &oldframe.store.front();
-    const Var* myend = &oldframe.store.back();
-    for (size_t i = 0; i < N; ++i)
-    {
-        // If the element didn't originally come from a map, drop it.
-        // Since we don't know the key to save this under there's nothing we can do
-        // TODO: error out instead?
-        if(!oldframe.refs[i].key)
-            continue;
-
-        VarCRef r = oldframe.refs[i].ref;
-        StrRef k = oldframe.refs[i].key;
-        if (r.mem == &mem && mybegin <= r.v && r.v < myend) // if we own the memory, we can just move the thing
-            m->put(mem, k, std::move(*const_cast<Var*>(r.v)));
-        else // but if it's in some other memory space, we must clone it
-        {
-            PoolStr ps = r.mem->getSL(k);
-            assert(ps.s);
-            Var& dst = m->putKey(mem, ps.s, ps.len);
-            dst = std::move(r.v->clone(mem, *r.mem));
-        }
-    }
-    newframe.store.reserve(1);
-    addAbs(mem, newframe, std::move(mp), 0);
 }
 
 struct TransformEntry
@@ -414,7 +262,7 @@ void VM::cmd_Keysel(unsigned param)
                     if(const Var *x = src->get(readk))
                         newmap->put(*this, it->first, std::move(x->clone(*this, *e.ref.mem)));
                 }
-                addRel(*this, newtop, std::move(mm), e.key);
+                newtop.addRel(*this, std::move(mm), e.key);
             }
     }
     else
@@ -433,11 +281,11 @@ void VM::cmd_Keysel(unsigned param)
                     if(!Lm->get(myk))
                         newmap->getOrCreate(*this, myk) = std::move(it->second.clone(*mymem, *e.ref.mem));
                 }
-                addRel(*this, newtop, std::move(mm), e.key);
+                newtop.addRel(*this, std::move(mm), e.key);
             }
     }
 
-    makeAbs(newtop);
+    newtop.makeAbs();
     top = std::move(newtop);
 }
 
