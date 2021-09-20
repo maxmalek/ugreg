@@ -154,8 +154,40 @@ struct GetElem<Var::Map::Iterator>
     static inline const StrRef key(Var::Map::Iterator it) { return it->first; }
 };
 
-template<typename Iter>
-static void filterElements(VarRefs& out, const TreeMem& mem, Iter begin, Iter end, Var::CompareMode cmp, const VarEntry *values, size_t numvalues, const char *keystr, unsigned invert)
+static void filterElement(VarRefs& out, const VarEntry& e, Var::CompareMode cmp, const VarEntry* values, size_t numvalues, const char* keystr, unsigned invert)
+{
+    VarCRef sub = e.ref.lookup(keystr);
+
+    // There are two ways to handle this.
+    // We could handle things so that "key does not exist" and
+    // "key exists but value is null" are two different things.
+    // But from a practical perspective, it makes more sense to handle
+    // a non-existing key as if the value was null.
+    // That way we can do [k != null] to select anything that has a key k.
+    if (!sub)
+    {
+        //continue; // Key doesn't exist, not map, etc -> skip
+
+        sub.makenull(); // handle missing key as if the value was null
+    }
+
+    for (size_t k = 0; k < numvalues; ++k)
+    {
+        Var::CompareResult res = sub.compare(cmp, values[k].ref);
+        if (res == Var::CMP_RES_NA)
+            continue; // Can't be compared, skip
+
+        unsigned success = (res ^ invert) & 1;
+        if (success)
+        {
+            out.push_back(e);
+            break;
+        }
+    }
+}
+
+/*template<typename Iter>
+static void filterElementsInObject(VarRefs& out, const TreeMem& mem, Iter begin, Iter end, Var::CompareMode cmp, const VarEntry *values, size_t numvalues, const char *keystr, unsigned invert)
 {
     typedef typename GetElem<Iter> Get;
     for(Iter it = begin; it != end; ++it)
@@ -166,36 +198,9 @@ static void filterElements(VarRefs& out, const TreeMem& mem, Iter begin, Iter en
         if (e.ref.type() != Var::TYPE_MAP)
             continue;
 
-        VarCRef sub = e.ref.lookup(keystr);
-        // There are two ways to handle this.
-        // We could handle things so that "key does not exist" and
-        // "key exists but value is null" are two different things.
-        // But from a practical perspective, it makes more sense to handle
-        // a non-existing key as if the value was null.
-        // That way we can do [k != null] to select anything that has a key k.
-        if (!sub)
-        {
-            //continue; // Key doesn't exist, not map, etc -> skip
-
-            sub.makenull(); // handle missing key as if the value was null
-        }
-
-        for(size_t k = 0; k < numvalues; ++k)
-        {
-            Var::CompareResult res = sub.compare(cmp, values[k].ref);
-            if (res == Var::CMP_RES_NA)
-                continue; // Can't be compared, skip
-
-            unsigned success = (res ^ invert) & 1;
-            if (success)
-            {
-                out.push_back(e);
-                break;
-            }
-            // else keep checking
-        }
+        filterElement(out, e, cmp, values, numvalues, keystr, invert);
     }
-}
+}*/
 
 void VM::cmd_Filter(unsigned param)
 {
@@ -217,11 +222,8 @@ void VM::cmd_Filter(unsigned param)
     // apply to all values on top
     for (size_t i = 0; i < N; ++i)
     {
-        VarEntry e = oldrefs[i];
-        if (const Var* a = e.ref.v->array())
-            filterElements(top.refs, *e.ref.mem, a, a + e.ref.v->_size(), cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
-        else if (const Var::Map* m = e.ref.v->map())
-            filterElements(top.refs, *e.ref.mem, m->begin(), m->end(), cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
+        const VarEntry& e = oldrefs[i];
+        filterElement(top.refs, e, cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
         // else can't select subkey, so drop elem
     }
 
@@ -310,10 +312,7 @@ void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
     for(size_t i = 0; i < N; ++i)
     {
         VarEntry e = oldrefs[i];
-        if(const Var *a = e.ref.v->array())
-            filterElements(top.refs, *e.ref.mem, a, a + e.ref.v->_size(), cmp, &checklit, 1, keystr, invert);
-        else if(const Var::Map *m = e.ref.v->map())
-            filterElements(top.refs, *e.ref.mem, m->begin(), m->end(), cmp, &checklit, 1, keystr, invert);
+        filterElement(top.refs, e, cmp, &checklit, 1, keystr, invert);
         // else can't select subkey, so drop elem
     }
 }
@@ -394,6 +393,7 @@ bool VM::exec(size_t ip)
 
             case CM_KEYSEL:
                 cmd_Keysel(c.param);
+                break;
 
             case CM_DONE:
                 return true;

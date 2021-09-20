@@ -520,8 +520,12 @@ int Var::numericCompare(const Var& b) const
     const Var::Type at = type();
     const Var::Type bt = b.type();
 
-    // Only need to handle mismatching types here, the rest is already handled fine elsehwere
 #define $(A, B) if(at == A && bt == B) return (numericCmp<A, B>(*this, b))
+    // same type
+    $(TYPE_UINT, TYPE_UINT);
+    $(TYPE_INT, TYPE_INT);
+    $(TYPE_FLOAT, TYPE_FLOAT);
+    // different types
     $(TYPE_FLOAT, TYPE_INT);
     $(TYPE_FLOAT, TYPE_UINT);
     $(TYPE_INT, TYPE_FLOAT);
