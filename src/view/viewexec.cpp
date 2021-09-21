@@ -234,10 +234,10 @@ void VM::cmd_Keysel(unsigned param)
 {
     const unsigned keep = param & 1;
     const unsigned index = param >> 1u;
-    Var& lit = literals[index];
+    const Var& lit = literals[index];
     assert(lit.type() == Var::TYPE_MAP);
 
-    Var::Map *Lm = lit.map();
+    const Var::Map *Lm = lit.map();
     StackFrame& top = _topframe();
 
     StackFrame newtop;
@@ -288,6 +288,7 @@ void VM::cmd_Keysel(unsigned param)
     }
 
     newtop.makeAbs();
+    top.clear(*this);
     top = std::move(newtop);
 }
 
