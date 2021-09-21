@@ -57,7 +57,7 @@ int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
 
     if(!ok)
     {
-        mg_send_http_error(conn, 500, err);
+        mg_send_http_error(conn, 500, "%s", err);
         // TODO: dump disasm and state in debug mode
         return 500;
     }
@@ -98,7 +98,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
     {
         std::ostringstream os;
         os << "Query parse error:\n" << err;
-        mg_send_http_error(conn, 400, os.str().c_str());
+        mg_send_http_error(conn, 400, "%s", os.str().c_str());
         return 400;
     }
 

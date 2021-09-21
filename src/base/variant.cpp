@@ -398,7 +398,7 @@ const char *Var::typestr() const
 template<int P, typename T, Var::Type t>
 struct TypeHolder
 {
-    typedef typename T type;
+    typedef T type;
     static const Var::Type enumtype = t;
     enum { priority = P };
 };
@@ -638,8 +638,10 @@ Var::CompareResult Var::compare(CompareMode cmp, const TreeMem& mymem, const Var
 
             case CMP_CONTAINS: // a contains b
                 return CompareResult(!!strstr(pa.s, pb.s));
+
+            default:
+                assert(false);
         }
-        assert(false);
     }
 
     return CMP_RES_NA;
