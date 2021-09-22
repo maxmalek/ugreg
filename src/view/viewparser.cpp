@@ -87,6 +87,9 @@ public:
     bool _parseExtendedEval();
     bool _parseIdent(Var& id); // write identifier name to id (as string)
     bool _parseIdentOrStr(Var& id);
+
+    bool _parseRange(Var& r);
+    bool _parseRangeEntry(std::vector<Var::Range>& rs);
     bool _skipSpace(bool require = false);
     bool _eat(char c);
     bool _isSep() const; // next char is separator, ie. []/,space,etc or end of string
@@ -461,6 +464,59 @@ bool Parser::_parseIdentOrStr(Var& id)
     return _parseIdent(id) || (_parseLiteral(id) && id.type() == Var::TYPE_STRING);
 }
 
+// :5,15:20,50,100:
+bool Parser::_parseRange(Var& r)
+{
+    ParserTop top(*this);
+    size_t n = 0;
+    std::vector<Var::Range> rs;
+    while(_skipSpace() && _parseRangeEntry(rs) && _skipSpace())
+    {
+        _parseVerbatim(","); // last ',' is optional
+        _skipSpace();
+        ++n;
+    }
+    if(!n)
+        return false;
+
+    r.setRange(mem, rs.data(), rs.size());
+    return top.accept();
+}
+
+// 2:5
+// :5
+// 1:
+// 5
+bool Parser::_parseRangeEntry(std::vector<Var::Range>& rs)
+{
+    ParserTop top(*this);
+    u64 a = 0, b = (u64)-1;
+    size_t n = 0;
+    if(_parseDecimal(a))
+        ++n;
+    else
+        a = 0;
+    _skipSpace();
+    if(_parseVerbatim(":"))
+    {
+        _skipSpace();
+        if(_parseDecimal(b))
+            ++n;
+        else
+            b = (u64)-1;
+    }
+    else
+        b = a + 1;
+    _skipSpace();
+
+    if(!n)
+        return false;
+
+    Var::Range r { (size_t)a, (size_t)b };
+    rs.push_back(r);
+    return top.accept();
+}
+
 bool Parser::_skipSpace(bool require)
 {
     const char *s = ptr;
@@ -487,13 +543,19 @@ bool Parser::_eat(char c)
 bool Parser::_parseSelection()
 {
     ParserTop top(*this);
-    Var id;
+    Var v;
     _skipSpace();
 
     bool ok = false;
     if(_parseKeyCmp() || _parseKeySel())
     {
         ok = true;
+    }
+    else if(_parseRange(v))
+    {
+        ok = true;
+        unsigned idx = _addLiteral(std::move(v));
+        _emit(CM_SELECT, idx, 0);
     }
     else if (_eat('*'))
     {

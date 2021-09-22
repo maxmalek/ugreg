@@ -292,6 +292,55 @@ void VM::cmd_Keysel(unsigned param)
     top = std::move(newtop);
 }
 
+void VM::cmd_Select(unsigned param)
+{
+    StackFrame& top = _topframe();
+    StackFrame newtop;
+
+    const Var& lit = literals[param];
+
+    switch(lit.type())
+    {
+        case Var::TYPE_RANGE:
+        {
+            const size_t RL = lit.size();
+            const Var::Range * const rbase = lit.asRange();
+            for(size_t j = 0; j < top.refs.size(); ++j)
+            {
+                const VarEntry& e = top.refs[j];                // for each thing on stack...
+                if(const Var *asrc = e.ref.v->array())
+                {
+                    size_t asize = e.ref.size();
+                    std::vector<Var> tmp;
+                    if(asize)
+                    {
+                        for(size_t k = 0; k < RL; ++k)
+                        {
+                            const Var::Range& ra = rbase[k];    // ...for each component of the range...
+                            const size_t last = std::min(ra.last, asize);
+                            for(size_t i = ra.first; i < last; ++i)
+                                tmp.push_back(std::move(asrc[i].clone(*this, *e.ref.mem))); // ... add an element
+                        }
+                    }
+                    Var newa;
+                    Var *adst = newa.makeArray(*this, tmp.size());
+                    std::move(tmp.begin(), tmp.end(), adst);
+                    newtop.addRel(*this, std::move(newa), e.key);
+                }
+            }
+        }
+        break;
+
+        default:
+            assert(false);
+            break;
+    }
+
+    newtop.makeAbs();
+    top.clear(*this);
+    top = std::move(newtop);
+}
+
 // keep refs in top only when a subkey has operator relation to a literal
 void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
 {
@@ -394,6 +443,10 @@ bool VM::exec(size_t ip)
 
             case CM_KEYSEL:
                 cmd_Keysel(c.param);
+                break;
+
+            case CM_SELECT:
+                cmd_Select(c.param);
                 break;
 
             case CM_DONE:
@@ -552,6 +605,7 @@ static const char *s_opcodeNames[] =
     "DUP",
     "CHECKKEY",
     "KEYSEL",
+    "SELECT",
     "DONE"
 };
 static_assert(Countof(s_opcodeNames) == CM_DONE+1, "opcode enum vs name table mismatch");
@@ -598,6 +652,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
                 break;
             case CM_GETKEY:
             case CM_LITERAL:
+            case CM_SELECT:
                 os << ' ';
                 varToString(os, VarCRef(mem, &literals[c.param]));
                 break;

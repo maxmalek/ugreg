@@ -73,15 +73,23 @@ static void _DeleteExpiry(TreeMem& mem, VarExpiry *ex)
 
 static _VarRange* _NewRanges(TreeMem& mem, size_t n)
 {
-    void* p = (VarExpiry*)mem.Alloc(sizeof(_VarRange) * (n+1));
-    _VarRange* ra = _X_PLACEMENT_NEW(p) _VarRange;
+    size_t memsz = sizeof(_VarRange) * (n+1);
+    _VarRange* ra = (_VarRange*)mem.Alloc(memsz);
+    ra[0].first = n;
+    ra[0].last = memsz;
     return ra + 1;
 }
 
 static void _DeleteRanges(TreeMem& mem, _VarRange* ra)
 {
-    size_t n = ra[-1].first;
-    mem.Free(ra - 1, sizeof(*ra) * (n+1));
+    _VarRange *p = &ra[-1];
+    size_t memsz = p->last;
+    mem.Free(p, memsz);
+}
+
+inline static size_t _RangeLen(_VarRange *ra)
+{
+    return ra[-1].first;
 }
 
 
@@ -177,7 +185,12 @@ void Var::_transmute(TreeMem& mem, size_t newmeta)
             u.m->destroy(mem);
             break;
         case BITS_OTHER:
-            break; // nothing to do
+            if(meta == TYPE_RANGE)
+            {
+                _DeleteRanges(mem, u.ra);
+                u.ra = NULL;
+            }
+            break;
     }
 
     meta = newmeta;
@@ -198,7 +211,6 @@ void Var::clear(TreeMem& mem)
 Var Var::clone(TreeMem &dstmem, const TreeMem& srcmem) const
 {
     Var dst;
-    dst.meta = this->meta;
     switch(_topbits())
     {
     case BITS_STRING:
@@ -220,9 +232,18 @@ Var Var::clone(TreeMem &dstmem, const TreeMem& srcmem) const
         dst.u.m = u.m->clone(dstmem, srcmem);
         break;
     case BITS_OTHER:
-        dst.u = this->u;
+        switch(meta)
+        {
+            case TYPE_RANGE:
+                dst.setRange(dstmem, u.ra, _RangeLen(u.ra));
+                break;
+            default:
+                dst.u = this->u;
+                break;
+        }
         break;
     }
+    dst.meta = this->meta;
     return dst;
 }
 
@@ -252,8 +273,11 @@ Var::Map *Var::makeMap(TreeMem& mem, size_t prealloc)
 
 Var::Range* Var::setRange(TreeMem& mem, const Range *ra, size_t n)
 {
-    assert(false);
-    return nullptr;
+    Range *p = _NewRanges(mem, n);
+    if(ra)
+        memcpy(p, ra, sizeof(*ra) * n);
+    _transmute(mem, TYPE_RANGE);
+    return (( u.ra = p ));
 }
 
 const s64 *Var::asInt() const
@@ -309,6 +333,11 @@ bool Var::asBool() const
 void* Var::asPtr() const
 {
     return meta == TYPE_PTR ? u.p : NULL;
+}
+
+const Var::Range *Var::asRange() const
+{
+    return meta == TYPE_RANGE ? u.ra : NULL;
 }
 
 PoolStr Var::asString(const TreeMem& mem) const
@@ -401,7 +430,7 @@ static const char *s_typeNames[] =
     "uint",
     "float",
     "ptr",
-    "range"
+    "range",
     "string",
     "array",
     "map"
@@ -672,7 +701,13 @@ size_t Var::size() const
     switch(_topbits())
     {
         case 0: // Not a container
-            return 0;
+            switch(meta)
+            {
+                case TYPE_RANGE:
+                    return _RangeLen(u.ra);
+                default:
+                    return 0;
+            }
         case BITS_MAP: // Map stores size on its own while the meta field is empty
             return u.m->size();
         default:

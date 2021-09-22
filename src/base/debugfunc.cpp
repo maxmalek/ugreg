@@ -22,6 +22,21 @@ void varToString(std::ostringstream& os, VarCRef v)
     case Var::TYPE_ARRAY:
     case Var::TYPE_MAP:
         os << '#' << v.size(); break;
+    case Var::TYPE_RANGE:
+    {
+        const size_t n = v.size();
+        const Var::Range *ra = v.asRange();
+        for(size_t i = 0; i < n; ++i, ++ra)
+        {
+            if(i)
+                os << ",";
+            if(ra->first == ra->last+1)
+                os << ra->first;
+            else
+                os << ra->first << ':' << ra->last;
+        }
+    }
+    break;
     }
     os << ')';
 }

@@ -136,6 +136,7 @@ public:
         u64 ui;     // ... or unsigned
         double f;   // when float type
         void *p;    // when ptr/userdata
+        Range *ra;  // when range
     } u;
 
     enum Priv : size_t
@@ -187,7 +188,7 @@ public:
     const double *asFloat() const;
     bool asBool() const; // only true if really bool type and true, false otherwise
     void *asPtr() const;
-    const Range asRange() const;
+    const Range *asRange() const;
 
     Var& operator=(Var&& o) noexcept;
 
@@ -338,6 +339,7 @@ public:
     const char* asCString() const { return v->asCString(*mem); }
     const double* asFloat() const { return v->asFloat(); };
     bool asBool() const { return v->asBool(); }
+    const Var::Range* asRange() const { return v->asRange(); }
 
     // Returns this, transmuted to a different type. If the type is changed, old values are lost.
     VarRef& makeMap();
@@ -402,6 +404,7 @@ public:
     const char* asCString() const { return v->asCString(*mem); }
     const double* asFloat() const { return v->asFloat(); };
     bool asBool() const { return v->asBool(); }
+    const Var::Range *asRange() const { return v->asRange(); }
 
     VarCRef at(size_t idx) const;          // does not convert to array
     VarCRef lookup(const char *key) const; // does not convert to map
