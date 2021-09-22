@@ -13,7 +13,7 @@ class Executable;
   x?       means optional x
   x?...    means some optional x
   ()       denotes a group
- 
+
 
 expr         = lookuproot lookupnext?...
 lookuproot   = subkey | selector | eval
@@ -24,7 +24,9 @@ idstr        = ident | literal-str
 eval         = '$' (ident | ('{' ext-eval '}'))
 ext-eval     = expr ident?...
 selector     = '[' selection ']'
-selection    = keycmp | keysel | '*'
+selection    = keycmp | keysel | '*'  |
+range        = range-entry (',' range-entry)...
+range-entry  = (literal-int '-' literal-int) | literal-int
 keycmp       = ident cmpOp eval
 keysel       = keysel-op | ws | (keysel-list | eval)
 keysel-op    = 'keep' | 'drop'

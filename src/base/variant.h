@@ -8,6 +8,12 @@ class TreeMem;
 class Var;
 class _VarMap;
 
+struct _VarRange
+{
+    size_t first; // starts at 0
+    size_t last; // inclusive
+};
+
 // For merge() operations.
 // If not recursive, simply assign keys and replace the values of keys that are overwritten.
 // If recursive, merge all maps recursively (all other values are replaced);
@@ -67,6 +73,7 @@ public:
         TYPE_FLOAT,
         // misc
         TYPE_PTR, // Not actually json but we use this type to store a userdata/void*
+        TYPE_RANGE, // Another custom extension
         // containers
         TYPE_STRING,
         TYPE_ARRAY,
@@ -116,6 +123,7 @@ public:
     size_t meta;
 
     typedef _VarMap Map;
+    typedef _VarRange Range;
 
     // either the value or pointer to value
     union
@@ -167,6 +175,7 @@ public:
     void *setPtr(TreeMem& mem, void *p);
     Var *makeArray(TreeMem& mem, size_t n);
     Map *makeMap(TreeMem& mem, size_t prealloc = 0);
+    Range *setRange(TreeMem& mem, const Range *ra, size_t n);
 
     // value extration (get pointer to value if valid or NULL if not possible/wrong type). no asserts.
     bool isNull() const { return meta == TYPE_NULL; }
@@ -178,6 +187,7 @@ public:
     const double *asFloat() const;
     bool asBool() const; // only true if really bool type and true, false otherwise
     void *asPtr() const;
+    const Range asRange() const;
 
     Var& operator=(Var&& o) noexcept;
 

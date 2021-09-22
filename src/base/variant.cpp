@@ -71,6 +71,19 @@ static void _DeleteExpiry(TreeMem& mem, VarExpiry *ex)
     mem.Free(ex, sizeof(*ex));
 }
 
+static _VarRange* _NewRanges(TreeMem& mem, size_t n)
+{
+    void* p = (VarExpiry*)mem.Alloc(sizeof(_VarRange) * (n+1));
+    _VarRange* ra = _X_PLACEMENT_NEW(p) _VarRange;
+    return ra + 1;
+}
+
+static void _DeleteRanges(TreeMem& mem, _VarRange* ra)
+{
+    size_t n = ra[-1].first;
+    mem.Free(ra - 1, sizeof(*ra) * (n+1));
+}
+
 
 Var::Var()
     : meta(TYPE_NULL)
@@ -237,6 +250,12 @@ Var::Map *Var::makeMap(TreeMem& mem, size_t prealloc)
     return (( u.m = _NewMap(mem, prealloc) ));
 }
 
+Var::Range* Var::setRange(TreeMem& mem, const Range *ra, size_t n)
+{
+    assert(false);
+    return nullptr;
+}
+
 const s64 *Var::asInt() const
 {
     switch (meta)
@@ -382,6 +401,7 @@ static const char *s_typeNames[] =
     "uint",
     "float",
     "ptr",
+    "range"
     "string",
     "array",
     "map"
