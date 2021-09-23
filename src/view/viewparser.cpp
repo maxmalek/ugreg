@@ -74,6 +74,7 @@ public:
     bool _parseLiteral(Var& v);
     bool _parseValue(); // literal or eval
     bool _parseDecimal(u64& i);
+    bool _parseSize(size_t& i);
     bool _addMantissa(double& f, u64 i);
     bool _parseRange(RangeTmp& range);
     bool _parseRangeEntry(RangeTmp& range);
@@ -318,6 +319,16 @@ bool Parser::_parseDecimal(u64& i)
     return ok;
 }
 
+bool Parser::_parseSize(size_t& i)
+{
+    NumConvertResult nr = strtosizeNN(&i, ptr);
+    bool ok = nr.ok();
+    if (ok)
+        ptr += nr.used;
+    return ok;
+}
+
+
 bool Parser::_addMantissa(double& f, u64 i)
 {
     const char *s = ptr;
@@ -490,9 +501,9 @@ bool Parser::_parseRange(Var& r)
 bool Parser::_parseRangeEntry(std::vector<Var::Range>& rs)
 {
     ParserTop top(*this);
-    u64 a = 0, b = (u64)-1;
+    size_t a = 0, b = (size_t)-1;
     size_t n = 0;
-    if(_parseDecimal(a))
+    if(_parseSize(a))
         ++n;
     else
         a = 0;
@@ -500,10 +511,10 @@ bool Parser::_parseRangeEntry(std::vector<Var::Range>& rs)
     if(_parseVerbatim(":"))
     {
         _skipSpace();
-        if(_parseDecimal(b))
+        if(_parseSize(b))
             ++n;
         else
-            b = (u64)-1;
+            b = (size_t)-1;
     }
     else
         b = a + 1;
@@ -512,7 +523,7 @@ bool Parser::_parseRangeEntry(std::vector<Var::Range>& rs)
     if(!n)
         return false;
 
-    Var::Range r { (size_t)a, (size_t)b };
+    Var::Range r { a, b };
     rs.push_back(r);
     return top.accept();
 }
@@ -539,6 +550,8 @@ bool Parser::_eat(char c)
 // name=literal   -- key check
 // name < 5       -- oprators for key check (spaces optional)
 // keep name newname=oldname --
+// drop name1 name2 name3
+// 10:20,5    -- a range
 // only simple ops for now, no precedence, no grouping with braces
 bool Parser::_parseSelection()
 {
