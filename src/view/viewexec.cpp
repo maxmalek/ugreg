@@ -341,6 +341,13 @@ void VM::cmd_Select(unsigned param)
     top = std::move(newtop);
 }
 
+void VM::cmd_SelectStack()
+{
+    StackFrame sel = _popframe();
+    StackFrame& top = _topframe();
+    assert(false); // TODO WRITE ME
+}
+
 // keep refs in top only when a subkey has operator relation to a literal
 void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
 {
@@ -448,6 +455,9 @@ bool VM::exec(size_t ip)
             case CM_SELECT:
                 cmd_Select(c.param);
                 break;
+
+            case CM_SELECTSTACK:
+                cmd_SelectStack();
 
             case CM_DONE:
                 return true;
@@ -606,6 +616,7 @@ static const char *s_opcodeNames[] =
     "CHECKKEY",
     "KEYSEL",
     "SELECT",
+    "SELECTSTACK",
     "DONE"
 };
 static_assert(Countof(s_opcodeNames) == CM_DONE+1, "opcode enum vs name table mismatch");

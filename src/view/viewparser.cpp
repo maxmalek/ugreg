@@ -19,8 +19,6 @@ struct OpEntry
     unsigned invert;
 };
 
-typedef std::vector<size_t> RangeTmp;
-
 // need to check the longer ones first so that there's no collision (ie. checking < first and then returning, even though it was actually <=)
 // negation is handled in _parseOp()
 static const OpEntry ops[] =
@@ -76,8 +74,6 @@ public:
     bool _parseDecimal(u64& i);
     bool _parseSize(size_t& i);
     bool _addMantissa(double& f, u64 i);
-    bool _parseRange(RangeTmp& range);
-    bool _parseRangeEntry(RangeTmp& range);
     bool _parseSelector();
     bool _parseSelection();
     bool _parseKeyCmp();
@@ -102,7 +98,6 @@ public:
     unsigned _emitPushLiteral(Var&& v);
     unsigned _emitGetKey(Var&& v);
     void _emitCheckKey(Var&& key, Var&& lit, unsigned opparam);
-    size_t _emitRange(const RangeTmp&);
 
     const char *ptr;
     const char *maxptr; // for error reporting only
@@ -348,16 +343,6 @@ bool Parser::_addMantissa(double& f, u64 i)
     return true;
 }
 
-bool Parser::_parseRange(RangeTmp& range)
-{
-    return false;
-}
-
-bool Parser::_parseRangeEntry(RangeTmp& range)
-{
-    return false;
-}
-
 // /path/to/thing[...]/blah
 // -> any number of keys and selectors
 bool Parser::_parseExpr()
@@ -570,6 +555,11 @@ bool Parser::_parseSelection()
         unsigned idx = _addLiteral(std::move(v));
         _emit(CM_SELECT, idx, 0);
     }
+    /*else if(_parseEval()) // TODO: finalize exec impl
+    {
+        ok = true;
+        _emit(CM_SELECTSTACK, 0, 0);
+    }*/
     else if (_eat('*'))
     {
         _emit(CM_TRANSFORM, GetTransformID("unpack"));
@@ -728,12 +718,6 @@ void Parser::_emitCheckKey(Var&& key, Var&& lit, unsigned opparam)
     unsigned kidx = _addLiteral(std::move(key));
     unsigned litidx = _addLiteral(std::move(lit));
     _emit(CM_CHECKKEY, opparam | (kidx << 4), litidx);
-}
-
-size_t Parser::_emitRange(const RangeTmp&)
-{
-    //size_t idx = exec.ra
-    return size_t();
 }
 
 } // end namespace view

@@ -57,6 +57,7 @@ enum CmdType
                    // param2 = index of the literal to check against in the literals table
     CM_KEYSEL,     // param = (keep | (index << 1)); index into literals table. keep = 1 keeps the keys, 0 drops them
     CM_SELECT,     // param = index into literals table
+    CM_SELECTSTACK,// no param
 
     // ALWAYS LAST
     CM_DONE        // terminate execution at this point.
@@ -138,6 +139,7 @@ private:
     void cmd_Filter(unsigned param);
     void cmd_Keysel(unsigned param);
     void cmd_Select(unsigned param);
+    void cmd_SelectStack();
 };
 
 } // end namespace view

@@ -71,10 +71,10 @@ public:
         TYPE_INT,
         TYPE_UINT,
         TYPE_FLOAT,
-        // misc
+        // misc -- not part of "normal" json data
         TYPE_PTR, // Not actually json but we use this type to store a userdata/void*
         TYPE_RANGE, // Another custom extension
-        // containers
+        // containers -- always last
         TYPE_STRING,
         TYPE_ARRAY,
         TYPE_MAP,
