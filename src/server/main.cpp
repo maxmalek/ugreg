@@ -110,9 +110,9 @@ int main(int argc, char** argv)
         if(const Var::Map *m = views ? views.v->map() : NULL)
             for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             {
-                const char *key = cfgtree.getS(it->first);
+                const char *key = cfgtree.getS(it.key());
                 printf("Adding view [%s] ...\n", key);
-                if(vmgr.addViewDef(key, VarCRef(cfgtree, &it->second)))
+                if(vmgr.addViewDef(key, VarCRef(cfgtree, &it.value())))
                     printf("-> OK\n");
                 else
                     printf("-> FAILED\n");

@@ -97,9 +97,9 @@ void treeIter_T(Functor& func, const VarCRef src)
                 Var::Map::Iterator end = m->end();
                 while (s.it.map != end)
                 {
-                    PoolStr k = src.mem->getSL(s.it.map->first);
+                    PoolStr k = src.mem->getSL(s.it.map.key());
                     func.Key(k.s, k.len);
-                    const Var& vv = s.it.map->second;
+                    const Var& vv = s.it.map.value();
                     ++s.it.map;
                     if (func(VarCRef(*src.mem, &vv)))
                     {

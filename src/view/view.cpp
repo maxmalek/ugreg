@@ -60,7 +60,7 @@ bool View::load(VarCRef v)
         const Var::Map *m = lookup.v->map();
         for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
         {
-            ok = compile(v.mem->getS(it->first), VarCRef(v.mem, &it->second)) && ok;
+            ok = compile(v.mem->getS(it.key()), VarCRef(v.mem, &it.value())) && ok;
         }
     }
 

@@ -2,7 +2,7 @@
 
 #include "types.h"
 
-#include <unordered_map> // TODO: remove once no longer needed
+#include "tinyhashmap.h"
 
 class TreeMem;
 class Var;
@@ -257,7 +257,8 @@ private:
 // Note: Methods that don't take TreeMem don't modify the refcount!
 class _VarMap
 {
-    typedef std::unordered_map<StrRef, Var> _Map;
+    //typedef std::unordered_map<StrRef, Var> _Map;
+    typedef TinyHashMap<Var> _Map;
     ~_VarMap(); // call destroy() instead
 public:
     typedef _Map::const_iterator Iterator;

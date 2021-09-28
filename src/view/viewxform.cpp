@@ -42,7 +42,7 @@ void transformUnpack(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
             const Var::Map* m = src.ref.v->map_unsafe();
             for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             {
-                VarEntry e{ VarCRef(src.ref.mem, &it->second), it->first };
+                VarEntry e{ VarCRef(src.ref.mem, &it.value()), it.key() };
                 newframe.refs.push_back(std::move(e));
             }
         }

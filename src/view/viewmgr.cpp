@@ -26,7 +26,7 @@ void Mgr::_clear()
     Var::Map* m = _store.map();
     for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
     {
-        View* vv = static_cast<View*>(it->second.asPtr());
+        View* vv = static_cast<View*>(it.value().asPtr());
         deleteView(vv);
     }
     _store.clear(*this);

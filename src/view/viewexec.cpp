@@ -74,7 +74,7 @@ VM::~VM()
 
     if(Var::Map* m = evals.map())
         for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
-            if (void* p = it->second.asPtr())
+            if (void* p = it.value().asPtr())
             {
                 StackFrame* frm = static_cast<StackFrame*>(p);
                 frm->~StackFrame();
@@ -150,8 +150,8 @@ struct GetElem<const Var*>
 template<>
 struct GetElem<Var::Map::Iterator>
 {
-    static inline const Var* get(Var::Map::Iterator it) { return &it->second; }
-    static inline const StrRef key(Var::Map::Iterator it) { return it->first; }
+    static inline const Var* get(Var::Map::Iterator it) { return &it.value(); }
+    static inline const StrRef key(Var::Map::Iterator it) { return it.key(); }
 };
 
 static void filterElement(VarRefs& out, const VarEntry& e, Var::CompareMode cmp, const VarEntry* values, size_t numvalues, const char* keystr, unsigned invert)
@@ -251,8 +251,7 @@ void VM::cmd_Keysel(unsigned param)
                 Var::Map *newmap = mm.makeMap(*this);
                 for(Var::Map::Iterator it = Lm->begin(); it != Lm->end(); ++it)
                 {
-                    StrRef readk = it->second.asStrRef();
-                    StrRef writek = it->first;
+                    StrRef readk = it.value().asStrRef();
                     const Var *x;
                     if(mymem != e.ref.mem)
                     {
@@ -262,7 +261,7 @@ void VM::cmd_Keysel(unsigned param)
                             continue;
                     }
                     if(const Var *x = src->get(readk))
-                        newmap->put(*this, it->first, std::move(x->clone(*this, *e.ref.mem)));
+                        newmap->put(*this, it.key(), std::move(x->clone(*this, *e.ref.mem)));
                 }
                 newtop.addRel(*this, std::move(mm), e.key);
             }
@@ -276,12 +275,12 @@ void VM::cmd_Keysel(unsigned param)
                 Var::Map* newmap = mm.makeMap(*this);
                 for (Var::Map::Iterator it = src->begin(); it != src->end(); ++it)
                 {
-                    StrRef k = it->first;
+                    StrRef k = it.key();
                     PoolStr ps = e.ref.mem->getSL(k);
                     StrRef myk = this->putNoRefcount(ps.s, ps.len);
                     assert(myk);
                     if(!Lm->get(myk))
-                        newmap->getOrCreate(*this, myk) = std::move(it->second.clone(*mymem, *e.ref.mem));
+                        newmap->getOrCreate(*this, myk) = std::move(it.value().clone(*mymem, *e.ref.mem));
                 }
                 newtop.addRel(*this, std::move(mm), e.key);
             }

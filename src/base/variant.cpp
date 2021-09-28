@@ -768,7 +768,7 @@ void _VarMap::_checkmem(const TreeMem& m) const
 }
 
 _VarMap::_VarMap(TreeMem& mem)
-    : _expiry(NULL)
+    : _storage(mem), _expiry(NULL)
 #ifdef _DEBUG
     , _mymem(&mem)
 #endif
@@ -800,14 +800,10 @@ void _VarMap::destroy(TreeMem& mem)
 Var& _VarMap::_InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k)
 {
     // Create key/value if it's not there yet
-    _Map::iterator f = storage.find(k);
-    if (f == storage.end())
-    {
+    _Map::InsertResult r = storage.insert_new(dstmem, k, std::move(Var()));
+    if (r.newly_inserted)
         dstmem.increfS(k); // ... and refcount it if newly inserted
-        f = storage.emplace_hint(f, k, Var());
-        //return storage[k]; // this is fine too but the above should be faster
-    }
-    return f->second;
+    return r.ref;
 }
 
 bool _VarMap::equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othermem) const
@@ -823,26 +819,26 @@ bool _VarMap::equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othe
     // If the memory pool is the same, we can use the string refs as-is
     if(&mymem == &othermem)
     {
-        for (auto it = begin(); it != end(); ++it)
+        for (Iterator it = begin(); it != end(); ++it)
         {
-            auto oi = o._storage.find(it->first);
-            if (oi == o.end())
+            const Var *oi = o._storage.getp(it.key());
+            if (!oi)
                 return false;
-            if (!it->second.equals(mymem, oi->second, othermem))
+            if (!it.value().equals(mymem, *oi, othermem))
                 return false;
         }
     }
     else
     {
-        for(auto it = begin(); it != end(); ++it)
+        for(Iterator it = begin(); it != end(); ++it)
         {
             // Different mem pool, translate string IDs
-            const PoolStr ps = mymem.getSL(it->first);
+            const PoolStr ps = mymem.getSL(it.key());
             StrRef oref = othermem.lookup(ps.s, ps.len);
-            auto oi = o._storage.find(oref);
-            if(oi == o.end())
+            const Var *oi = o._storage.getp(oref);
+            if(!oi)
                 return false;
-            if(!it->second.equals(mymem, oi->second, othermem))
+            if(!it.value().equals(mymem, *oi, othermem))
                 return false;
         }
     }
@@ -859,20 +855,20 @@ bool _VarMap::isExpired(u64 now) const
 void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags)
 {
     _checkmem(dstmem);
-    for(_Map::const_iterator it = o._storage.begin(); it != o._storage.end(); ++it)
+    for(Iterator it = o._storage.begin(); it != o._storage.end(); ++it)
     {
-        PoolStr ps = srcmem.getSL(it->first);
+        PoolStr ps = srcmem.getSL(it.key());
         Var& dst = putKey(dstmem, ps.s, ps.len);
 
-        const Var::Type othertype = it->second.type();
+        const Var::Type othertype = it.value().type();
 
         if((mergeflags & MERGE_RECURSIVE) && othertype == Var::TYPE_MAP)
-            dst.makeMap(dstmem)->merge(dstmem, *it->second.u.m, srcmem, mergeflags);
+            dst.makeMap(dstmem)->merge(dstmem, *it.value().u.m, srcmem, mergeflags);
         else if((mergeflags & MERGE_APPEND_ARRAYS) && othertype == Var::TYPE_ARRAY && dst.type() == Var::TYPE_ARRAY)
         {
             const size_t oldsize = dst._size();
-            const size_t addsize = it->second._size();
-            const Var *oa = it->second.array_unsafe();
+            const size_t addsize = it.value()._size();
+            const Var *oa = it.value().array_unsafe();
             // resize destination and skip forward
             Var *a = dst.makeArray(dstmem, oldsize + addsize) + oldsize;
             for(size_t i = 0; i < addsize; ++i)
@@ -881,7 +877,7 @@ void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, Me
         else // One entry replaces the other entirely
         {
             dst.clear(dstmem);
-            dst = std::move(it->second.clone(dstmem, srcmem)); // TODO: optimize if srcmem==dstmem?
+            dst = std::move(it.value().clone(dstmem, srcmem)); // TODO: optimize if srcmem==dstmem?
         }
     }
 }
@@ -891,10 +887,10 @@ void _VarMap::clear(TreeMem& mem)
     _checkmem(mem);
     for (_Map::iterator it = _storage.begin(); it != _storage.end(); ++it)
     {
-        mem.freeS(it->first);
-        it->second.clear(mem);
+        mem.freeS(it.key());
+        it.value().clear(mem);
     }
-    _storage.clear();
+    _storage.clear(mem);
 }
 
 _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
@@ -904,22 +900,20 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
     cp->_expiry = _expiry ? _expiry->clone(dstmem) : NULL;
     for(Iterator it = _storage.begin(); it != _storage.end(); ++it)
     {
-        PoolStr k = srcmem.getSL(it->first);
-        cp->_storage[dstmem.put(k.s, k.len)] = it->second.clone(dstmem, srcmem);
+        PoolStr k = srcmem.getSL(it.key());
+        cp->_storage[dstmem.put(k.s, k.len)] = it.value().clone(dstmem, srcmem);
     }
     return cp;
 }
 
 Var* _VarMap::get(StrRef k)
 {
-    _Map::iterator it = _storage.find(k);
-    return it != _storage.end() ? &it->second : NULL;
+    return _storage.getp(k);
 }
 
 const Var* _VarMap::get(StrRef k) const
 {
-    _Map::const_iterator it = _storage.find(k);
-    return it != _storage.end() ? &it->second : NULL;
+    return _storage.getp(k);
 }
 
 Var& _VarMap::putKey(TreeMem& mem, const char* key, size_t len)
@@ -936,10 +930,10 @@ Var& _VarMap::getOrCreate(TreeMem& mem, StrRef key)
 Var& _VarMap::put(TreeMem& mem, StrRef k, Var&& x)
 {
     _checkmem(mem);
-    auto it = _storage.insert(std::make_pair(k, std::move(x)));
-    if(it.second)
+    _Map::InsertResult ins = _storage.insert(mem, k, std::move(x));
+    if(ins.newly_inserted)
         mem.increfS(k);
-    return it.first->second;
+    return ins.ref;
 }
 
 VarRef& VarRef::makeMap()

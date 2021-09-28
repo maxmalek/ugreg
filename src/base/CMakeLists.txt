@@ -21,6 +21,8 @@ set(src
     refcounted.h
     debugfunc.cpp
     debugfunc.h
+    tinyhashmap.cpp
+    tinyhashmap.h
 )
 
 add_library(base ${src})
