@@ -46,65 +46,64 @@ public:
         std::vector<size_t> indices; // never contains 0
 
         inline size_t size() const { return keys.size(); }
-        inline void clear() { keys.clear(); indices.clear(); }
+        inline void clear(TreeMem& mem) { keys.clear(); indices.clear(); }
         inline void swap(Bucket& o) { keys.swap(o.keys); indices.swap(o.indices); }
 
-        struct iterator
+        // iterator over a single bucket
+        template<typename T, typename B>
+        struct iterator_T
         {
             using iterator_category = std::forward_iterator_tag;
             using difference_type = std::ptrdiff_t;
-            using value_type = std::pair<StrRef, size_t>;
-            using pointer = const std::pair<StrRef, size_t>*;
-            using reference = const std::pair<StrRef, size_t>&;
 
-            iterator(const Bucket *b, size_t idx) // iterator into valid storage
-                : _idx(idx), _b(b)
-            {
-                if(idx < b->size())
-                    assign(idx);
-            }
+            iterator_T(iterator_T&&) = default;
+            iterator_T& operator=(iterator_T&&) = default;
+            iterator_T& operator=(const iterator_T&) = default;
 
-            iterator(const Bucket* b) // iterator to end
-                : _idx(_b->size()), _b(b)
-            {
-            }
+            iterator_T(B *b, size_t idx) // iterator into some storage
+                : _idx(idx), _b(b) {}
 
-            reference operator*() const { return mypair; }
-            pointer operator->() { return &mypair; }
-            iterator& operator++() { assign(_idx++); return *this; }
-            iterator operator++(int) { iterator tmp = *this; ++(*this); return tmp; }
-            friend bool operator== (const iterator& a, const iterator& b)
-            { assert(a._b == b._b); return a._idx == b._idx; };
-            friend bool operator!= (const iterator& a, const iterator& b)
-            { assert(a._b == b._b); return a._idx != b._idx; };
+            iterator_T(B *b) // iterator to end
+                : _idx(b->size()), _b(b) {}
 
-            void assign(size_t idx)
-            {
-                mypair.first = _b->keys[idx];
-                mypair.second = _b->indices[idx];
-            }
-        private:
-            value_type mypair;
+            iterator_T() // empty iterator
+                : _idx(0), _b(NULL) {}
+
+            //iterator_T(const iterator_T<T, Bucket const>& it) // construct fron non-const
+            //    : _idx(it._idx), _b(it._b) {}
+
+            iterator_T(const iterator_T& o) // copy
+                : _idx(o._idx), _b(o._b) {}
+
+            iterator_T& operator++() { assert(_idx < _b->size()); ++_idx; return *this; }
+            iterator_T operator++(int) { iterator_T tmp = *this; ++(*this); return tmp; }
+            friend bool operator== (const iterator_T& a, const iterator_T& b)
+            //{ assert(a._b == b._b); return a._idx == b._idx; };
+            { return a._b == b._b && a._idx == b._idx; };
+            friend bool operator!= (const iterator_T& a, const iterator_T& b)
+            //{ assert(a._b == b._b); return a._idx != b._idx; };
+            { return a._b != b._b || a._idx != b._idx; };
+
+            StrRef key() const     { return _b->keys[_idx]; }
+            T& value()             { return _b->indices[_idx]; }
+            const T& value() const { return _b->indices[_idx]; }
+            bool _done() const { return _idx >= _b->size(); }
+
             size_t _idx; // index in bucket
-            const Bucket *_b;
+            B * _b; // current bucket
         };
-        
-        iterator begin() { return iterator(this, 0); }
-        iterator end() { return iterator(this); }
 
+        //typedef iterator_T<size_t, Bucket> iterator;
+        typedef iterator_T<size_t const, Bucket const> const_iterator;
+        
+        //iterator begin() { return iterator(this, 0); }
+        //iterator end()   { return iterator(this); }
+
+        const_iterator begin() const { return const_iterator(this, 0); }
+        const_iterator end()   const { return const_iterator(this); }
     };
 
     typedef std::vector<Bucket> Storage;
-
-private:
-    typedef Storage::const_iterator bucket_iterator;
-    typedef std::pair<StrRef, size_t > PairType;
-
-
-
-    typedef iterator_base<const Bucket> const_iterator;
-
-public:
 
     HashHatKeyStore(size_t initialbuckets = 1) // must be power of 2
         : _mask(initialbuckets - 1)
@@ -151,7 +150,7 @@ public:
         Bucket tmp;
         for(size_t j = 0; j < B; ++j)
         {
-            tmp.clear();
+            tmp.clear(m);
             Bucket& src = _buckets[j];
             tmp.swap(src);
             const size_t N = tmp.size();
@@ -166,12 +165,87 @@ public:
         _mask = newmask;
     }
 
-    void clear()
+    void clear(TreeMem& mem)
     {
         for(size_t i = 0; i < _buckets.size(); ++i)
-            _buckets[i].clear();
+            _buckets[i].clear(mem);
         _buckets.clear();
     }
+
+    // iterator over multiple buckets
+    template<typename T, typename B>
+    struct iterator_T
+    {
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type = std::ptrdiff_t;
+
+        iterator_T(iterator_T&&) = default;
+        iterator_T& operator=(iterator_T&&) = default;
+        iterator_T& operator=(const iterator_T&) = default;
+
+        iterator_T(const typename B::const_iterator& it, B *end)
+            : _it(it), _end(end) {}
+
+        // construct from non-const
+        //iterator_T(const iterator_T<T, Bucket, Bucket::iterator>& it)
+        //    : _it(it._it), _end(it._end) {}
+
+        iterator_T() // empty iterator
+            : _end(NULL) {}
+
+        iterator_T(B *b, size_t n)
+            : _it(b, 0), _end(b + n) {}
+
+        iterator_T(const iterator_T& o) // copy
+            : _it(o._it), _end(o._end) {}
+
+        iterator_T& operator++()
+        {
+            if((++_it)._done())
+            {
+                assert(_it._b < _end);
+                do
+                {
+                    ++_it._b;
+                    _it._idx = 0;
+                }
+                while(_it._done()); // skip empty buckets
+            }
+            return *this;
+        }
+        iterator_T operator++(int) { iterator_T tmp = *this; ++(*this); return tmp; }
+        friend bool operator== (const iterator_T& a, const iterator_T& b)
+        {
+            assert(a._end == b._end); return a._it == b._it;
+        };
+        friend bool operator!= (const iterator_T& a, const iterator_T& b)
+        {
+            assert(a._end == b._end); return a._it != b._it;
+        };
+
+        StrRef key() const { return _it.key(); }
+        T& value() { return _it.value(); }
+        const T& value() const { return _it.value(); }
+
+    private:
+        typename B::const_iterator _it; // iterator into current bucket
+        const B *_end; // one past last bucket
+    };
+
+    //typedef iterator_T<size_t, Bucket> iterator;
+    typedef iterator_T<size_t const, Bucket const> const_iterator;
+
+    const_iterator begin() const
+    {
+        return const_iterator(_buckets.data(), _buckets.size());
+    }
+    const_iterator end() const
+    {
+        return const_iterator(_buckets.data() + _buckets.size(), 0);
+    }
+
+    //const_iterator begin() const { return const_iterator(); }
+    //const_iterator end()   const { return const_iterator(); }
 
 private:
 
@@ -206,20 +280,37 @@ public:
     {
     }
 
+    InsertResult _insert_always(size_t& dst, Vec& vec, TreeMem& mem, StrRef k, value_type&& v)
+    {
+        vec.push_back(std::move(v));
+        dst = vec.size(); // store size+1, that is always != 0
+        InsertResult ret{ vec.back(), true };
+        return ret;
+    }
+
     InsertResult insert(Vec& vec, TreeMem& mem, StrRef k, value_type&& v)
     {
         size_t& dst = ks.insertIndex(mem, k);
         if(dst)
         {
-            value_type vdst = vec[dst];
+            value_type& vdst = vec[dst];
             vdst = std::move(v);
             InsertResult ret { vdst, false };
+            return ret;
         }
+        return _insert_always(dst, vec, mem, k, std::move(v));
+    }
 
-        vec.push_back(std::move(v));
-        dst = vec.size(); // store size+1, that is always != 0
-        InsertResult ret{ vec.back(), true };
-        return ret;
+    InsertResult insert_new(Vec& vec, TreeMem& mem, StrRef k, value_type&& v)
+    {
+        size_t& dst = ks.insertIndex(mem, k);
+        if (dst)
+        {
+            value_type& vdst = vec[dst];
+            InsertResult ret{ vdst, false };
+            return ret;
+        }
+        return _insert_always(dst, vec, mem, k, std::move(v));
     }
 
     value_type *getp(Vec& vec, StrRef k)
@@ -228,32 +319,148 @@ public:
         return idx ? &vec[idx - 1] : NULL;
     }
 
+    const value_type* getp(const Vec& vec, StrRef k) const
+    {
+        const size_t idx = ks.getIndex(k);
+        return idx ? &vec[idx - 1] : NULL;
+    }
+
+    template<typename T, typename BaseT, bool IsConst>
+    struct iterator_T
+    {
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type = std::ptrdiff_t;
+
+        iterator_T(const iterator_T&) = default;
+        iterator_T(iterator_T&&) = default;
+        iterator_T& operator=(iterator_T&&) = default;
+        iterator_T& operator=(const iterator_T&) = default;
+
+        iterator_T() : _a(NULL) {}
+
+        iterator_T(T* a, HashHatKeyStore::const_iterator it) // iterator into valid storage
+            : _it(it), _a(a)
+        {
+        }
+
+        template<bool WasConst, class = std::enable_if_t<IsConst || !WasConst> >
+        iterator_T(const iterator_T<BaseT, BaseT, WasConst>& o)
+            : _it(o._it), _a(o._a)
+        {
+        }
+
+        iterator_T& operator++() { ++_it; return *this; }
+        iterator_T operator++(int) { iterator_T tmp = *this; ++(*this); return tmp; }
+        friend bool operator== (const iterator_T& a, const iterator_T& b)
+        {
+            assert(a._a == b._a); return a._it == b._it;
+        };
+        friend bool operator!= (const iterator_T& a, const iterator_T& b)
+        {
+            assert(a._a == b._a); return a._it != b._it;
+        };
+
+        StrRef key() const { return _it.key(); }
+        T& value() { return _a[_it.value()]; }
+        const T& value() const { return _a[_it.value()]; }
+
+        HashHatKeyStore::const_iterator _it;
+        T *_a;
+    };
+
+    typedef iterator_T<value_type const, value_type, true> const_iterator;
+
+    typedef iterator_T<value_type, value_type, false> iterator;
+    //class iterator : public const_iterator
+    //{};
+
+
+    iterator begin(value_type *a) { return iterator(a, ks.begin()); }
+    iterator end(value_type *a)   { return iterator(a, ks.end()); }
+
+    const_iterator begin(const value_type *a) const { return const_iterator(a, ks.begin()); }
+    const_iterator end(const value_type *a)   const { return const_iterator(a, ks.end()); }
+
+    void clear(TreeMem& mem) { ks.clear(mem); }
+
 private:
     HashHatKeyStore ks;
-
 };
 
 template<typename T>
-class TinyHashMap : private HashHat<std::vector<T> >
+class TinyHashMap
 {
+    typedef HashHat<std::vector<T> > HH;
+    HashHat<std::vector<T> > _hh;
+    std::vector<T> _vec;
+
 public:
+    typedef typename HH::iterator iterator;
+    typedef typename HH::const_iterator const_iterator;
+    typedef typename HH::InsertResult InsertResult;
+
+    TinyHashMap(const TinyHashMap&) = delete;
+    TinyHashMap& operator=(const TinyHashMap&) = delete;
+
     TinyHashMap()
+    {
+    }
+    TinyHashMap(TreeMem& mem, size_t = 0)
     {
     }
     ~TinyHashMap()
     {
     }
-
-    InsertResult insert(TreeMem& mem, StrRef k, value_type&& v)
+    TinyHashMap(TinyHashMap&& o)
+        : _hh(std::move(o._hh)), _vec(std::move(o._vec))
     {
-        return this->insert(vec, mem, k, std::move(v));
+    }
+    TinyHashMap& operator=(TinyHashMap&& o)
+    {
+        _hh = std::move(o._hh);
+        _vec = std::move(o._vec);
     }
 
-    typedef iterator
+    InsertResult insert(TreeMem& mem, StrRef k, T&& v)
+    {
+        return _hh.insert(_vec, mem, k, std::move(v));
+    }
 
+    InsertResult insert_new(TreeMem& mem, StrRef k, T&& v)
+    {
+        return _hh.insert_new(_vec, mem, k, std::move(v));
+    }
 
-private:
-    std::vector vec;
+    T* getp(StrRef k)
+    {
+        return _hh.getp(_vec, k);
+    }
+    const T* getp(StrRef k) const
+    {
+        return _hh.getp(_vec, k);
+    }
+
+    iterator begin() { return _hh.begin(_vec.data()); }
+    iterator end()   { return _hh.end(_vec.data()); }
+
+    const_iterator begin() const { return _hh.begin(_vec.data()); }
+    const_iterator end()   const { return _hh.end(_vec.data()); }
+
+    size_t size() const { return _vec.size(); }
+    bool empty() const { return _vec.empty(); }
+    void clear(TreeMem& mem)
+    {
+        for(size_t i = 0; i < _vec.size(); ++i)
+            _vec[i].clear(mem);
+        _vec.clear();
+        _hh.clear(mem);
+    }
+
+    T& at(TreeMem& mem, StrRef k)
+    {
+        InsertResult ins = insert(mem, k, std::move(T()));
+        return ins.ref;
+    }
 };
 
 #else
@@ -267,6 +474,7 @@ class TinyHashMap
 {
     typedef std::unordered_map<StrRef, T> Storage;
 public:
+    TinyHashMap() {}
     TinyHashMap(TreeMem&, size_t = 0)
     {
     }
@@ -359,7 +567,9 @@ public:
     size_t size() const { return _map.size(); }
     bool empty() const { return _map.empty(); }
     void clear(TreeMem&) { _map.clear(); }
-    T& operator[](StrRef k) { return _map[k]; }
+    //T& operator[](StrRef k) { return _map[k]; } // can't support this one
+    T& at(TreeMem& mem, StrRef k) { return _map[k]; }
+    void swap(TinyHashMap& o) { _map.swap(o); }
 
 
 private:

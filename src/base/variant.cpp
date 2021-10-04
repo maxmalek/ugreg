@@ -901,7 +901,7 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
     for(Iterator it = _storage.begin(); it != _storage.end(); ++it)
     {
         PoolStr k = srcmem.getSL(it.key());
-        cp->_storage[dstmem.put(k.s, k.len)] = it.value().clone(dstmem, srcmem);
+        cp->_storage.at(dstmem, dstmem.put(k.s, k.len)) = std::move(it.value().clone(dstmem, srcmem));
     }
     return cp;
 }

@@ -3,6 +3,7 @@
 #include <assert.h>
 
 #include <vector>
+#include <string>
 
 #include "rapidjson/writer.h"
 #include "rapidjson/prettywriter.h"

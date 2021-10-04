@@ -2,6 +2,7 @@
 
 #include "variant.h"
 #include <vector>
+#include <string>
 #include "treemem.h"
 
 namespace view {

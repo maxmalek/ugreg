@@ -10,7 +10,7 @@ static void api_test()
 {
     TreeMem mem;
     typedef TinyHashMap<Var> M;
-    M m(mem);
+    M m;
 
     assert(m.empty());
 
@@ -19,7 +19,7 @@ static void api_test()
 
     assert(m.size() == 1);
 
-    m[23] = "blarg";
+    m.at(mem, 23) = "blarg";
 
     Var *p = m.getp(42);
 
