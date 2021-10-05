@@ -122,7 +122,7 @@ public:
 
         //typedef iterator_T<size_t, Bucket> iterator;
         typedef iterator_T<SZ const, Bucket const> const_iterator;
-        
+
         //iterator begin() { return iterator(this, 0); }
         //iterator end()   { return iterator(this); }
 
@@ -173,7 +173,7 @@ public:
         }
         return 0;
     }
-    
+
     inline static StrRef _Validkey(StrRef k)
     {
         assert(k);
@@ -340,7 +340,7 @@ private:
         assert(idx < _buckets.size());
         return _buckets[idx];
     }
-    
+
     Storage _buckets;
     SZ _mask;
 };

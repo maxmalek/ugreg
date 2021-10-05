@@ -4,7 +4,7 @@ class TreeMem;
 
 namespace view {
 
-class StackFrame;
+struct StackFrame;
 
 // A transform must fully write newframe. oldframe will be destroyed after the call,
 // and any pointers remaining to its store would cause a segfault.

@@ -252,7 +252,6 @@ void VM::cmd_Keysel(unsigned param)
                 for(Var::Map::Iterator it = Lm->begin(); it != Lm->end(); ++it)
                 {
                     StrRef readk = it.value().asStrRef();
-                    const Var *x;
                     if(mymem != e.ref.mem)
                     {
                         PoolStr ps = this->getSL(readk);
