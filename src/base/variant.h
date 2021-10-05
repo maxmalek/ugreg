@@ -52,6 +52,15 @@ and makes sure that the memory allocators are handled correctly.
 class Var
 {
 public:
+    struct Policy
+    {
+        typedef TreeMem Allocator;
+        inline static void OnDestroy(TreeMem& mem, Var& v)
+        {
+            v.clear(mem);
+        }
+    };
+
     Var();
     ~Var();
     Var(Var&& v) noexcept;
@@ -288,17 +297,16 @@ public:
 
     // return true when object is expired and should be deleted
     bool isExpired(u64 now) const;
-    u64 getExpiryTime() const { return _expiry ? _expiry->ts : 0; }
+    u64 getExpiryTime() const { return _expiry ? _expiry->ts : 0; } // FIXME
 
 private: // disabled ops until we actually need them
     _VarMap(const _VarMap&) = delete;
     _VarMap& operator=(const _VarMap& o) = delete;
 
-    // TODO: replace this with a custom impl at some point
-    _Map _storage;
 
     static Var& _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
 
+    _Map _storage;
     VarExpiry *_expiry; // only allocated when necessary
 
     void _checkmem(const TreeMem& m) const;

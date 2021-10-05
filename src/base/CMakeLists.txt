@@ -18,11 +18,14 @@ set(src
     treemem.cpp
     treemem.h
     mem.h
+    mem.cpp
     refcounted.h
     debugfunc.cpp
     debugfunc.h
     tinyhashmap.cpp
     tinyhashmap.h
+    containers.h
+    containers.cpp
 )
 
 add_library(base ${src})

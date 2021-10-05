@@ -1,12 +1,12 @@
 #include "tinyhashmap.h"
 #include <assert.h>
-
+#include "treemem.h"
 #include "variant.h"
 
 // all of the API exposed by the hashmap, to catch possible compile errors
 // and API mismatches
 [[maybe_unused]]
-static void api_test()
+void tinyhashmap_api_test()
 {
     TreeMem mem;
     typedef TinyHashMap<Var> M;
@@ -15,7 +15,8 @@ static void api_test()
     assert(m.empty());
 
     m.insert(mem, 42, std::move(Var(u64(6581))));
-    m.insert_new(mem, 42, std::move(Var(-1.0f)));
+    M::InsertResult ins = m.insert_new(mem, 42);
+    ins.ref.setFloat(mem, -1.0f);
 
     assert(m.size() == 1);
 
@@ -32,5 +33,5 @@ static void api_test()
 
     M m2 = std::move(m);
 
-    m2.clear(mem);
+    m2.dealloc(mem);
 }

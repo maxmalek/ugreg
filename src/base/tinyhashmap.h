@@ -1,7 +1,7 @@
 #pragma once
 
-#include "treemem.h"
-#include <vector>
+#include "containers.h"
+#include <vector> // TODO KILL ME
 #include <assert.h>
 
 /* Put the HashHat on a vector to turn it into a rudimentary hashmap
@@ -35,19 +35,46 @@ die hard) I don't particularly care about that.
 */
 
 // put #if 0 here to use std::unordered_map under the hood instead of the custom thing
-#if 0
+#if 1
 
+template<typename SZ>
 class HashHatKeyStore
 {
 public:
+    typedef BlockAllocator Allocator;
+    typedef SZ size_type;
+
     struct Bucket
     {
-        std::vector<StrRef> keys;
-        std::vector<size_t> indices; // never contains 0
+        struct Policy
+        {
+            typedef Allocator Allocator;
+            template<typename Bucket> // This works around Bucket being not defined just yet
+            inline static void OnDestroy(Allocator& mem, Bucket& v)
+            {
+                v.dealloc(mem);
+            }
+        };
 
-        inline size_t size() const { return keys.size(); }
-        inline void clear(TreeMem& mem) { keys.clear(); indices.clear(); }
+        std::vector<StrRef> keys;
+        std::vector<SZ> indices; // never contains 0
+
+        inline SZ size() const { return keys.size(); }
+        inline void clear(Allocator& mem) { keys.clear(); indices.clear(); }
         inline void swap(Bucket& o) { keys.swap(o.keys); indices.swap(o.indices); }
+
+        SZ& pushNewKey(StrRef k)
+        {
+            keys.push_back(k);
+            indices.push_back(0);
+            return indices.back();
+        }
+
+        void dealloc(Allocator& mem)
+        {
+            clear(mem);
+            // TODO: free
+        }
 
         // iterator over a single bucket
         template<typename T, typename B>
@@ -60,7 +87,7 @@ public:
             iterator_T& operator=(iterator_T&&) = default;
             iterator_T& operator=(const iterator_T&) = default;
 
-            iterator_T(B *b, size_t idx) // iterator into some storage
+            iterator_T(B *b, SZ idx) // iterator into some storage
                 : _idx(idx), _b(b) {}
 
             iterator_T(B *b) // iterator to end
@@ -89,12 +116,12 @@ public:
             const T& value() const { return _b->indices[_idx]; }
             bool _done() const { return _idx >= _b->size(); }
 
-            size_t _idx; // index in bucket
+            SZ _idx; // index in bucket
             B * _b; // current bucket
         };
 
         //typedef iterator_T<size_t, Bucket> iterator;
-        typedef iterator_T<size_t const, Bucket const> const_iterator;
+        typedef iterator_T<SZ const, Bucket const> const_iterator;
         
         //iterator begin() { return iterator(this, 0); }
         //iterator end()   { return iterator(this); }
@@ -103,73 +130,117 @@ public:
         const_iterator end()   const { return const_iterator(this); }
     };
 
-    typedef std::vector<Bucket> Storage;
+    typedef LVector<Bucket, u32, typename Bucket::Policy> Storage;
 
-    HashHatKeyStore(size_t initialbuckets = 1) // must be power of 2
+    HashHatKeyStore()
+        : _mask(SZ(-1)) // This is intended to overflow once we insert the first element
+    {
+    }
+
+    HashHatKeyStore(Allocator& mem, SZ initialbuckets = 4) // must be power of 2
         : _mask(initialbuckets - 1)
     {
-        _buckets.resize(initialbuckets);
+        assert(initialbuckets);
+        _buckets.resize(mem, initialbuckets);
     }
 
     ~HashHatKeyStore()
     {
-        _buckets.clear();
     }
+
+    HashHatKeyStore(HashHatKeyStore&& o) noexcept
+        : _buckets(std::move(o._buckets))
+        , _mask(o._mask)
+    {
+        o._mask = -1;
+    }
+
+    HashHatKeyStore(const HashHatKeyStore&) = delete;
+    HashHatKeyStore& operator=(const HashHatKeyStore&) = delete;
+    HashHatKeyStore& operator=(HashHatKeyStore&&) noexcept = delete;
 
     // returns 0 if not found
     const size_t getIndex(StrRef k) const
     {
-        const Bucket& b = _getbucket(k);
-        const size_t N = b.size();
-        for(size_t i = 0; i < N; ++i)
-            if(k == b.keys[i])
-                return b.indices[i];
+        _Validkey(k);
+        if(_buckets.size())
+        {
+            const Bucket& b = _getbucket(k);
+            const SZ N = b.size();
+            for(size_t i = 0; i < N; ++i)
+                if(k == _Validkey(b.keys[i]))
+                    return b.indices[i];
+        }
         return 0;
+    }
+    
+    inline static StrRef _Validkey(StrRef k)
+    {
+        assert(k);
+        return k;
     }
 
     // return location of new index to write. if it's 0, the index is new and must be updated.
     // Do NOT write 0 there!
-    size_t& insertIndex(TreeMem& mem, StrRef k)
+    SZ& insertIndex(Allocator& mem, SZ cursize, StrRef k)
     {
-        Bucket& b = _getbucket(k);
-        const size_t N = b.size();
-        for (size_t i = 0; i < N; ++i)
-            if (k == b.keys[i])
-                return b.indices[i];
+        _Validkey(k);
+        Bucket *b;
+        // Load factor: in average 8 elements ber bucket
+        if((cursize >> 3u) >= SZ(_mask + 1)) // CAUTION: This uses _mask overflowing when inserting the first element
+        {
+            SZ newsize = _buckets.size() * 2;
+            SZ mask = resize(mem, newsize < 4 ? 4 : newsize);
+            b = &_buckets[k & mask]; // bucket vector was realloc'd, fix ptr
+        }
+        else
+            b = &_getbucket(k);
 
-        b.keys.push_back(k);
-        b.indices.push_back(0);
-        return b.indices.back();
+        const SZ N = b->size();
+        const StrRef* const ka = b->keys.data();
+        for (SZ i = 0; i < N; ++i)
+            if (k == _Validkey(ka[i]))
+                return b->indices[i];
+
+        return b->pushNewKey(k);
     }
 
-    void resize(TreeMem& m, size_t newsize)
+    SZ resize(Allocator& mem, SZ newsize)
     {
-        const size_t B = _buckets.size();
-        _buckets.resize(newsize);
-        size_t newmask = newsize - 1;
+        const SZ B = _buckets.size();
+        _buckets.resize(mem, newsize);
+        SZ newmask = newsize - 1;
         Bucket tmp;
-        for(size_t j = 0; j < B; ++j)
+        for(SZ j = 0; j < B; ++j)
         {
-            tmp.clear(m);
+            tmp.clear(mem);
             Bucket& src = _buckets[j];
             tmp.swap(src);
-            const size_t N = tmp.size();
-            for(size_t i = 0; i < N; ++i)
+            const SZ N = tmp.size();
+            for(SZ i = 0; i < N; ++i)
             {
-                const size_t bidx = tmp.keys[i] & newmask;
+                const SZ bidx = tmp.keys[i] & newmask;
+                assert(bidx < _buckets.size());
                 Bucket& dst = _buckets[bidx];
                 dst.keys.push_back(tmp.keys[i]);
                 dst.indices.push_back(tmp.indices[i]);
             }
         }
         _mask = newmask;
+        return newmask;
     }
 
-    void clear(TreeMem& mem)
+    void clear(Allocator& mem)
     {
         for(size_t i = 0; i < _buckets.size(); ++i)
             _buckets[i].clear(mem);
-        _buckets.clear();
+    }
+
+    void dealloc(Allocator& mem)
+    {
+        clear(mem);
+        _buckets.dealloc(mem);
+        _mask = SZ(-1);
     }
 
     // iterator over multiple buckets
@@ -199,9 +270,9 @@ public:
         iterator_T(const iterator_T& o) // copy
             : _it(o._it), _end(o._end) {}
 
-        iterator_T& operator++()
+        iterator_T& _advanceIfEmpty()
         {
-            if((++_it)._done())
+            if (_it._done())
             {
                 assert(_it._b < _end);
                 do
@@ -209,9 +280,16 @@ public:
                     ++_it._b;
                     _it._idx = 0;
                 }
-                while(_it._done()); // skip empty buckets
+                while (_it._b < _end && _it._done()); // skip empty buckets
             }
             return *this;
+        }
+
+        iterator_T& operator++()
+        {
+            assert(_it._b < _end);
+            ++_it;
+            return _advanceIfEmpty();
         }
         iterator_T operator++(int) { iterator_T tmp = *this; ++(*this); return tmp; }
         friend bool operator== (const iterator_T& a, const iterator_T& b)
@@ -224,8 +302,8 @@ public:
         };
 
         StrRef key() const { return _it.key(); }
-        T& value() { return _it.value(); }
-        const T& value() const { return _it.value(); }
+        T value() { return _it.value(); }
+        const T value() const { return _it.value(); }
 
     private:
         typename B::const_iterator _it; // iterator into current bucket
@@ -237,7 +315,7 @@ public:
 
     const_iterator begin() const
     {
-        return const_iterator(_buckets.data(), _buckets.size());
+        return const_iterator(_buckets.data(), _buckets.size())._advanceIfEmpty();
     }
     const_iterator end() const
     {
@@ -251,23 +329,29 @@ private:
 
     inline Bucket& _getbucket(StrRef k)
     {
-        return _buckets[k & _mask];
+        const size_t idx = k & _mask;
+        assert(idx < _buckets.size());
+        return _buckets[idx];
     }
 
     inline const Bucket& _getbucket(StrRef k) const
     {
-        return _buckets[k & _mask];
+        const size_t idx = k & _mask;
+        assert(idx < _buckets.size());
+        return _buckets[idx];
     }
     
-    size_t _mask;
     Storage _buckets;
+    SZ _mask;
 };
 
 template<typename Vec>
 class HashHat
 {
 public:
+    typedef HashHatKeyStore<u32> KS;
     typedef typename Vec::value_type value_type;
+    typedef typename KS::Allocator Allocator;
     struct InsertResult
     {
         value_type& ref;
@@ -280,20 +364,29 @@ public:
     {
     }
 
-    InsertResult _insert_always(size_t& dst, Vec& vec, TreeMem& mem, StrRef k, value_type&& v)
+    HashHat(HashHat&& o) noexcept
+        : ks(std::move(o.ks))
     {
-        vec.push_back(std::move(v));
-        dst = vec.size(); // store size+1, that is always != 0
-        InsertResult ret{ vec.back(), true };
+    }
+
+    HashHat(const HashHat&) = delete;
+    HashHat& operator=(const HashHat&) = delete;
+    HashHat& operator=(HashHat&&) noexcept = delete;
+
+    InsertResult _insert_always(typename KS::size_type& dst, Vec& vec, Allocator& mem, StrRef k, value_type&& v)
+    {
+        typename Vec::value_type& ins = vec.push_back(mem, std::move(v));
+        dst = vec.size(); // store size *after* inserting, that is always != 0
+        InsertResult ret{ ins, true };
         return ret;
     }
 
-    InsertResult insert(Vec& vec, TreeMem& mem, StrRef k, value_type&& v)
+    InsertResult insert(Vec& vec, Allocator& mem, StrRef k, value_type&& v)
     {
-        size_t& dst = ks.insertIndex(mem, k);
+        typename KS::size_type& dst = ks.insertIndex(mem, vec.size(), k);
         if(dst)
         {
-            value_type& vdst = vec[dst];
+            value_type& vdst = vec[dst - 1];
             vdst = std::move(v);
             InsertResult ret { vdst, false };
             return ret;
@@ -301,16 +394,16 @@ public:
         return _insert_always(dst, vec, mem, k, std::move(v));
     }
 
-    InsertResult insert_new(Vec& vec, TreeMem& mem, StrRef k, value_type&& v)
+    InsertResult insert_new(Vec& vec, Allocator& mem, StrRef k)
     {
-        size_t& dst = ks.insertIndex(mem, k);
+        typename KS::size_type& dst = ks.insertIndex(mem, vec.size(), k);
         if (dst)
         {
-            value_type& vdst = vec[dst];
-            InsertResult ret{ vdst, false };
+            value_type& vdst = vec[dst - 1];
+            InsertResult ret { vdst, false };
             return ret;
         }
-        return _insert_always(dst, vec, mem, k, std::move(v));
+        return _insert_always(dst, vec, mem, k, std::move(value_type()));
     }
 
     value_type *getp(Vec& vec, StrRef k)
@@ -338,7 +431,7 @@ public:
 
         iterator_T() : _a(NULL) {}
 
-        iterator_T(T* a, HashHatKeyStore::const_iterator it) // iterator into valid storage
+        iterator_T(T* a, KS::const_iterator it) // iterator into valid storage
             : _it(it), _a(a)
         {
         }
@@ -361,10 +454,10 @@ public:
         };
 
         StrRef key() const { return _it.key(); }
-        T& value() { return _a[_it.value()]; }
-        const T& value() const { return _a[_it.value()]; }
+        T& value() { assert(_it.value()); return _a[_it.value() - 1]; }
+        const T& value() const { assert(_it.value()); return _a[_it.value() - 1]; }
 
-        HashHatKeyStore::const_iterator _it;
+        KS::const_iterator _it;
         T *_a;
     };
 
@@ -381,18 +474,21 @@ public:
     const_iterator begin(const value_type *a) const { return const_iterator(a, ks.begin()); }
     const_iterator end(const value_type *a)   const { return const_iterator(a, ks.end()); }
 
-    void clear(TreeMem& mem) { ks.clear(mem); }
+    void clear(Allocator& mem) { ks.clear(mem); }
+    void dealloc(Allocator& mem) { ks.dealloc(mem); }
 
 private:
-    HashHatKeyStore ks;
+   KS ks;
 };
 
-template<typename T>
+template<typename T, typename Policy = DefaultPolicy<T> >
 class TinyHashMap
 {
-    typedef HashHat<std::vector<T> > HH;
-    HashHat<std::vector<T> > _hh;
-    std::vector<T> _vec;
+    typedef LVector<T, u32, Policy> TVec;
+    typedef HashHat<TVec> HH;
+    typedef typename HH::Allocator Allocator;
+    HashHat<TVec> _hh;
+    TVec _vec;
 
 public:
     typedef typename HH::iterator iterator;
@@ -405,30 +501,35 @@ public:
     TinyHashMap()
     {
     }
-    TinyHashMap(TreeMem& mem, size_t = 0)
+    TinyHashMap(Allocator& mem, size_t = 0)
     {
     }
     ~TinyHashMap()
     {
     }
-    TinyHashMap(TinyHashMap&& o)
+    TinyHashMap(TinyHashMap&& o) noexcept
         : _hh(std::move(o._hh)), _vec(std::move(o._vec))
     {
     }
-    TinyHashMap& operator=(TinyHashMap&& o)
-    {
-        _hh = std::move(o._hh);
-        _vec = std::move(o._vec);
-    }
+    TinyHashMap& operator=(TinyHashMap&& o) noexcept = delete;
+    /*{
+        assert(false && "clear me!");
+        if(this != &o)
+        {
+            _hh = std::move(o._hh);
+            _vec = std::move(o._vec);
+        }
+        return *this;
+    }*/
 
-    InsertResult insert(TreeMem& mem, StrRef k, T&& v)
+    InsertResult insert(Allocator& mem, StrRef k, T&& v)
     {
         return _hh.insert(_vec, mem, k, std::move(v));
     }
 
-    InsertResult insert_new(TreeMem& mem, StrRef k, T&& v)
+    InsertResult insert_new(Allocator& mem, StrRef k)
     {
-        return _hh.insert_new(_vec, mem, k, std::move(v));
+        return _hh.insert_new(_vec, mem, k);
     }
 
     T* getp(StrRef k)
@@ -448,18 +549,23 @@ public:
 
     size_t size() const { return _vec.size(); }
     bool empty() const { return _vec.empty(); }
-    void clear(TreeMem& mem)
+    void clear(Allocator& mem)
     {
-        for(size_t i = 0; i < _vec.size(); ++i)
-            _vec[i].clear(mem);
-        _vec.clear();
+        //for(size_t i = 0; i < _vec.size(); ++i)
+        //    _vec[i].clear(mem);
+        _vec.clear(mem);
         _hh.clear(mem);
     }
 
-    T& at(TreeMem& mem, StrRef k)
+    void dealloc(Allocator& mem)
     {
-        InsertResult ins = insert(mem, k, std::move(T()));
-        return ins.ref;
+        _vec.dealloc(mem);
+        _hh.dealloc(mem);
+    }
+
+    inline T& at(Allocator& mem, StrRef k)
+    {
+        return insert_new(mem, k).ref;
     }
 };
 
@@ -469,23 +575,24 @@ public:
 #include <unordered_map>
 
 // For testing -- wraps std::unordered_map to the new API
-template<typename T>
+template<typename T, typename Policy = DefaultPolicy<T> >
 class TinyHashMap
 {
     typedef std::unordered_map<StrRef, T> Storage;
+    typedef BlockAllocator Allocator;
 public:
     TinyHashMap() {}
-    TinyHashMap(TreeMem&, size_t = 0)
+    TinyHashMap(Allocator&, size_t = 0)
     {
     }
     TinyHashMap(TinyHashMap&& o) noexcept
         : _map(std::move(o._map))
     {
     }
-    TinyHashMap& operator=(TinyHashMap&& o) noexcept
-    {
+    TinyHashMap& operator=(TinyHashMap&& o) noexcept = delete;
+    /*{
         _map = std::move(o._map);
-    }
+    }*/
 
     TinyHashMap(const TinyHashMap&) = delete;
     TinyHashMap& operator=(const TinyHashMap&) = delete;
@@ -496,7 +603,7 @@ public:
         bool newly_inserted;
     };
 
-    InsertResult insert(TreeMem&, StrRef k, T&& v)
+    InsertResult insert(Allocator&, StrRef k, T&& v)
     {
         std::pair<StrRef, T> p(k, std::move(v));
         auto ins = _map.insert(std::move(p));
@@ -504,9 +611,9 @@ public:
         return ret;
     }
 
-    InsertResult insert_new(TreeMem&, StrRef k, T&& v)
+    InsertResult insert_new(Allocator&, StrRef k)
     {
-        auto ins = _map.try_emplace(k, std::move(v));
+        auto ins = _map.try_emplace(k);
         InsertResult ret { ins.first->second, ins.second };
         return ret;
     }
@@ -566,9 +673,15 @@ public:
 
     size_t size() const { return _map.size(); }
     bool empty() const { return _map.empty(); }
-    void clear(TreeMem&) { _map.clear(); }
+    void clear(Allocator& mem)
+    {
+        for(Storage::iterator it = _map.begin(); it != _map.end(); ++it)
+            Policy::OnDestroy(mem, it->second);
+        _map.clear();
+    }
+    void dealloc(Allocator& mem) { clear(mem); }
     //T& operator[](StrRef k) { return _map[k]; } // can't support this one
-    T& at(TreeMem& mem, StrRef k) { return _map[k]; }
+    T& at(Allocator&, StrRef k) { return _map[k]; }
     void swap(TinyHashMap& o) { _map.swap(o); }
 
 
@@ -577,3 +690,5 @@ private:
 };
 
 #endif
+
+void tinyhashmap_api_test();

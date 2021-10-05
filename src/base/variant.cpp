@@ -97,6 +97,7 @@ Var::Var()
     : meta(TYPE_NULL)
     // .u does not need to be inited here
 {
+    //u.p = NULL; // not necessary
     static_assert((size_t(1) << (SHIFT_TOPBIT - 1u)) - 1u == SIZE_MASK,
         "SIZE_MASK might be weird, check this");
 }
@@ -117,6 +118,7 @@ Var::Var(Var&& v) noexcept
     : meta(v.meta), u(v.u)
 {
     v.meta = TYPE_NULL;
+    //v.u.p = NULL; // not necessary
 }
 
 Var& Var::operator=(Var&& o) noexcept
@@ -125,6 +127,7 @@ Var& Var::operator=(Var&& o) noexcept
     meta = o.meta;
     u = o.u;
     o.meta = TYPE_NULL;
+    //o.u.p = NULL; // not necessary
     return *this;
 }
 
@@ -768,7 +771,8 @@ void _VarMap::_checkmem(const TreeMem& m) const
 }
 
 _VarMap::_VarMap(TreeMem& mem)
-    : _storage(mem), _expiry(NULL)
+    : _storage(mem)
+    , _expiry(NULL)
 #ifdef _DEBUG
     , _mymem(&mem)
 #endif
@@ -800,7 +804,7 @@ void _VarMap::destroy(TreeMem& mem)
 Var& _VarMap::_InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k)
 {
     // Create key/value if it's not there yet
-    _Map::InsertResult r = storage.insert_new(dstmem, k, std::move(Var()));
+    _Map::InsertResult r = storage.insert_new(dstmem, k);
     if (r.newly_inserted)
         dstmem.increfS(k); // ... and refcount it if newly inserted
     return r.ref;
@@ -890,14 +894,14 @@ void _VarMap::clear(TreeMem& mem)
         mem.freeS(it.key());
         it.value().clear(mem);
     }
-    _storage.clear(mem);
+    _storage.dealloc(mem);
 }
 
 _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
 {
     _checkmem(srcmem);
     _VarMap *cp = _NewMap(dstmem, size());
-    cp->_expiry = _expiry ? _expiry->clone(dstmem) : NULL;
+    //cp->_expiry = _expiry ? _expiry->clone(dstmem) : NULL;
     for(Iterator it = _storage.begin(); it != _storage.end(); ++it)
     {
         PoolStr k = srcmem.getSL(it.key());
@@ -908,12 +912,12 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
 
 Var* _VarMap::get(StrRef k)
 {
-    return _storage.getp(k);
+    return k ? _storage.getp(k) : NULL;
 }
 
 const Var* _VarMap::get(StrRef k) const
 {
-    return _storage.getp(k);
+    return k ? _storage.getp(k) : NULL;
 }
 
 Var& _VarMap::putKey(TreeMem& mem, const char* key, size_t len)
