@@ -272,15 +272,10 @@ public:
 
         iterator_T& _advanceIfEmpty()
         {
-            if (_it._done())
+            while (_it._b < _end && _it._done()) // skip empty buckets
             {
-                assert(_it._b < _end);
-                do
-                {
-                    ++_it._b;
-                    _it._idx = 0;
-                }
-                while (_it._b < _end && _it._done()); // skip empty buckets
+                ++_it._b;
+                _it._idx = 0;
             }
             return *this;
         }
