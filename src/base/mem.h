@@ -63,6 +63,9 @@ public:
     void* Realloc(void* p, size_t oldsize, size_t newsize);
     void Free(void* p, size_t sz);
 
+    LuaAlloc *getLuaAllocPtr() { return _LA; }
+    const LuaAlloc * getLuaAllocPtr() const { return _LA; }
+
 private:
     LuaAlloc* _LA; // It's intended for Lua but it's ok as a stand-alone block allocator
 };

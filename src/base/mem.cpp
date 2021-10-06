@@ -34,7 +34,9 @@ void BlockAllocator::Free(void* p, size_t sz)
 
 StringPool::StringPool()
 {
-    strpool_init(&_sp, &strpool_default_config);
+    strpool_config_t c = strpool_default_config;
+    //c.memctx = getLuaAllocPtr();
+    strpool_init(&_sp, &c);
 }
 
 StringPool::~StringPool()

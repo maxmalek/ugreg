@@ -36,7 +36,7 @@ Inspired by:
 /* ---- Configuration begin ---- */
 
 /* Track allocation stats to get an overview of your memory usage. By default disabled in release mode. */
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !defined(LA_TRACK_STATS)
 #  define LA_TRACK_STATS
 #endif
 
@@ -60,11 +60,11 @@ Inspired by:
 
 /* Maximum size of allocations to handle. Any size beyond that will be redirected to the system allocator.
    Must be a multiple of LA_ALLOC_STEP */
-#define LA_MAX_ALLOC 128
+#define LA_MAX_ALLOC 256
 
 /* Provide pools in increments of this size, up to LA_MAX_ALLOC. 4 or 8 are good values. */
 /* E.g. A value of 4 will create pools for size 4, 8, 12, ... 128; which is 32 distinct sizes. */
-#define LA_ALLOC_STEP 4
+#define LA_ALLOC_STEP 8
 
 /* Initial/Max. # of elements per block. Default growing behavior is to double the size for each full block until hitting LA_ELEMS_MAX.
    Note that each element requires 1 bit in the bitmap, the number of elements is rounded up so that no bit is unused,

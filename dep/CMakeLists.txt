@@ -18,6 +18,8 @@ add_definitions(-DMINIZ_NO_ARCHIVE_WRITING_APIS)
 add_definitions(-DMINIZ_NO_ZLIB_COMPATIBLE_NAMES)
 add_definitions(-DMINIZ_NO_STDIO)
 
+add_definitions(-DLA_TRACK_STATS)
+
 set(src
     luaalloc.c
     luaalloc.h
