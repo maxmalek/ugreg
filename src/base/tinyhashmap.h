@@ -1,7 +1,6 @@
 #pragma once
 
 #include "containers.h"
-#include <vector> // TODO KILL ME
 #include <assert.h>
 
 /* Put the HashHat on a vector to turn it into a rudimentary hashmap
@@ -50,39 +49,86 @@ public:
         {
             typedef Allocator Allocator;
             template<typename Bucket> // This works around Bucket being not defined just yet
-            inline static void OnDestroy(Allocator& mem, Bucket& v)
+            inline static void OnDestroy(Allocator& mem, Bucket& b)
             {
-                v.dealloc(mem);
+                b.dealloc(mem);
             }
         };
 
-        std::vector<StrRef> keys;
-        std::vector<SZ> indices; // never contains 0
+        StrRef *_keys;
+        SZ *_indices; // never contains 0
+        SZ _cap;
+        SZ _sz; // both arrays have the same length and capacity
 
-        inline SZ size() const { return keys.size(); }
-        inline void clear(Allocator& mem) { keys.clear(); indices.clear(); }
-        inline void swap(Bucket& o) { keys.swap(o.keys); indices.swap(o.indices); }
+        Bucket() : _keys(NULL), _indices(NULL), _cap(0), _sz(0) {}
 
-        SZ& pushNewKey(StrRef k)
+        Bucket(const Bucket&) = delete;
+        Bucket& operator=(const Bucket&) = delete;
+        Bucket& operator=(Bucket&&) = delete;
+
+        Bucket(Bucket&& o) noexcept
+            : _keys(o._keys), _indices(o._indices), _cap(o._cap), _sz(o._sz)
         {
-            keys.push_back(k);
-            indices.push_back(0);
-            return indices.back();
+            o._keys = NULL;
+            o._indices = NULL;
+            o._cap = 0;
+            o._sz = 0;
+        }
+
+        inline const StrRef *keys() const { return _keys; }
+        inline const SZ *indices() const { return _indices; }
+        inline SZ *indicesWritable() { return _indices; }
+
+        inline SZ size() const { return _sz; }
+        inline void clear(Allocator& mem) { _sz = 0; }
+        inline void swap(Bucket& o) noexcept
+        {
+            std::swap(_keys, o._keys);
+            std::swap(_indices, o._indices);
+            std::swap(_cap, o._cap);
+            std::swap(_sz, o._sz);
+        }
+
+        SZ& _pushKey(Allocator& mem, StrRef k, SZ idx)
+        {
+            assert(!_cap == !_keys);
+            StrRef* akeys = _keys;
+            SZ *aidx = _indices;
+            const SZ i = _sz++;
+            if(i == _cap)
+            {
+                SZ newcap = _cap + 4; // the hashmap is going to redistribute keys eventually, don't go too big
+                akeys = (StrRef*)mem.Realloc(akeys, _cap * sizeof(*_keys), newcap * sizeof(*_keys));
+                aidx = (SZ*)mem.Realloc(aidx, _cap * sizeof(*_indices), newcap * sizeof(*_indices));
+                _keys = akeys;
+                _indices = aidx;
+                _cap = newcap;
+            }
+            akeys[i] = k;
+            aidx[i] = idx;
+            return aidx[i];
+        }
+
+        inline SZ& pushNewKey(Allocator& mem, StrRef k)
+        {
+            return _pushKey(mem, k, 0);
         }
 
         void dealloc(Allocator& mem)
         {
-            clear(mem);
-            // TODO: free
+            assert(!_cap == !_keys);
+            mem.Free(_keys, _cap * sizeof(*_keys));
+            mem.Free(_indices, _cap * sizeof(*_indices));
+            _keys = NULL;
+            _indices = NULL;
+            _cap = 0;
+            _sz = 0;
         }
 
         // iterator over a single bucket
         template<typename T, typename B>
         struct iterator_T
         {
-            using iterator_category = std::forward_iterator_tag;
-            using difference_type = std::ptrdiff_t;
-
             iterator_T(iterator_T&&) = default;
             iterator_T& operator=(iterator_T&&) = default;
             iterator_T& operator=(const iterator_T&) = default;
@@ -96,9 +142,6 @@ public:
             iterator_T() // empty iterator
                 : _idx(0), _b(NULL) {}
 
-            //iterator_T(const iterator_T<T, Bucket const>& it) // construct fron non-const
-            //    : _idx(it._idx), _b(it._b) {}
-
             iterator_T(const iterator_T& o) // copy
                 : _idx(o._idx), _b(o._b) {}
 
@@ -111,20 +154,16 @@ public:
             //{ assert(a._b == b._b); return a._idx != b._idx; };
             { return a._b != b._b || a._idx != b._idx; };
 
-            StrRef key() const     { return _b->keys[_idx]; }
-            T& value()             { return _b->indices[_idx]; }
-            const T& value() const { return _b->indices[_idx]; }
+            StrRef key() const     { assert(_idx < _b->_sz); return _b->_keys[_idx]; }
+            T& value()             { assert(_idx < _b->_sz); return _b->_indices[_idx]; }
+            const T& value() const { assert(_idx < _b->_sz); return _b->_indices[_idx]; }
             bool _done() const { return _idx >= _b->size(); }
 
             SZ _idx; // index in bucket
             B * _b; // current bucket
         };
 
-        //typedef iterator_T<size_t, Bucket> iterator;
         typedef iterator_T<SZ const, Bucket const> const_iterator;
-
-        //iterator begin() { return iterator(this, 0); }
-        //iterator end()   { return iterator(this); }
 
         const_iterator begin() const { return const_iterator(this, 0); }
         const_iterator end()   const { return const_iterator(this); }
@@ -167,9 +206,10 @@ public:
         {
             const Bucket& b = _getbucket(k);
             const SZ N = b.size();
+            const StrRef* const ka = b.keys();
             for(size_t i = 0; i < N; ++i)
-                if(k == _Validkey(b.keys[i]))
-                    return b.indices[i];
+                if(k == _Validkey(ka[i]))
+                    return b.indices()[i];
         }
         return 0;
     }
@@ -197,12 +237,12 @@ public:
             b = &_getbucket(k);
 
         const SZ N = b->size();
-        const StrRef* const ka = b->keys.data();
+        const StrRef* const ka = b->keys();
         for (SZ i = 0; i < N; ++i)
             if (k == _Validkey(ka[i]))
-                return b->indices[i];
+                return b->indicesWritable()[i];
 
-        return b->pushNewKey(k);
+        return b->pushNewKey(mem, k);
     }
 
     SZ resize(Allocator& mem, SZ newsize)
@@ -217,13 +257,14 @@ public:
             Bucket& src = _buckets[j];
             tmp.swap(src);
             const SZ N = tmp.size();
+            const StrRef *tkeys = tmp.keys();
+            const SZ *tidx = tmp.indices();
             for(SZ i = 0; i < N; ++i)
             {
-                const SZ bidx = tmp.keys[i] & newmask;
+                const SZ bidx = tkeys[i] & newmask;
                 assert(bidx < _buckets.size());
                 Bucket& dst = _buckets[bidx];
-                dst.keys.push_back(tmp.keys[i]);
-                dst.indices.push_back(tmp.indices[i]);
+                dst._pushKey(mem, tkeys[i], tidx[i]);
             }
         }
         _mask = newmask;
@@ -247,19 +288,12 @@ public:
     template<typename T, typename B>
     struct iterator_T
     {
-        using iterator_category = std::forward_iterator_tag;
-        using difference_type = std::ptrdiff_t;
-
         iterator_T(iterator_T&&) = default;
         iterator_T& operator=(iterator_T&&) = default;
         iterator_T& operator=(const iterator_T&) = default;
 
         iterator_T(const typename B::const_iterator& it, B *end)
             : _it(it), _end(end) {}
-
-        // construct from non-const
-        //iterator_T(const iterator_T<T, Bucket, Bucket::iterator>& it)
-        //    : _it(it._it), _end(it._end) {}
 
         iterator_T() // empty iterator
             : _end(NULL) {}
@@ -305,7 +339,6 @@ public:
         const B *_end; // one past last bucket
     };
 
-    //typedef iterator_T<size_t, Bucket> iterator;
     typedef iterator_T<size_t const, Bucket const> const_iterator;
 
     const_iterator begin() const
@@ -316,9 +349,6 @@ public:
     {
         return const_iterator(_buckets.data() + _buckets.size(), 0);
     }
-
-    //const_iterator begin() const { return const_iterator(); }
-    //const_iterator end()   const { return const_iterator(); }
 
 private:
 
@@ -416,9 +446,6 @@ public:
     template<typename T, typename BaseT, bool IsConst>
     struct iterator_T
     {
-        using iterator_category = std::forward_iterator_tag;
-        using difference_type = std::ptrdiff_t;
-
         iterator_T(const iterator_T&) = default;
         iterator_T(iterator_T&&) = default;
         iterator_T& operator=(iterator_T&&) = default;
@@ -457,11 +484,7 @@ public:
     };
 
     typedef iterator_T<value_type const, value_type, true> const_iterator;
-
     typedef iterator_T<value_type, value_type, false> iterator;
-    //class iterator : public const_iterator
-    //{};
-
 
     iterator begin(value_type *a) { return iterator(a, ks.begin()); }
     iterator end(value_type *a)   { return iterator(a, ks.end()); }
@@ -476,7 +499,7 @@ private:
    KS ks;
 };
 
-template<typename T, typename Policy = DefaultPolicy<T> >
+template<typename T, typename Policy = ContainerDefaultPolicy<T> >
 class TinyHashMap
 {
     typedef LVector<T, u32, Policy> TVec;
@@ -570,7 +593,7 @@ public:
 #include <unordered_map>
 
 // For testing -- wraps std::unordered_map to the new API
-template<typename T, typename Policy = DefaultPolicy<T> >
+template<typename T, typename Policy = ContainerDefaultPolicy<T> >
 class TinyHashMap
 {
     typedef std::unordered_map<StrRef, T> Storage;
