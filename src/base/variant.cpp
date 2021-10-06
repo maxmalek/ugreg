@@ -901,7 +901,7 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
 {
     _checkmem(srcmem);
     _VarMap *cp = _NewMap(dstmem, size());
-    //cp->_expiry = _expiry ? _expiry->clone(dstmem) : NULL;
+    cp->_expiry = _expiry ? _expiry->clone(dstmem) : NULL;
     for(Iterator it = _storage.begin(); it != _storage.end(); ++it)
     {
         PoolStr k = srcmem.getSL(it.key());
