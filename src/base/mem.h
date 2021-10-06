@@ -99,7 +99,8 @@ public:
     // decrease refcount and drop if no longer referenced
     void freeS(StrRef s);
 
-    //char *collate(size_t *n) const;
+    char *collate(size_t *n) const;
+    void collateFree(char *coll) const;
 
 private:
     strpool_t _sp;

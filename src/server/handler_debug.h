@@ -13,4 +13,12 @@ protected:
     const DataTree& _tree;
 };
 
-
+class DebugStrpoolHandler : public RequestHandler
+{
+public:
+    DebugStrpoolHandler(const DataTree& tree, const char* prefix);
+    virtual ~DebugStrpoolHandler();
+    virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
+protected:
+    const DataTree& _tree;
+};

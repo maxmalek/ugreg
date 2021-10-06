@@ -136,6 +136,10 @@ int main(int argc, char** argv)
     InfoHandler hinfo(tree, "/info");
     srv.registerHandler(hinfo);
 
+    DebugStrpoolHandler hstrpool(tree, "/info/strings");
+    if (cfg.expose_debug_apis)
+        srv.registerHandler(hstrpool);
+
     ViewHandler hview(vmgr, tree, "/view", cfg);
     hview.setupCache(cfg.reply_cache.rows, cfg.reply_cache.columns, cfg.reply_cache.maxtime);
     srv.registerHandler(hview);

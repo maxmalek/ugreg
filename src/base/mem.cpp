@@ -122,10 +122,15 @@ void StringPool::freeS(StrRef s)
         strpool_discard(&_sp, s);
 }
 
-/*char* TreeMem::collate(size_t *n) const // TESTING ONLY, LEAKS LIKE FUCK
+char* StringPool::collate(size_t *n) const
 {
     int i = 0;
     char *c = strpool_collate(&_sp, &i);
     *n = i;
     return c;
-}*/
+}
+
+void StringPool::collateFree(char* coll) const
+{
+    strpool_free_collated(&_sp, coll);
+}

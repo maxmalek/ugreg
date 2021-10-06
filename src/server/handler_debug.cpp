@@ -31,3 +31,43 @@ int InfoHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
     writeStr(dst, out.c_str());
     return 0;
 }
+
+DebugStrpoolHandler::DebugStrpoolHandler(const DataTree& tree, const char* prefix)
+    : RequestHandler(prefix), _tree(tree)
+{
+}
+
+DebugStrpoolHandler::~DebugStrpoolHandler()
+{
+}
+
+int DebugStrpoolHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+{
+    char *coll = NULL;
+    size_t n = 0;
+
+    {
+        std::shared_lock<std::shared_mutex> lock(_tree.mutex);
+        coll = _tree.collate(&n);
+    }
+
+    char buf[64];
+    sprintf(buf, "--- %u strings in pool ---\n", (unsigned)n);
+    writeStr(dst, buf);
+
+    if(coll)
+    {
+        const char *s = coll;
+        for(size_t i = 0; i < n; ++i)
+        {
+            for(char c; (c = *s++); )
+                dst.Put(c);
+            dst.Put('\n');
+        }
+
+        std::shared_lock<std::shared_mutex> lock(_tree.mutex);
+        _tree.collateFree(coll);
+    }
+
+    return 0;
+}
