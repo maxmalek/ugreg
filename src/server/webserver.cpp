@@ -335,3 +335,8 @@ int RequestHandler::onRequest_deflate(BufferedWriteStream& dst, mg_connection* c
     z.finish();
     return ret;
 }
+
+void RequestHandler::clearCache()
+{
+    _cache.clear();
+}

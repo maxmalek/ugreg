@@ -101,6 +101,7 @@ public:
 
     char *collate(size_t *n) const;
     void collateFree(char *coll) const;
+    void defrag();
 
 private:
     strpool_t _sp;

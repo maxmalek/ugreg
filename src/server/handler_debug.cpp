@@ -2,6 +2,7 @@
 #include <sstream>
 #include <string>
 #include "debugfunc.h"
+#include "json_out.h"
 
 InfoHandler::InfoHandler(const DataTree& tree, const char* prefix)
     : RequestHandler(prefix), _tree(tree)
@@ -69,5 +70,45 @@ int DebugStrpoolHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn
         _tree.collateFree(coll);
     }
 
+    return 0;
+}
+
+DebugCleanupHandler::DebugCleanupHandler(DataTree& tree, const char* prefix)
+    : RequestHandler(prefix), _tree(tree)
+{
+}
+
+DebugCleanupHandler::~DebugCleanupHandler()
+{
+}
+
+int DebugCleanupHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+{
+    std::unique_lock<std::shared_mutex> lock(_tree.mutex);
+
+    char buf[64];
+
+    for (size_t i = 0; i < _toclean.size(); ++i)
+        _toclean[i]->clearCache();
+    sprintf(buf, "--- %u caches cleared ---\n", (unsigned)_toclean.size());
+    writeStr(dst, buf);
+
+    std::vector<Var*> todo;
+    _tree.fillExpiredSubnodes(todo);
+
+    sprintf(buf, "--- %u subnodes have expired: ---\n", (unsigned)todo.size());
+    writeStr(dst, buf);
+
+    for (size_t i = 0; i < todo.size(); ++i)
+    {
+        writeStr(dst, dumpjson(VarCRef(_tree, todo[i]), true).c_str());
+        todo[i]->clear(_tree);
+    }
+
+    writeStr(dst, "--- defrag... ---\n");
+
+    _tree.defrag();
+
+    writeStr(dst, "--- Done. ---\n");
     return 0;
 }

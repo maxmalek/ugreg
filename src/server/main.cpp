@@ -136,7 +136,7 @@ int main(int argc, char** argv)
     InfoHandler hinfo(tree, "/info");
     srv.registerHandler(hinfo);
 
-    DebugStrpoolHandler hstrpool(tree, "/info/strings");
+    DebugStrpoolHandler hstrpool(tree, "/debug/strings");
     if (cfg.expose_debug_apis)
         srv.registerHandler(hstrpool);
 
@@ -149,7 +149,7 @@ int main(int argc, char** argv)
         srv.registerHandler(htestview);
 
     {
-        loadAndMergeJsonFromFile(&tree, "test/citylots.json", "/citylots", MERGE_FLAT);
+        //loadAndMergeJsonFromFile(&tree, "test/citylots.json", "/citylots", MERGE_FLAT);
         loadAndMergeJsonFromFile(&tree, "test/mock_users.json", "/users", MERGE_FLAT);
         loadAndMergeJsonFromFile(&tree, "test/mock_rooms.json", "/rooms", MERGE_FLAT);
         {
@@ -168,6 +168,12 @@ int main(int argc, char** argv)
     TreeHandler htree(tree, "/get", cfg);
     htree.setupCache(cfg.reply_cache.rows, cfg.reply_cache.columns, cfg.reply_cache.maxtime);
     srv.registerHandler(htree);
+
+    DebugCleanupHandler hclean(tree, "/debug/cleanup");
+    hclean.addForCleanup(&htree);
+    hclean.addForCleanup(&hview);
+    if (cfg.expose_debug_apis)
+        srv.registerHandler(hclean);
 
     puts("Ready!");
 

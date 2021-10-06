@@ -134,3 +134,8 @@ void StringPool::collateFree(char* coll) const
 {
     strpool_free_collated(&_sp, coll);
 }
+
+void StringPool::defrag()
+{
+    strpool_defrag(&_sp);
+}

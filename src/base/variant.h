@@ -270,7 +270,10 @@ class _VarMap
     typedef TinyHashMap<Var> _Map;
     ~_VarMap(); // call destroy() instead
 public:
+    // there's rarely any reason to change things while iterating,
+    // so we'll make the const_iterator the default unless explicitly specified
     typedef _Map::const_iterator Iterator;
+    typedef _Map::iterator MutIterator;
 
     void destroy(TreeMem& mem); // deletes self
     _VarMap(TreeMem& mem);
@@ -292,6 +295,8 @@ public:
 
     inline Iterator begin() const { return _storage.begin(); }
     inline Iterator end() const { return _storage.end(); }
+    inline MutIterator begin() { return _storage.begin(); }
+    inline MutIterator end() { return _storage.end(); }
 
     bool equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othermem) const;
 

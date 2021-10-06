@@ -2,6 +2,7 @@
 
 #include "datatree.h"
 #include "webserver.h"
+#include <vector>
 
 class InfoHandler : public RequestHandler
 {
@@ -21,4 +22,16 @@ public:
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 protected:
     const DataTree& _tree;
+};
+
+class DebugCleanupHandler : public RequestHandler
+{
+public:
+    DebugCleanupHandler(DataTree& tree, const char* prefix);
+    virtual ~DebugCleanupHandler();
+    virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
+    void addForCleanup(RequestHandler* h) { _toclean.push_back(h); }
+protected:
+    DataTree& _tree;
+    std::vector<RequestHandler*> _toclean;
 };

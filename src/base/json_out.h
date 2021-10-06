@@ -54,7 +54,7 @@ bool emit(Wr& writer, VarCRef v)
 }
 
 template<typename Wr>
-struct WriterFunctor
+struct WriterFunctor : public ConstTreeIterFunctor
 {
     Wr& wr;
     WriterFunctor(Wr& wr) : wr(wr) {}

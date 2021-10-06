@@ -4,6 +4,7 @@
 #include "treemem.h"
 
 #include <shared_mutex>
+#include <vector>
 
 class Accessor;
 
@@ -37,6 +38,9 @@ public:
     // Don't forget to check if the returned ref is valid before accessing it.
     VarRef  subtree(const char *path, bool create = false);
     VarCRef subtree(const char* path) const;
+
+    // Maintenance
+    void fillExpiredSubnodes(std::vector<Var*>& v);
 
     Var _root;
 

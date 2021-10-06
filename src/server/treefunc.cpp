@@ -12,7 +12,7 @@ TreeMergeResult::TreeMergeResult()
 }
 
 
-struct ExpiryFunctor
+struct ExpiryFunctor : public ConstTreeIterFunctor
 {
     ExpiryFunctor()
         : minexpiry(0)

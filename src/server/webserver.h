@@ -31,6 +31,8 @@ public:
 
     int onRequest_deflate(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const;
 
+    void clearCache();
+
 private:
     const std::string myPrefix;
     mutable Cache _cache;
