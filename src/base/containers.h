@@ -136,7 +136,7 @@ public:
 
     T& push_back(Allocator& mem, T&& x)
     {
-        size_t sz = size();
+        SZ sz = size();
         T *p = _reserveAtLeast(mem, sz + 1);
         _sz = sz + 1;
         return *(_X_PLACEMENT_NEW(p + sz) T(std::move(x)));

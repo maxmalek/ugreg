@@ -196,7 +196,7 @@ public:
     HashHatKeyStore& operator=(HashHatKeyStore&&) noexcept = delete;
 
     // returns 0 if not found
-    const size_t getIndex(StrRef k) const
+    const SZ getIndex(StrRef k) const
     {
         _Validkey(k);
         if(_buckets.size())
@@ -204,7 +204,7 @@ public:
             const Bucket& b = _getbucket(k);
             const SZ N = b.size();
             const StrRef* const ka = b.keys();
-            for(size_t i = 0; i < N; ++i)
+            for(SZ i = 0; i < N; ++i)
                 if(k == _Validkey(ka[i]))
                     return b.indices()[i];
         }
@@ -270,7 +270,7 @@ public:
 
     void clear(Allocator& mem)
     {
-        for(size_t i = 0; i < _buckets.size(); ++i)
+        for(SZ i = 0; i < _buckets.size(); ++i)
             _buckets[i].clear(mem);
     }
 
@@ -352,14 +352,14 @@ private:
 
     inline Bucket& _getbucket(StrRef k)
     {
-        const size_t idx = k & _mask();
+        const SZ idx = k & _mask();
         assert(idx < _buckets.size());
         return _buckets[idx];
     }
 
     inline const Bucket& _getbucket(StrRef k) const
     {
-        const size_t idx = k & _mask();
+        const SZ idx = k & _mask();
         assert(idx < _buckets.size());
         return _buckets[idx];
     }
@@ -374,6 +374,7 @@ public:
     typedef HashHatKeyStore<u32> KS;
     typedef typename Vec::value_type value_type;
     typedef typename KS::Allocator Allocator;
+    typedef typename KS::size_type SZ;
     struct InsertResult
     {
         value_type& ref;
@@ -430,13 +431,13 @@ public:
 
     value_type *getp(Vec& vec, StrRef k)
     {
-        const size_t idx = ks.getIndex(k);
+        const SZ idx = ks.getIndex(k);
         return idx ? &vec[idx - 1] : NULL;
     }
 
     const value_type* getp(const Vec& vec, StrRef k) const
     {
-        const size_t idx = ks.getIndex(k);
+        const SZ idx = ks.getIndex(k);
         return idx ? &vec[idx - 1] : NULL;
     }
 
