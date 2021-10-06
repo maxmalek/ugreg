@@ -20,6 +20,8 @@ set(src
     zstream.h
     handler_view.cpp
     handler_view.h
+    handler_debug.cpp
+    handler_debug.h
 )
 
 add_executable(ugreg ${src})

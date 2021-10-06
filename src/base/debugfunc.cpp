@@ -1,4 +1,6 @@
 #include "debugfunc.h"
+#include "mem.h"
+#include "luaalloc.h"
 
 void varToString(std::ostringstream& os, VarCRef v)
 {
@@ -39,4 +41,19 @@ void varToString(std::ostringstream& os, VarCRef v)
     break;
     }
     os << ')';
+}
+
+void dumpAllocInfoToString(std::ostringstream& os, const BlockAllocator& mem)
+{
+    const LuaAlloc *LA = mem.getLuaAllocPtr();
+    const size_t* alive, * total, * blocks;
+    unsigned step, n = luaalloc_getstats(LA, &alive, &total, &blocks, &step);
+    if (n)
+    {
+        for (unsigned i = 0, a = 1, b = step; i < n - 1; ++i, a = b + 1, b += step)
+            os << blocks[i] << " blocks of " << a << ".." << b << " bytes: "
+               << alive[i] << " allocations alive, " << total[i] << " done all-time\n";
+
+        os << "large allocations: " << alive[n - 1]  << " alive, " << total[n - 1]  << " done all-time\n";
+    }
 }

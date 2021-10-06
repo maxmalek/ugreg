@@ -17,6 +17,7 @@
 #include "util.h"
 #include "handler_view.h"
 #include "view/viewmgr.h"
+#include "handler_debug.h"
 
 #ifndef SIGQUIT
 #define SIGQUIT 3
@@ -132,6 +133,9 @@ int main(int argc, char** argv)
     // TEST DATA START
     DataTree tree;
 
+    InfoHandler hinfo(tree, "/info");
+    srv.registerHandler(hinfo);
+
     ViewHandler hview(vmgr, tree, "/view", cfg);
     hview.setupCache(cfg.reply_cache.rows, cfg.reply_cache.columns, cfg.reply_cache.maxtime);
     srv.registerHandler(hview);
@@ -141,7 +145,7 @@ int main(int argc, char** argv)
         srv.registerHandler(htestview);
 
     {
-        //loadAndMergeJsonFromFile(&tree, "test/citylots.json", "/citylots", MERGE_FLAT);
+        loadAndMergeJsonFromFile(&tree, "test/citylots.json", "/citylots", MERGE_FLAT);
         loadAndMergeJsonFromFile(&tree, "test/mock_users.json", "/users", MERGE_FLAT);
         loadAndMergeJsonFromFile(&tree, "test/mock_rooms.json", "/rooms", MERGE_FLAT);
         {

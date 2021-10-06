@@ -6,6 +6,7 @@
 #include "view/viewparser.h"
 #include "civetweb/civetweb.h"
 #include "json_out.h"
+#include "debugfunc.h"
 
 ViewHandler::ViewHandler(const view::Mgr& mgr, const DataTree& tree, const char* prefix, const ServerConfig& cfg)
     : RequestHandler(prefix)
@@ -89,7 +90,7 @@ static void writeStr(BufferedWriteStream& out, const char *s)
 int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
     const char *query = rq.query.c_str();
-    printf("ViewDebugHandler: %s\n", query);
+    //printf("ViewDebugHandler: %s\n", query);
     view::VM vm;
     view::Executable exe(vm);
     std::string err;
@@ -153,5 +154,11 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
         dst.Put('\n');
     }
 
+    writeStr(dst, "\n\n--- memory stats of VM after exec ---\n");
+    std::ostringstream os;
+    dumpAllocInfoToString(os, vm);
+    writeStr(dst, os.str().c_str());
+
     return 0;
 }
+
