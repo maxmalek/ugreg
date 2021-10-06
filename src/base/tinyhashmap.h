@@ -61,6 +61,7 @@ public:
         SZ _sz; // both arrays have the same length and capacity
 
         Bucket() : _keys(NULL), _indices(NULL), _cap(0), _sz(0) {}
+        ~Bucket() { assert(!_keys && !_indices && "Bucket not cleared"); }
 
         Bucket(const Bucket&) = delete;
         Bucket& operator=(const Bucket&) = delete;
@@ -263,6 +264,7 @@ public:
                 dst._pushKey(mem, tkeys[i], tidx[i]);
             }
         }
+        tmp.dealloc(mem);
         return newmask;
     }
 
