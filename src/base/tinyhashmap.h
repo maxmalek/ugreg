@@ -172,15 +172,13 @@ public:
     typedef LVector<Bucket, u32, typename Bucket::Policy> Storage;
 
     HashHatKeyStore()
-        : _mask(SZ(-1)) // This is intended to overflow once we insert the first element
     {
     }
 
     HashHatKeyStore(Allocator& mem, SZ initialbuckets = 4) // must be power of 2
-        : _mask(initialbuckets - 1)
+        : _buckets(mem, initialbuckets)
     {
         assert(initialbuckets);
-        _buckets.resize(mem, initialbuckets);
     }
 
     ~HashHatKeyStore()
@@ -189,9 +187,7 @@ public:
 
     HashHatKeyStore(HashHatKeyStore&& o) noexcept
         : _buckets(std::move(o._buckets))
-        , _mask(o._mask)
     {
-        o._mask = -1;
     }
 
     HashHatKeyStore(const HashHatKeyStore&) = delete;
@@ -227,7 +223,7 @@ public:
         _Validkey(k);
         Bucket *b;
         // Load factor: in average 8 elements ber bucket
-        if((cursize >> 3u) >= SZ(_mask + 1)) // CAUTION: This uses _mask overflowing when inserting the first element
+        if((cursize >> 3u) >= _buckets.size())
         {
             SZ newsize = _buckets.size() * 2;
             SZ mask = resize(mem, newsize < 4 ? 4 : newsize);
@@ -267,7 +263,6 @@ public:
                 dst._pushKey(mem, tkeys[i], tidx[i]);
             }
         }
-        _mask = newmask;
         return newmask;
     }
 
@@ -281,7 +276,6 @@ public:
     {
         clear(mem);
         _buckets.dealloc(mem);
-        _mask = SZ(-1);
     }
 
     // iterator over multiple buckets
@@ -352,22 +346,23 @@ public:
 
 private:
 
+    inline SZ _mask() const { return _buckets.size() - 1; }
+
     inline Bucket& _getbucket(StrRef k)
     {
-        const size_t idx = k & _mask;
+        const size_t idx = k & _mask();
         assert(idx < _buckets.size());
         return _buckets[idx];
     }
 
     inline const Bucket& _getbucket(StrRef k) const
     {
-        const size_t idx = k & _mask;
+        const size_t idx = k & _mask();
         assert(idx < _buckets.size());
         return _buckets[idx];
     }
 
     Storage _buckets;
-    SZ _mask;
 };
 
 template<typename Vec>

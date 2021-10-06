@@ -20,9 +20,9 @@ int main(int argc, char **argv)
     SHOWSIZE(Var);
     SHOWSIZE(Var::Map);
 
-    typedef HashHatKeyStore<u32> HashHatKeyStore_u32;
+    /*typedef HashHatKeyStore<u32> HashHatKeyStore_u32;
     SHOWSIZE(HashHatKeyStore_u32);
-    SHOWSIZE(HashHatKeyStore_u32::Bucket);
+    SHOWSIZE(HashHatKeyStore_u32::Bucket);*/
 
 
 
