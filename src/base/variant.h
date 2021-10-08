@@ -246,20 +246,25 @@ private:
 // -- queue re-fetch and wait until that is done
 // --> maybe add TYPE_USERDATA that stores a void* and use that for the fetch tree
 // fetch tree entry: pointer to in-progress future, if any; script to call; params;
-class VarExpiry
+class VarExtra
 {
 public:
-    u64 ts;
+    u64 expiryTS; // timestamp when the map this is attached to expires
+
     // TODO: manual reset event
+    // TODO: ptr back to owning map?
 
 
-    VarExpiry *clone(TreeMem& mem);
-    VarExpiry();
-    ~VarExpiry();
+    VarExtra *clone(TreeMem& mem);
+    VarExtra();
+    ~VarExtra();
 
 private:
-    VarExpiry(const VarExpiry&) = delete;
-    VarExpiry& operator=(const VarExpiry&) = delete;
+    // always attached to a Var::Vap and not movable afterwards
+    VarExtra(VarExtra&&) = delete;
+    VarExtra(const VarExtra&) = delete;
+    VarExtra operator=(VarExtra&&) = delete;
+    VarExtra operator=(const VarExtra&) = delete;
 };
 
 
@@ -300,9 +305,12 @@ public:
 
     bool equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othermem) const;
 
+    VarExtra* ensureExtra(TreeMem& mem);
+    inline const VarExtra* getExtra() const { return _extra; }
+
     // return true when object is expired and should be deleted
     bool isExpired(u64 now) const;
-    u64 getExpiryTime() const { return _expiry ? _expiry->ts : 0; } // FIXME
+    u64 getExpiryTime() const { return _extra ? _extra->expiryTS : 0; } // FIXME
 
 private: // disabled ops until we actually need them
     _VarMap(const _VarMap&) = delete;
@@ -312,7 +320,7 @@ private: // disabled ops until we actually need them
     static Var& _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
 
     _Map _storage;
-    VarExpiry *_expiry; // only allocated when necessary
+    VarExtra *_extra; // only allocated when necessary
 
     void _checkmem(const TreeMem& m) const;
 #ifdef _DEBUG

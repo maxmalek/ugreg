@@ -58,16 +58,16 @@ static void _DeleteArray(TreeMem& mem, Var *p, size_t n)
     }
 }
 
-static VarExpiry *_NewExpiry(TreeMem& mem)
+static VarExtra *_NewExtra(TreeMem& mem)
 {
-    void *p = (VarExpiry*)mem.Alloc(sizeof(VarExpiry));
-    VarExpiry *ex = _X_PLACEMENT_NEW(p) VarExpiry;
+    void *p = (VarExtra*)mem.Alloc(sizeof(VarExtra));
+    VarExtra *ex = _X_PLACEMENT_NEW(p) VarExtra;
     return ex;
 }
 
-static void _DeleteExpiry(TreeMem& mem, VarExpiry *ex)
+static void _DeleteExtra(TreeMem& mem, VarExtra *ex)
 {
-    ex->~VarExpiry();
+    ex->~VarExtra();
     mem.Free(ex, sizeof(*ex));
 }
 
@@ -772,7 +772,7 @@ void _VarMap::_checkmem(const TreeMem& m) const
 
 _VarMap::_VarMap(TreeMem& mem)
     : _storage(mem)
-    , _expiry(NULL)
+    , _extra(NULL)
 #ifdef _DEBUG
     , _mymem(&mem)
 #endif
@@ -781,12 +781,12 @@ _VarMap::_VarMap(TreeMem& mem)
 
 _VarMap::_VarMap(_VarMap&& o) noexcept
     : _storage(std::move(o._storage))
-    , _expiry(o._expiry)
+    , _extra(o._extra)
 #ifdef _DEBUG
     , _mymem(o._mymem)
 #endif
 {
-    o._expiry = NULL;
+    o._extra = NULL;
 }
 
 _VarMap::~_VarMap()
@@ -849,9 +849,21 @@ bool _VarMap::equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othe
     return true;
 }
 
+
+VarExtra* _VarMap::ensureExtra(TreeMem& mem)
+{
+    VarExtra* ex = _extra;
+    if (!ex)
+    {
+        ex = _NewExtra(mem);
+        _extra = ex;
+    }
+    return ex;
+}
+
 bool _VarMap::isExpired(u64 now) const
 {
-    return _expiry && now < _expiry->ts;
+    return _extra && now < _extra->expiryTS;
 }
 
 
@@ -901,7 +913,7 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
 {
     _checkmem(srcmem);
     _VarMap *cp = _NewMap(dstmem, size());
-    cp->_expiry = _expiry ? _expiry->clone(dstmem) : NULL;
+    cp->_extra = _extra ? _extra->clone(dstmem) : NULL;
     for(Iterator it = _storage.begin(); it != _storage.end(); ++it)
     {
         PoolStr k = srcmem.getSL(it.key());
@@ -1009,18 +1021,18 @@ Var::CompareResult VarCRef::compare(Var::CompareMode cmp, const VarCRef& o)
     return v->compare(cmp, *mem, *o.v, *o.mem);
 }
 
-VarExpiry* VarExpiry::clone(TreeMem& mem)
+VarExtra* VarExtra::clone(TreeMem& mem)
 {
-    VarExpiry *cl = (VarExpiry*)mem.Alloc(sizeof(VarExpiry));
-    cl->ts = ts;
+    VarExtra *cl = (VarExtra*)mem.Alloc(sizeof(VarExtra));
+    cl->expiryTS = expiryTS;
     return cl;
 }
 
-VarExpiry::VarExpiry()
-    : ts(0)
+VarExtra::VarExtra()
+    : expiryTS(0)
 {
 }
 
-VarExpiry::~VarExpiry()
+VarExtra::~VarExtra()
 {
 }
