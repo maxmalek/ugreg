@@ -375,7 +375,7 @@ bool Parser::_parseKey(bool ignoreStartSlash)
         return false;
 
     const char *s = begin;
-    for(char c; (c = *s) && c != '/' && c != '['; )
+    for(char c; (c = *s) && c != '/' && c != '[' && c != '{'; ) // TODO: handle escaped [{/ etc
         ++s;
 
     // TODO: handle numeric keys?

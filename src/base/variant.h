@@ -3,10 +3,12 @@
 #include "types.h"
 
 #include "tinyhashmap.h"
+#include "refcounted.h"
 
 class TreeMem;
 class Var;
 class _VarMap;
+class _VarExtra;
 
 struct _VarRange
 {
@@ -133,6 +135,7 @@ public:
 
     typedef _VarMap Map;
     typedef _VarRange Range;
+    typedef _VarExtra Extra;
 
     // either the value or pointer to value
     union
@@ -246,7 +249,11 @@ private:
 // -- queue re-fetch and wait until that is done
 // --> maybe add TYPE_USERDATA that stores a void* and use that for the fetch tree
 // fetch tree entry: pointer to in-progress future, if any; script to call; params;
-class VarExtra
+
+
+// Extra data attached to a Map that are uncommon enough to warrant externalizing to an extra struct.
+// 
+class _VarExtra : public Refcounted
 {
 public:
     u64 expiryTS; // timestamp when the map this is attached to expires
@@ -255,20 +262,20 @@ public:
     // TODO: ptr back to owning map?
 
 
-    VarExtra *clone(TreeMem& mem);
-    VarExtra();
-    ~VarExtra();
+    _VarExtra *clone(TreeMem& mem);
+    _VarExtra();
+    ~_VarExtra();
 
 private:
     // always attached to a Var::Vap and not movable afterwards
-    VarExtra(VarExtra&&) = delete;
-    VarExtra(const VarExtra&) = delete;
-    VarExtra operator=(VarExtra&&) = delete;
-    VarExtra operator=(const VarExtra&) = delete;
+    _VarExtra(_VarExtra&&) = delete;
+    _VarExtra(const _VarExtra&) = delete;
+    _VarExtra operator=(_VarExtra&&) = delete;
+    _VarExtra operator=(const _VarExtra&) = delete;
 };
 
 
-// Note: Methods that don't take TreeMem don't modify the refcount!
+// Note: Methods that don't take TreeMem don't modify the string keys' refcount!
 class _VarMap
 {
     //typedef std::unordered_map<StrRef, Var> _Map;
@@ -279,6 +286,7 @@ public:
     // so we'll make the const_iterator the default unless explicitly specified
     typedef _Map::const_iterator Iterator;
     typedef _Map::iterator MutIterator;
+    typedef _VarExtra Extra;
 
     void destroy(TreeMem& mem); // deletes self
     _VarMap(TreeMem& mem);
@@ -305,24 +313,30 @@ public:
 
     bool equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othermem) const;
 
-    VarExtra* ensureExtra(TreeMem& mem);
-    inline const VarExtra* getExtra() const { return _extra; }
+    Extra* ensureExtra(TreeMem& mem);
+    inline const Extra* getExtra() const { return _extra.content(); }
+
+    // intended for setting the extra data after creating the map
+    void setExtra(Extra *extra);
 
     // return true when object is expired and should be deleted
     bool isExpired(u64 now) const;
-    u64 getExpiryTime() const { return _extra ? _extra->expiryTS : 0; } // FIXME
+    // return timestamp when object expires or 0 for no expiry
+    u64 getExpiryTime() const { return _extra ? _extra->expiryTS : 0; }
 
 private: // disabled ops until we actually need them
     _VarMap(const _VarMap&) = delete;
     _VarMap& operator=(const _VarMap& o) = delete;
 
-
     static Var& _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
 
     _Map _storage;
-    VarExtra *_extra; // only allocated when necessary
+    CountedPtr<Extra> _extra; // only allocated when necessary
 
     void _checkmem(const TreeMem& m) const;
+
+    // For debugging, store a pointer to our originating allocator.
+    // If we errorneously get passed a pointer to a different allocator, fail an assert().
 #ifdef _DEBUG
     TreeMem* const _mymem;
 #endif

@@ -58,16 +58,16 @@ static void _DeleteArray(TreeMem& mem, Var *p, size_t n)
     }
 }
 
-static VarExtra *_NewExtra(TreeMem& mem)
+static _VarExtra*_NewExtra(TreeMem& mem)
 {
-    void *p = (VarExtra*)mem.Alloc(sizeof(VarExtra));
-    VarExtra *ex = _X_PLACEMENT_NEW(p) VarExtra;
+    void *p = (_VarExtra*)mem.Alloc(sizeof(_VarExtra));
+    _VarExtra*ex = _X_PLACEMENT_NEW(p) _VarExtra;
     return ex;
 }
 
-static void _DeleteExtra(TreeMem& mem, VarExtra *ex)
+static void _DeleteExtra(TreeMem& mem, _VarExtra *ex)
 {
-    ex->~VarExtra();
+    ex->~_VarExtra();
     mem.Free(ex, sizeof(*ex));
 }
 
@@ -850,9 +850,9 @@ bool _VarMap::equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othe
 }
 
 
-VarExtra* _VarMap::ensureExtra(TreeMem& mem)
+_VarExtra* _VarMap::ensureExtra(TreeMem& mem)
 {
-    VarExtra* ex = _extra;
+    _VarExtra* ex = _extra.content();
     if (!ex)
     {
         ex = _NewExtra(mem);
@@ -952,6 +952,12 @@ Var& _VarMap::put(TreeMem& mem, StrRef k, Var&& x)
     return ins.ref;
 }
 
+void _VarMap::setExtra(Extra* extra)
+{
+    assert(!!_extra);
+    _extra = extra;
+}
+
 VarRef& VarRef::makeMap()
 {
     v->makeMap(*mem);
@@ -1021,18 +1027,18 @@ Var::CompareResult VarCRef::compare(Var::CompareMode cmp, const VarCRef& o)
     return v->compare(cmp, *mem, *o.v, *o.mem);
 }
 
-VarExtra* VarExtra::clone(TreeMem& mem)
+_VarExtra* _VarExtra::clone(TreeMem& mem)
 {
-    VarExtra *cl = (VarExtra*)mem.Alloc(sizeof(VarExtra));
-    cl->expiryTS = expiryTS;
-    return cl;
+    _VarExtra *e = _NewExtra(mem);
+    e->expiryTS = expiryTS;
+    return e;
 }
 
-VarExtra::VarExtra()
+_VarExtra::_VarExtra()
     : expiryTS(0)
 {
 }
 
-VarExtra::~VarExtra()
+_VarExtra::~_VarExtra()
 {
 }
