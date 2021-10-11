@@ -36,6 +36,17 @@ die hard) I don't particularly care about that.
 // put #if 0 here to use std::unordered_map under the hood instead of the custom thing
 #if 1
 
+template<typename Alloc>
+struct _HashHatPolicyBase
+{
+    typedef Alloc Allocator;
+    template<typename Bucket>
+    inline static void OnDestroy(Allocator& mem, Bucket& b)
+    {
+        b.dealloc(mem);
+    }
+};
+
 template<typename SZ>
 class HashHatKeyStore
 {
@@ -45,15 +56,7 @@ public:
 
     struct Bucket
     {
-        struct Policy
-        {
-            typedef Allocator Allocator;
-            template<typename Bucket> // This works around Bucket being not defined just yet
-            inline static void OnDestroy(Allocator& mem, Bucket& b)
-            {
-                b.dealloc(mem);
-            }
-        };
+        typedef _HashHatPolicyBase<Allocator> Policy;
 
         StrRef *_keys;
         SZ *_indices; // never contains 0
