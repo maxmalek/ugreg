@@ -101,7 +101,7 @@ void StringPool::increfS(StrRef s)
 StrRef StringPool::put(const char* s, size_t len)
 {
     assert(len < (std::numeric_limits<int>::max()));
-    if (!*s)
+    if (!len)
         return EMPTY_REF;
     StrRef ref = strpool_inject(&_sp, s, len);
     strpool_incref(&_sp, ref);

@@ -750,10 +750,8 @@ StrRef Var::setStr(TreeMem& mem, const char* x)
 StrRef Var::setStr(TreeMem& mem, const char* x, size_t len)
 {
     StrRef s = mem.put(x, len);
-    if(s)
-        _settop(mem, BITS_STRING, len);
-    else
-        meta = 0;
+    assert(s);
+    _settop(mem, BITS_STRING, len);
     return (( u.s = s ));
 }
 
