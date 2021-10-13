@@ -58,15 +58,16 @@ static void _DeleteArray(TreeMem& mem, Var *p, size_t n)
     }
 }
 
-static _VarExtra*_NewExtra(TreeMem& mem)
+static _VarExtra*_NewExtra(TreeMem& mem, _VarMap& m)
 {
     void *p = (_VarExtra*)mem.Alloc(sizeof(_VarExtra));
-    _VarExtra*ex = _X_PLACEMENT_NEW(p) _VarExtra;
+    _VarExtra*ex = _X_PLACEMENT_NEW(p) _VarExtra(m, mem);
     return ex;
 }
 
 static void _DeleteExtra(TreeMem& mem, _VarExtra *ex)
 {
+    assert(&ex->mem == &mem);
     ex->~_VarExtra();
     mem.Free(ex, sizeof(*ex));
 }
@@ -761,6 +762,18 @@ void* Var::setPtr(TreeMem& mem, void* p)
     return ((u.p = p));
 }
 
+const Var::Extra* Var::getExtra() const
+{
+    const Map *m = map();
+    return m ? m->getExtra() : NULL;
+}
+
+Var::Extra* Var::getExtra()
+{
+    const Map* m = map();
+    return m ? m->getExtra() : NULL;
+}
+
 void _VarMap::_checkmem(const TreeMem& m) const
 {
 #ifdef _DEBUG
@@ -850,12 +863,10 @@ bool _VarMap::equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othe
 
 _VarExtra* _VarMap::ensureExtra(TreeMem& mem)
 {
-    _VarExtra* ex = _extra.content();
+    _checkmem(mem);
+    _VarExtra* ex = _extra;
     if (!ex)
-    {
-        ex = _NewExtra(mem);
-        _extra = ex;
-    }
+        _extra = ex = _NewExtra(mem, *this);
     return ex;
 }
 
@@ -911,13 +922,30 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
 {
     _checkmem(srcmem);
     _VarMap *cp = _NewMap(dstmem, size());
-    cp->_extra = _extra ? _extra->clone(dstmem) : NULL;
+    cp->_extra = _extra ? _extra->clone(dstmem, *cp) : NULL;
     for(Iterator it = _storage.begin(); it != _storage.end(); ++it)
     {
         PoolStr k = srcmem.getSL(it.key());
         cp->_storage.at(dstmem, dstmem.put(k.s, k.len)) = std::move(it.value().clone(dstmem, srcmem));
     }
     return cp;
+}
+
+_VarMap::_Map& _VarMap::_ensureData() const
+{
+    if(_extra)
+    {
+        _checkmem(_extra->mem);
+        std::shared_lock lock(_extra->mutex);
+        if(isExpired(getExpiryTime()))
+        {
+            std::unique_lock ulock(lock);
+            _Map& m = const_cast<_Map&>(_storage);
+            m.clear(_extra->mem);
+        }
+    }
+
+    return const_cast<_Map&>(_storage);
 }
 
 Var* _VarMap::get(StrRef k)
@@ -1025,15 +1053,15 @@ Var::CompareResult VarCRef::compare(Var::CompareMode cmp, const VarCRef& o)
     return v->compare(cmp, *mem, *o.v, *o.mem);
 }
 
-_VarExtra* _VarExtra::clone(TreeMem& mem)
+_VarExtra* _VarExtra::clone(TreeMem& mem, _VarMap& m)
 {
-    _VarExtra *e = _NewExtra(mem);
+    _VarExtra *e = _NewExtra(mem, m);
     e->expiryTS = expiryTS;
     return e;
 }
 
-_VarExtra::_VarExtra()
-    : expiryTS(0)
+_VarExtra::_VarExtra(_VarMap& m, TreeMem& mem)
+    : expiryTS(0), mymap(m), mem(mem)
 {
 }
 

@@ -3,7 +3,7 @@
 #include "types.h"
 
 #include "tinyhashmap.h"
-#include "refcounted.h"
+#include <shared_mutex>
 
 class TreeMem;
 class Var;
@@ -221,6 +221,8 @@ public:
     const Var::Map* map_unsafe() const;
           Var* lookup(StrRef s);     // NULL if not map or no such key
     const Var* lookup(StrRef s) const;
+    Var::Extra *getExtra();
+    const Var::Extra *getExtra() const;
 
     // instantiate from types
     inline Var(std::nullptr_t) : Var() {}
@@ -253,18 +255,21 @@ private:
 
 // Extra data attached to a Map that are uncommon enough to warrant externalizing to an extra struct.
 // 
-class _VarExtra : public Refcounted
+class _VarExtra
 {
 public:
     u64 expiryTS; // timestamp when the map this is attached to expires
+    _VarMap& mymap;
+    TreeMem& mem;
+    std::shared_mutex mutex;
 
     // TODO: manual reset event
     // TODO: ptr back to owning map?
 
 
-    _VarExtra *clone(TreeMem& mem);
-    _VarExtra();
-    ~_VarExtra();
+    _VarExtra *clone(TreeMem& mem, _VarMap& m);
+    _VarExtra(_VarMap& m, TreeMem& mem);
+    ~_VarExtra(); // TODO: kill dtor, replace with destroy() method? (then it can be refcounted)
 
 private:
     // always attached to a Var::Vap and not movable afterwards
@@ -294,9 +299,9 @@ public:
 
     void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags);
     void clear(TreeMem& mem);
-    inline bool empty() const { return _storage.empty(); }
+    inline bool empty() const { return _ensureData().empty(); }
     _VarMap* clone(TreeMem& dstmem, const TreeMem& srcmem) const;
-    inline size_t size() const { return _storage.size(); }
+    inline size_t size() const { return _ensureData().size(); }
 
     Var& getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
     Var* get(StrRef key);
@@ -306,15 +311,15 @@ public:
 
     Var& put(TreeMem& mem, StrRef k, Var&& x); // increases refcount if new key stored
 
-    inline Iterator begin() const { return _storage.begin(); }
+    inline Iterator begin() const { return _ensureData().begin(); }
     inline Iterator end() const { return _storage.end(); }
-    inline MutIterator begin() { return _storage.begin(); }
+    inline MutIterator begin() { return _ensureData().begin(); }
     inline MutIterator end() { return _storage.end(); }
 
     bool equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othermem) const;
 
     Extra* ensureExtra(TreeMem& mem);
-    inline const Extra* getExtra() const { return _extra.content(); }
+    inline Extra* getExtra() const { return _extra; }
 
     // intended for setting the extra data after creating the map
     void setExtra(Extra *extra);
@@ -329,9 +334,10 @@ private: // disabled ops until we actually need them
     _VarMap& operator=(const _VarMap& o) = delete;
 
     static Var& _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
+    _Map& _ensureData() const;
 
     _Map _storage;
-    CountedPtr<Extra> _extra; // only allocated when necessary
+    Extra *_extra; // only allocated when necessary
 
     void _checkmem(const TreeMem& m) const;
 
