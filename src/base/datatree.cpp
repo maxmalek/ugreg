@@ -7,11 +7,6 @@
 
 // Const-accessors -- safe to cast the const away since walking the tree doesn't change it
 
-VarCRef DataTree::subtree(const Accessor& a) const
-{
-    return VarCRef(const_cast<DataTree*>(this)->subtree(a));
-}
-
 VarCRef DataTree::subtree(const char *path) const
 {
     return VarCRef(const_cast<DataTree*>(this)->subtree(path, false));
@@ -35,42 +30,6 @@ VarRef DataTree::root()
 VarCRef DataTree::root() const
 {
     return VarCRef(*this, &_root);
-}
-
-VarRef DataTree::subtree(const Accessor& acc, bool create)
-{
-    const size_t n = acc.size();
-    Var *p = &_root;
-
-    for(size_t i = 0; p && i < n; ++i)
-    {
-        Var * const lastp = p;
-        const Var& k = acc[i];
-        const Var::Type kt = k.type();
-        switch(kt)
-        {
-            case Var::TYPE_UINT: p = p->at(k.u.ui); break;
-            case Var::TYPE_STRING: p = p->lookup(k.u.s); break;
-            default: assert(false); p = NULL; // can't happen: only int or string in accessors!
-        }
-
-        if(create && lastp)
-        {
-            switch(kt)
-            {
-                case Var::TYPE_UINT:
-                    if(size_t arraysize = k.u.ui + 1) // make sure this won't be an issue if this overflows
-                        p = &lastp->makeArray(*this, k.u.ui + 1)[k.u.ui]; // either it wasn't an array, or not large enough
-                    break;
-                case Var::TYPE_STRING:
-                    p = &lastp->makeMap(*this)->put(*this, k.u.s, std::move(Var()));
-                    break;
-                default: assert(false); p = NULL; // can't happen: only int or string in accessors!
-            }
-        }
-    }
-
-    return VarRef(*this, p);
 }
 
 VarRef DataTree::subtree(const char* path, bool create)

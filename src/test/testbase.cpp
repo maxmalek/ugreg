@@ -43,11 +43,7 @@ void teststuff()
     }
 
     {
-        Accessor acc(tree, "d", 1);
-        const double* v = tree.subtree(acc).asFloat();
-        printf("acc: json.d.1 = %f\n", *v);
-
-        v = tree.subtree("/d/1").asFloat();
+        const double *v = tree.subtree("/d/1").asFloat();
         printf("ptr: /d/1 = %f\n", *v);
     }
 
