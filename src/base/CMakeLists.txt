@@ -26,6 +26,10 @@ set(src
     tinyhashmap.h
     containers.h
     containers.cpp
+    subproc.cpp
+    subproc.h
+    treefunc.cpp
+    treefunc.h
 )
 
 add_library(base ${src})
