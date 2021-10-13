@@ -12,6 +12,7 @@ struct VarEntry
 {
     VarCRef ref;
     StrRef key;
+    const Var::Extra *extra; // last seen extra data under which ref is located
 };
 
 // VarList has pointers for vectorized operation. A CmdType always affects all entries in a list

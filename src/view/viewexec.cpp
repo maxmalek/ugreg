@@ -20,7 +20,7 @@ namespace view {
 
 void StackFrame::addRel(TreeMem& mem, Var&& v, StrRef k)
 {
-    VarEntry e{ VarCRef(mem, (const Var*)(uintptr_t)(store.size())), k };
+    VarEntry e{ VarCRef(mem, (const Var*)(uintptr_t)(store.size())), k, v.getExtra() };
     refs.push_back(std::move(e));
     store.push_back(std::move(v));
 }
@@ -28,7 +28,7 @@ void StackFrame::addAbs(TreeMem& mem, Var&& v, StrRef k)
 {
     assert(store.size() < store.capacity() && "vector would reallocate");
     store.push_back(std::move(v));
-    VarEntry e{ VarCRef(mem, &store.back()), k };
+    VarEntry e{ VarCRef(mem, &store.back()), k, store.back().getExtra() };
     refs.push_back(std::move(e));
 }
 void StackFrame::makeAbs()
@@ -132,6 +132,8 @@ void VM::cmd_GetKey(unsigned param)
             aout->ref.mem = ain[i].ref.mem;
             aout->ref.v = sub;
             aout->key = ain[i].key;
+            if(const Var::Extra *extra = sub->getExtra())
+                aout->extra = extra;
             ++aout;
         }
     top.refs.resize(aout - ain);
