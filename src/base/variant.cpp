@@ -9,6 +9,8 @@
 #include "treemem.h"
 #include "mem.h"
 #include "util.h"
+#include "accessor.h"
+#include "datatree.h"
 
 const Var Var::Null;
 
@@ -931,21 +933,21 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
     return cp;
 }
 
-_VarMap::_Map& _VarMap::_ensureData() const
+void _VarMap::ensureData(u64 now, StrRef k) const
 {
-    if(_extra)
-    {
-        _checkmem(_extra->mem);
-        std::shared_lock lock(_extra->mutex);
-        if(isExpired(getExpiryTime()))
-        {
-            std::unique_lock ulock(lock);
-            _Map& m = const_cast<_Map&>(_storage);
-            m.clear(_extra->mem);
-        }
-    }
+    if(!isExpired(now))
+        return;
 
-    return const_cast<_Map&>(_storage);
+    _checkmem(_extra->mem);
+
+    //-----------------------------------------------
+    std::scoped_lock lock(_extra->mutex);
+
+    if (!isExpired(now)) // possible that some other thread has already handled this
+        return;
+
+    u64 validity = _extra->fetcher->fetchAndUpdate(const_cast<_VarMap&>(*this));
+    _extra->expiryTS = timeNowMS() + validity; // fetching may have taken some time, use real current time
 }
 
 Var* _VarMap::get(StrRef k)
@@ -982,6 +984,11 @@ void _VarMap::setExtra(Extra* extra)
 {
     assert(!!_extra);
     _extra = extra;
+}
+
+bool _VarMap::check(const Accessor& a) const
+{
+    return !_extra ||_extra->check(a);
 }
 
 VarRef& VarRef::makeMap()
@@ -1067,4 +1074,9 @@ _VarExtra::_VarExtra(_VarMap& m, TreeMem& mem)
 
 _VarExtra::~_VarExtra()
 {
+}
+
+bool _VarExtra::check(const Accessor& a) const
+{
+    return true; // TODO: access rights
 }

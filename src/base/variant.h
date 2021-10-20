@@ -9,6 +9,8 @@ class TreeMem;
 class Var;
 class _VarMap;
 class _VarExtra;
+class Accessor;
+class Fetcher;
 
 struct _VarRange
 {
@@ -259,14 +261,16 @@ class _VarExtra
 {
 public:
     u64 expiryTS; // timestamp when the map this is attached to expires
+    _VarMap *fetchedBy;
     _VarMap& mymap;
     TreeMem& mem;
-    std::shared_mutex mutex;
+    std::mutex mutex; // TODO: a manual reset event instead of a mutex would be better
+    Fetcher *fetcher;
 
-    // TODO: manual reset event
+
     // TODO: ptr back to owning map?
 
-
+    bool check(const Accessor& a) const;
     _VarExtra *clone(TreeMem& mem, _VarMap& m);
     _VarExtra(_VarMap& m, TreeMem& mem);
     ~_VarExtra(); // TODO: kill dtor, replace with destroy() method? (then it can be refcounted)
@@ -299,9 +303,9 @@ public:
 
     void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags);
     void clear(TreeMem& mem);
-    inline bool empty() const { return _ensureData().empty(); }
+    inline bool empty() const { return _storage.empty(); }
     _VarMap* clone(TreeMem& dstmem, const TreeMem& srcmem) const;
-    inline size_t size() const { return _ensureData().size(); }
+    inline size_t size() const { return _storage.size(); }
 
     Var& getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
     Var* get(StrRef key);
@@ -311,9 +315,9 @@ public:
 
     Var& put(TreeMem& mem, StrRef k, Var&& x); // increases refcount if new key stored
 
-    inline Iterator begin() const { return _ensureData().begin(); }
+    inline Iterator begin() const { return _storage.begin(); }
     inline Iterator end() const { return _storage.end(); }
-    inline MutIterator begin() { return _ensureData().begin(); }
+    inline MutIterator begin() { return _storage.begin(); }
     inline MutIterator end() { return _storage.end(); }
 
     bool equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othermem) const;
@@ -329,12 +333,14 @@ public:
     // return timestamp when object expires or 0 for no expiry
     u64 getExpiryTime() const { return _extra ? _extra->expiryTS : 0; }
 
-private: // disabled ops until we actually need them
+    bool check(const Accessor& a) const;
+    void ensureData(u64 now) const;
+
+private:
     _VarMap(const _VarMap&) = delete;
     _VarMap& operator=(const _VarMap& o) = delete;
 
     static Var& _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
-    _Map& _ensureData() const;
 
     _Map _storage;
     Extra *_extra; // only allocated when necessary

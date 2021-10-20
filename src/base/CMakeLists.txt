@@ -30,6 +30,8 @@ set(src
     subproc.h
     treefunc.cpp
     treefunc.h
+    fetcher.cpp
+    fetcher.h
 )
 
 add_library(base ${src})
