@@ -100,10 +100,10 @@ public:
     VM();
     ~VM();
     void init(const Executable& ex, const EntryPoint* eps, size_t numep);
+    VarRef makeVar(const char *name, size_t len); // caller must fill returned ref
 
     bool run(VarCRef v); // pass root of tree to operate on
     const VarRefs& results() const; // only valid until reset() or re-run
-    bool exportResult(Var& dst) const;
 
 protected:
     void push(VarCRef v);
@@ -116,6 +116,7 @@ protected:
     StackFrame *detachTop(); // move current top to newly allocated frame
 
 private:
+    void _freeStackFrame(void* p);
 
     StackFrame& _topframe();
     StackFrame _popframe();

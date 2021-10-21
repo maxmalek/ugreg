@@ -2,8 +2,9 @@
     // query /ldap/<username>/...
     "ldap-users": { // some unique name
         "where": "/ldap", // where in the tree the fetcher is registered
-        "pathparts": 1,   // how many parts of the path are forwarded to the script
-        "env": {   // variables for script execution. will be available as env var´
+        "pathparts": 1,   // how many parts of the path are forwarded to the script, from the right
+                          // ie. if we query "a/b/c" and pathparts=2, then the script will see "b/c".
+        "env": {   // variables for script execution. will be available as env vars
             // example config; instead of changing this consider overriding this
             // with a secret config loaded after this one
             "BIND_DN": "uid=readonly,dc=ipa,dc=example,dc=com",
@@ -18,8 +19,8 @@
         // launch configs (can use any kind of expression for the params)
         // $1, $2, ... refer to path parts
         // $0 is the full query after "where"
-        "single": ["ldap.sh", "$1" ], // query single element
-        "all": ["ldap.sh", "--all" ], // query all elements (optional if supported)
+        "fetch-single": ["ldap.sh", "$1" ], // query single element
+        "fetch-all": ["ldap.sh", "--all" ], // query all elements (optional if supported)
         "validity": "10s", // upper limit until any retrieved data expire
         // store under this key after 'where'.
         // The array must have 'pathparts' entries in total and they all must resolve to strings.
@@ -27,4 +28,5 @@
         // '/' refers to the root of the retrieved data.
         "key": ["/sAMAccountName"],
         //"value": "/", // (optional) apply a transformation to the value before storing it
+        "failcache": "5m" // (optional, time) cache failed keys so we don't try to query the backend again.
 }}

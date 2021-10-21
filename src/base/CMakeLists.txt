@@ -32,6 +32,10 @@ set(src
     treefunc.h
     fetcher.cpp
     fetcher.h
+    env.cpp
+    env.h
+    pathiter.cpp
+    pathiter.h
 )
 
 add_library(base ${src})

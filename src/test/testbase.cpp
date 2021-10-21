@@ -6,6 +6,7 @@
 #include "json_in.h"
 #include "json_out.h"
 #include "accessor.h"
+#include "pathiter.h"
 
 // Misc things to test for functionality, breakage, and to make sure everything compiles as it should
 
@@ -14,7 +15,33 @@ static void jsonout(VarCRef ref)
     puts(dumpjson(ref).c_str());
 }
 
-void teststuff()
+static void testpathiter()
+{
+    {
+        const char* path = "/";
+        PathIter it(path);
+        assert(it.value().len == 0 && !*it.value().s);
+        assert(!it.hasNext());
+    }
+
+    {
+        const char *path = "/a/bb/ccc/";
+        PathIter it(path);
+        assert(it.value().len == 1 && !strncmp(it.value().s, "a", 1));
+        assert(it.hasNext());
+        ++it;
+        assert(it.value().len == 2 && !strncmp(it.value().s, "bb", 2));
+        assert(it.hasNext());
+        ++it;
+        assert(it.value().len == 3 && !strncmp(it.value().s, "ccc", 3));
+        assert(it.hasNext());
+        ++it;
+        assert(it.value().len == 0 && !*it.value().s);
+        assert(!it.hasNext());
+    }
+}
+
+static void testtree()
 {
     DataTree tree;
     {
@@ -52,6 +79,7 @@ void teststuff()
 
 int main(int argc, char **argv)
 {
-    teststuff();
+    testpathiter();
+    testtree();
     return 0;
 }

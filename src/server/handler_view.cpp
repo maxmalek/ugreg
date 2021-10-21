@@ -51,7 +51,7 @@ int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
         {
             // Until after the export is done, the VM may still hold refs
             // to the tree, so we need to keep the lock held until then.
-            ok = vm.exportResult(res);
+            ok = false;
             err = "View returns more than one element. Consolidate into array or map. This is a server-side problem.";
         }
     }

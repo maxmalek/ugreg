@@ -152,11 +152,11 @@ public:
             iterator_T& operator++() { assert(_idx < _b->size()); ++_idx; return *this; }
             iterator_T operator++(int) { iterator_T tmp = *this; ++(*this); return tmp; }
             friend bool operator== (const iterator_T& a, const iterator_T& b)
-            //{ assert(a._b == b._b); return a._idx == b._idx; };
-            { return a._b == b._b && a._idx == b._idx; };
+            //{ assert(a._b == b._b); return a._idx == b._idx; }
+            { return a._b == b._b && a._idx == b._idx; }
             friend bool operator!= (const iterator_T& a, const iterator_T& b)
-            //{ assert(a._b == b._b); return a._idx != b._idx; };
-            { return a._b != b._b || a._idx != b._idx; };
+            //{ assert(a._b == b._b); return a._idx != b._idx; }
+            { return a._b != b._b || a._idx != b._idx; }
 
             StrRef key() const     { assert(_idx < _b->_sz); return _b->_keys[_idx]; }
             T& value()             { assert(_idx < _b->_sz); return _b->_indices[_idx]; }
@@ -323,11 +323,11 @@ public:
         friend bool operator== (const iterator_T& a, const iterator_T& b)
         {
             assert(a._end == b._end); return a._it == b._it;
-        };
+        }
         friend bool operator!= (const iterator_T& a, const iterator_T& b)
         {
             assert(a._end == b._end); return a._it != b._it;
-        };
+        }
 
         StrRef key() const { return _it.key(); }
         T value() { return _it.value(); }
@@ -470,11 +470,11 @@ public:
         friend bool operator== (const iterator_T& a, const iterator_T& b)
         {
             assert(a._a == b._a); return a._it == b._it;
-        };
+        }
         friend bool operator!= (const iterator_T& a, const iterator_T& b)
         {
             assert(a._a == b._a); return a._it != b._it;
-        };
+        }
 
         StrRef key() const { return _it.key(); }
         T& value() { assert(_it.value()); return _a[_it.value() - 1]; }
@@ -673,11 +673,11 @@ public:
         friend bool operator== (const Self& a, const Self& b)
         {
             return a._it == b._it;
-        };
+        }
         friend bool operator!= (const Self& a, const Self& b)
         {
             return a._it != b._it;
-        };
+        }
 
         BaseIter _it;
     };

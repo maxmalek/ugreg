@@ -3,6 +3,7 @@
 #include "accessor.h"
 #include "util.h"
 #include "treeiter.h"
+#include "pathiter.h"
 
 
 // Const-accessors -- safe to cast the const away since walking the tree doesn't change it
@@ -38,20 +39,9 @@ VarRef DataTree::subtree(const char* path, bool create)
     if(!*path)
         return VarRef(*this, p);
 
-    if(*path == '#') // FIXME: correctly decode JSON pointers below, then this can go.
-        return VarRef(*this, NULL); // unsupported for now
-
-    if(*path != '/') // JSON pointers are defined to start with a '/'
-        return VarRef(*this, NULL);
-
-
-    // given "/" only, path is now "", which resolves correctly to an object with key "".
-
-    do
+    for(PathIter it(path); p && it.hasNext(); ++it)
     {
-        assert(*path == '/');
-        ++path; // skip the '/'
-        Var * const lastp = p;
+        PoolStr ps = it.value();
         switch(p->type())
         {
             default:
@@ -65,24 +55,12 @@ VarRef DataTree::subtree(const char* path, bool create)
                 [[fallthrough]];
             case Var::TYPE_MAP:
             {
-                // FIXME: correctly decode JSON pointers here (escapes and #)
-                // see https://rapidjson.org/md_doc_pointer.html#JsonPointer
-                // and https://datatracker.ietf.org/doc/html/rfc6901
-                const char* beg = path;
-                for(;; path++)
-                {
-                    char c = *path;
-                    if(!c || c == '/')
-                    {
-                        const size_t len = path - beg;
-                        StrRef ref = this->lookup(beg, len);
-                        Var *nextp = p->lookup(ref);
-                        if(create && !nextp)
-                            nextp = &p->map_unsafe()->putKey(*this, beg, len);
-                        p = nextp;
-                        break;
-                    }
-                }
+                StrRef ref = this->lookup(ps.s, ps.len);
+                Var *nextp = p->lookup(ref);
+                if(create && !nextp)
+                    nextp = &p->map_unsafe()->putKey(*this, ps.s, ps.len);
+                p = nextp;
+                break;
             }
             break;
 
@@ -90,10 +68,13 @@ VarRef DataTree::subtree(const char* path, bool create)
             {
                 // try looking up using an integer
                 size_t idx;
-                NumConvertResult cvt = strtosizeNN(&idx, path, -1); // consume as many as possible
-                path += cvt.used;
-                if(!cvt.used || cvt.overflow)
-                    return VarRef(*this, NULL);
+                NumConvertResult cvt = strtosizeNN(&idx, ps.s, ps.len);
+                // In case not all chars were consumed, it's an invalid key
+                if(!cvt.used || cvt.overflow || cvt.used != ps.len)
+                {
+                    p = NULL;
+                    break;
+                }
                 Var *nextp = p->at(idx);
                 if(create && !nextp)
                     if(size_t newsize = idx + 1) // overflow check
@@ -103,7 +84,6 @@ VarRef DataTree::subtree(const char* path, bool create)
             break;
         }
     }
-    while(p && *path);
 
     return VarRef(*this, p);
 }

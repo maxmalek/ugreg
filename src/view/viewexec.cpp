@@ -67,6 +67,13 @@ VM::VM()
 {
 }
 
+void VM::_freeStackFrame(void *p)
+{
+    StackFrame* frm = static_cast<StackFrame*>(p);
+    frm->~StackFrame();
+    this->Free(frm, sizeof(*frm));
+}
+
 VM::~VM()
 {
     reset();
@@ -75,11 +82,7 @@ VM::~VM()
     if(Var::Map* m = evals.map())
         for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             if (void* p = it.value().asPtr())
-            {
-                StackFrame* frm = static_cast<StackFrame*>(p);
-                frm->~StackFrame();
-                this->Free(frm, sizeof(*frm));
-            }
+                _freeStackFrame(p);
     evals.clear(*this);
 }
 
@@ -103,6 +106,20 @@ void VM::init(const Executable& ex, const EntryPoint* eps, size_t numep)
     Var* a = literals.makeArray(*this, N);
     for (size_t i = 0; i < N; ++i)
         a[i] = std::move(ex.literals[i].clone(*this, *ex.mem));
+}
+
+VarRef VM::makeVar(const char* name, size_t len)
+{
+    // if there was previously a stackframe under that name, kill it
+    Var& dst = evals.map()->putKey(*this, name, len);
+    if(void *prev = dst.asPtr())
+        _freeStackFrame(prev);
+
+    void* p = this->Alloc(sizeof(StackFrame));
+    StackFrame *sf = _X_PLACEMENT_NEW(p) StackFrame;
+    dst.setPtr(*this, sf);
+    sf->addAbs(*this, std::move(Var()), 0);
+    return VarRef(this, &sf->store[0]);
 }
 
 bool VM::run(VarCRef v)
@@ -478,11 +495,6 @@ void VM::reset()
 const VarRefs& VM::results() const
 {
     return stack.back().refs;
-}
-
-bool VM::exportResult(Var& dst) const
-{
-    return false;
 }
 
 StackFrame *VM::storeTop(StrRef s)

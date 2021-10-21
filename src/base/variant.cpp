@@ -933,6 +933,7 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
     return cp;
 }
 
+/*
 void _VarMap::ensureData(u64 now, StrRef k) const
 {
     if(!isExpired(now))
@@ -949,6 +950,7 @@ void _VarMap::ensureData(u64 now, StrRef k) const
     u64 validity = _extra->fetcher->fetchAndUpdate(const_cast<_VarMap&>(*this));
     _extra->expiryTS = timeNowMS() + validity; // fetching may have taken some time, use real current time
 }
+*/
 
 Var* _VarMap::get(StrRef k)
 {
