@@ -617,6 +617,7 @@ static const char *s_opcodeNames[] =
     "KEYSEL",
     "SELECT",
     "SELECTSTACK",
+    "CONCAT",
     "DONE"
 };
 static_assert(Countof(s_opcodeNames) == CM_DONE+1, "opcode enum vs name table mismatch");

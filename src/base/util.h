@@ -2,6 +2,12 @@
 
 #include "types.h"
 
+// Clang has this, other compilers may or may not
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
+
+
 namespace detail
 {
     template <typename T, size_t N>
@@ -48,3 +54,25 @@ u32 strhash(const char *s);
 u32 roundPow2(u32 v);
 
 char *sizetostr_unsafe(char *buf, size_t bufsz, size_t num);
+
+template<typename T>
+inline bool add_check_overflow(T* res, T a, T b)
+{
+#if __has_builtin(__builtin_add_overflow)
+    return __builtin_add_overflow(a, b, res);
+#else
+    return ((*res = a + b)) < a;
+#endif
+}
+
+template<typename T>
+inline bool mul_check_overflow(T* res, T a, T b)
+{
+#if __has_builtin(__builtin_mul_overflow)
+    return __builtin_mul_overflow(a, b, res);
+#else
+    T tmp = a * b;
+    *res = tmp;
+    return a && tmp / a != b;
+#endif
+}

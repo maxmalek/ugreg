@@ -60,6 +60,7 @@ enum CmdType
     CM_KEYSEL,     // param = (keep | (index << 1)); index into literals table. keep = 1 keeps the keys, 0 drops them
     CM_SELECT,     // param = index into literals table
     CM_SELECTSTACK,// no param
+    CM_CONCAT,     // param = how many stack frames to concat
 
     // ALWAYS LAST
     CM_DONE        // terminate execution at this point.

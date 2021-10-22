@@ -15,7 +15,9 @@ class Executable;
   ()       denotes a group
 
 
-expr         = lookuproot lookupnext?...
+expr         = (literal-text? query)... literal-text?
+query        = '{' querybody '}'
+querybody    = lookuproot lookupnext?...
 lookuproot   = subkey | selector | eval
 lookupnext   = subkey | selector
 subkey       = '/' [^\[/]+         <--- this one doesn't ignore whitespace!
@@ -33,7 +35,8 @@ keysel-op    = 'keep' | 'drop'
 keysel-list  = keysel...
 keysel-entry = idstr ('=' idstr)?
 literal      = literal-str | literal-int | literal-flt | literal-bool | literal-null
-literal-str  = 'as you'd expect, in \'single quotes\' or "double quotes", with escapes'
+literal-text = anything until a closing quote or '{'
+literal-str  = ('"' literal-text '"') | (''' literal-text ''')
 literal-int  = [0-9]+
 literal-flt  = literal-int '.' literal-int?
 literal-bool = 'true' | 'false'

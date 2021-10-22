@@ -4,34 +4,6 @@
 #include <thread>
 #include "safe_numerics.h"
 
-// Clang has this, other compilers may or may not
-#ifndef __has_builtin
-#define __has_builtin(x) 0
-#endif
-
-
-template<typename T>
-inline static bool add_check_overflow(T *res, T a, T b)
-{
-#if __has_builtin(__builtin_add_overflow)
-    return __builtin_add_overflow(a, b, res);
-#else
-    return ((*res = a + b)) < a;
-#endif
-}
-
-template<typename T>
-inline static bool mul_check_overflow(T* res, T a, T b)
-{
-#if __has_builtin(__builtin_mul_overflow)
-    return __builtin_mul_overflow(a, b, res);
-#else
-    T tmp = a * b;
-    *res = tmp;
-    return a && tmp / a != b;
-#endif
-}
-
 template<typename T>
 static NumConvertResult strtounum_T_NN(T* dst, const char* s, size_t len)
 {

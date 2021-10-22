@@ -10,6 +10,15 @@
 
 namespace view {
 
+// JSON uses \ as escape char. And this here code is wrapped inside of JSON.
+// So that's out because double-escaping things sucks.
+// Lua uses % as escape, but that is used for htmlencoding chars (' ' -> %20),
+// so that gets in the way when testing queries in the browser.
+// ; should be harmless and not really occur in normal query text, so we use that.
+// Mode of operation: ; is skipped, the char after loses its special meaning.
+// Use ;; to emit a single ;
+static const char ESC_CHAR = ';';
+
 
 enum { MAX_OP_LEN = 2 };
 struct OpEntry
@@ -60,11 +69,16 @@ public:
     void rewind(const ParserState& ps);
     size_t parse(const char *s); // returns index where execution of the parsed block starts, or 0 on error
 
-    bool _parseExpr();
+    bool _parseExpr(char close);
+    bool _parseExprStr();
+    bool _parseQuery();
     bool _parseLookupRoot();
     bool _parseLookupNext();
-    bool _parseKey(bool ignoreStartSlash = false);
+    bool _parseKey();
     bool _parseNum(Var& v);
+    bool _parseTextUntil(Var& v, char close);
+    bool _parseTextUntilAnyOf(Var& v, const char* close);
+    bool _parseTextUntilAnyOf(Var& v, const char *close, size_t n);
     bool _parseStr(Var& v);
     bool _parseNull();
     bool _parseBool(Var& v);
@@ -89,7 +103,6 @@ public:
     bool _parseRangeEntry(std::vector<Var::Range>& rs);
     bool _skipSpace(bool require = false);
     bool _eat(char c);
-    bool _isSep() const; // next char is separator, ie. []/,space,etc or end of string
     bool _parseBinOp(Cmd& op);
 
     void _emit(CmdType cm, unsigned param, unsigned param2 = 0);
@@ -126,17 +139,6 @@ size_t parse(Executable& exe, const char *s, std::string& error)
     }
     return res;
 }
-
-static inline bool _IsSep(char c)
-{
-    return c == '[' || c == ']' || c == '/' || c == ' ' || c == '\t' || !c;
-}
-
-bool Parser::_isSep() const
-{
-    return _IsSep(*ptr);
-}
-
 
 struct ParserTop
 {
@@ -185,7 +187,7 @@ size_t Parser::parse(const char *s)
         ++start;
     }
 
-    if(_skipSpace() && _parseExpr() && _skipSpace() && *ptr == 0)
+    if(_skipSpace() && _parseExpr(0) && _skipSpace() && *ptr == 0)
     {
         _emit(CM_DONE, 0);
         top.accept();
@@ -198,59 +200,95 @@ size_t Parser::parse(const char *s)
 // 3.141596
 // -42
 // -123.456
+// .5
+// -.5
+// 1.
 bool Parser::_parseNum(Var& v)
 {
     ParserTop top(*this);
-    u64 i;
+    u64 i = 0;
+    int parts = 0;
 
     bool neg = _eat('-');
 
-    if(!_parseDecimal(i))
-        return false;
-
-    if (_isSep())
+    if (_parseDecimal(i))
     {
         if (!neg) // it's just unsigned, easy
             v.setUint(mem, i);
         else if (isValidNumericCast<s64>(i)) // but does it fit?
             v.setInt(mem, -s64(i));
-        else
-            return false;
-    }
-    else if(_eat('.'))
-    {
-        double d;
-        if(!_addMantissa(d, i))
-            return false;
-        v.setFloat(mem, !neg ? d : -d);
+        parts |= 1;
     }
     else
+        i = 0;
+
+    if(_eat('.'))
+    {
+        double d;
+        if (_addMantissa(d, i))
+            parts |= 2;
+        v.setFloat(mem, !neg ? d : -d);
+    }
+
+    if (!parts)
+        v.clear(mem);
+
+    return parts && top.accept();
+}
+
+// "hello"
+// 'world'
+bool Parser::_parseStr(Var& v)
+{
+    ParserTop top(*this);
+    const char open = *ptr++;
+    if(!(open == '\'' || open == '\"'))
         return false;
+
+    if (!_parseTextUntil(v, open) && _eat(open))
+    {
+        v.clear(mem);
+        return false;
+    }
 
     return top.accept();
 }
 
-// FIXME: make this handle both ' and " and handle escapes inside
-bool Parser::_parseStr(Var& v)
+
+// parse until closing char is reached;
+// upon successful return, ptr points to the closing char
+bool view::Parser::_parseTextUntil(Var& v, char close)
 {
-    const char *s = ptr;
-    if(*s++ != '\'')
-        return false;
-
-    const char * const begin = s;
+    return _parseTextUntilAnyOf(v, &close, 1);
+}
+bool view::Parser::_parseTextUntilAnyOf(Var& v, const char *close)
+{
+    return _parseTextUntilAnyOf(v, close, strlen(close));
+}
+bool view::Parser::_parseTextUntilAnyOf(Var& v, const char *close, size_t n)
+{
+    const char* s = ptr;
     bool esc = false;
-    for(char c; (c = *s); ++s)
+    bool terminated = false;
+    for (char c;;)
     {
-        if(c == '\'' && !esc)
-        {
-            v.setStr(mem, begin, s - begin);
-            ptr = s + 1; // skip closing '
-            return true;
-        }
-
-        esc = c == '\\';
+        c = *s;
+        if(!esc)
+            for(size_t i = 0; i < n; ++i)
+                if (c == close[i])
+                {
+                    terminated = true;
+                    goto done;
+                }
+        if (!c) // unterminated
+            break;
+        esc = c == ESC_CHAR;
+        ++s;
     }
-    return false;
+done:
+    v.setStr(mem, ptr, s - ptr);
+    ptr = s; // ptr is now on the closing char
+    return terminated;
 }
 
 bool Parser::_parseNull()
@@ -335,7 +373,10 @@ bool Parser::_addMantissa(double& f, u64 i)
     s += nr.used;
     unsigned div = 1;
     do
-        div *= 10;
+    {
+        if (mul_check_overflow<unsigned>(&div, div, 10))
+            return false;
+    }
     while(--nr.used);
 
     f = double(i) + (double(m) / double(div));
@@ -343,15 +384,68 @@ bool Parser::_addMantissa(double& f, u64 i)
     return true;
 }
 
-// /path/to/thing[...]/blah
-// -> any number of keys and selectors
-bool Parser::_parseExpr()
+// some text ${query} more text ${query2} last text
+bool Parser::_parseExpr(char close)
 {
     ParserTop top(*this);
+    Var text;
+    unsigned parts = 0;
+    for (;;)
+    {
+        if (_parseTextUntil(text, '$'))
+        {
+            if (text.size())
+            {
+                _emitPushLiteral(std::move(text));
+                ++parts;
+            }
+            else
+                text.clear(mem); // make sure to clear zero-length strings as well
+        }
+        else
+            break;
+
+        if (!_parseQuery())
+            return false;
+    }
+
+    // last part; \0-terminated this time
+    if (_parseTextUntil(text, close))
+    {
+        if (text.size())
+        {
+            _emitPushLiteral(std::move(text));
+            ++parts;
+        }
+        else
+            text.clear(mem); // make sure to clear zero-length strings as well
+    }
+
+    if (!parts)
+        return false;
+
+    if (parts > 1)
+        _emit(CM_CONCAT, parts);
+
+    return top.accept();
+}
+
+bool Parser::_parseExprStr()
+{
+    ParserTop top(*this);
+    return _eat('{') && _parseExpr('}') && _eat('}') && top.accept();
+}
+
+// /path/to/thing[...]/blah
+// -> any number of keys and selectors
+bool Parser::_parseQuery()
+{
+    ParserTop top(*this);
+    _skipSpace();
     if(!_parseLookupRoot())
         return false;
 
-    while(_parseLookupNext()) {}
+    while(_skipSpace() &&_parseLookupNext() && _skipSpace()) {}
     return top.accept();
 }
 
@@ -366,24 +460,25 @@ bool Parser::_parseLookupNext()
 }
 
 // /key
-bool Parser::_parseKey(bool ignoreStartSlash)
+// /'key with spaces or /'
+bool Parser::_parseKey()
 {
-    const char *begin = ptr;
-    if(begin[0] == '/')
-        ++begin;
-    else if(!ignoreStartSlash)
+    ParserTop top(*this);
+    if(!_eat('/'))
         return false;
 
-    const char *s = begin;
-    for(char c; (c = *s) && c != '/' && c != '[' && c != '{'; ) // TODO: handle escaped [{/ etc
-        ++s;
+    Var k;
+    if (!_parseStr(k)) // try quoted literal first
+        _parseTextUntilAnyOf(k, " /[]{}"); // otherwise parse as far as possible
+    if (k.type() != Var::TYPE_STRING)
+    {
+        k.clear(mem);
+        return false;
+    }
 
-    // TODO: handle numeric keys?
-    Var k(mem, begin, s - begin);
     _emitGetKey(std::move(k));
 
-    ptr = s;
-    return true; // zero-length key is okay and is the empty string
+    return top.accept(); // zero-length key is okay and is the empty string
 }
 
 // [expr]
@@ -407,25 +502,18 @@ bool Parser::_parseSimpleEval()
 {
     Var id;
     bool ok = _parseIdentOrStr(id);
-    if(ok)
-    {
-        unsigned lit = _addLiteral(std::move(id));
-        _emit(CM_GETVAR, lit);
-    }
+    if (ok)
+        _emitPushVarRef(std::move(id));
     return ok;
 }
 
-// {ident}
-// {ident followed by modifiers}
-// {/lookup/somewhere}
-// {/{lookup/somewhere} followed by modifiers} -- in case the lookup contains spaces // TODO
+// {expr}
 bool Parser::_parseExtendedEval()
 {
     ParserTop top(*this);
     Var id;
-    if(_eat('{') && _skipSpace() && (_parseIdentOrStr(id) /*|| _parseLookup()*/))
+    if(_eat('{') && _skipSpace() && _parseExpr())
     {
-        _emitPushVarRef(std::move(id));
         // all following things are transform names
         while(_skipSpace() && _parseIdentOrStr(id))
         {
