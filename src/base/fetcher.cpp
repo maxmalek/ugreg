@@ -8,6 +8,8 @@
 #include "view/viewparser.h"
 #include "pathiter.h"
 #include "util.h"
+#include "subproc.h"
+#include "datatree.h"
 
 Fetcher::Fetcher()
     : _useEnv(false)
@@ -34,7 +36,7 @@ bool Fetcher::_doStartupCheck(VarCRef config) const
     {
         subprocess_s proc;
             
-        if (!_createProcess(proc, check, subprocess_option_combined_stdout_stderr))
+        if (!_createProcess(&proc, check, subprocess_option_combined_stdout_stderr))
         {
             printf("Fetcher init (startup-check): Failed to create subprocess\n");
             return false;
@@ -110,7 +112,7 @@ void Fetcher::_prepareEnv(VarCRef config)
     }
 }
 
-bool Fetcher::_fetch(VarCRef launch, const char* path) const
+bool Fetcher::_fetch(TreeMem& dst, VarCRef launch, const char* path) const
 {
     view::VM vm;
 
@@ -126,13 +128,32 @@ bool Fetcher::_fetch(VarCRef launch, const char* path) const
         vm.makeVar(ns, strlen(ns)) = it.value().s;
     }
 
-    //Var out = vm.fromTemplate(launch);
-    
+    //Var out = vm.fillTemplate(launch); // FIXME
+    Var out = launch.v->clone(vm, *launch.mem);
 
-    return false;
+    const char *procname = NULL;
+    if(Var *a = out.array())
+        procname = a[0].asCString(vm);
+
+    subprocess_s proc;
+    if(!_createProcess(&proc, VarCRef(vm, &out), subprocess_option_enable_async | subprocess_option_no_window))
+        return false;
+
+    DataTree tree;
+    bool ok = loadJsonFromProcess(&tree, &proc, procname);
+
+    subprocess_destroy(&proc);
+
+    // TODO MERGE
+
+    /*{
+        std::unique_lock
+    }*/
+
+    return true;
 }
 
-bool Fetcher::_createProcess(subprocess_s& proc, VarCRef launch, int options) const
+bool Fetcher::_createProcess(subprocess_s *proc, VarCRef launch, int options) const
 {
     const Var *a = launch.v->array();
     if(!a)
@@ -153,12 +174,6 @@ bool Fetcher::_createProcess(subprocess_s& proc, VarCRef launch, int options) co
             penv[i] = _env[i].c_str();
         penv[_env.size()] = NULL;
     }
-    else // just clone whatever env we have if there are no custom options set
-        options |= subprocess_option_inherit_environment;
 
-    if (subprocess_create_ex(pcmd, options, penv, &proc))
-    {
-        return false;
-    }
-    return true;
+    return createProcess(proc, pcmd, penv, options);
 }

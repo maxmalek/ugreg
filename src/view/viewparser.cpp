@@ -70,8 +70,9 @@ public:
     size_t parse(const char *s); // returns index where execution of the parsed block starts, or 0 on error
 
     bool _parseExpr(char close);
-    bool _parseExprStr();
     bool _parseQuery();
+    bool _parseQueryBody();
+    bool _parseUnquotedText(char close);
     bool _parseLookupRoot();
     bool _parseLookupNext();
     bool _parseKey();
@@ -384,42 +385,37 @@ bool Parser::_addMantissa(double& f, u64 i)
     return true;
 }
 
-// some text ${query} more text ${query2} last text
-bool Parser::_parseExpr(char close)
+// There are two things that can be inside of un-quoted text:
+// 1a) Just a query: "{/path/to/thing}"
+// 1b) Queries among text, like this:
+//   "some text {/query/sub/} more text {query2} last text"
+// 2) Variable expansion:
+//   "n is $n, text is ${text lowercase}"
+bool Parser::_parseUnquotedText(char close)
 {
     ParserTop top(*this);
     Var text;
     unsigned parts = 0;
-    for (;;)
+    while(_parseTextUntilAnyOf(text, "${"))
     {
-        if (_parseTextUntil(text, '$'))
+        if(text.size())
         {
-            if (text.size())
-            {
-                _emitPushLiteral(std::move(text));
-                ++parts;
-            }
-            else
-                text.clear(mem); // make sure to clear zero-length strings as well
+            _emitPushLiteral(std::move(text));
+            ++parts;
         }
-        else
-            break;
+        text.clear(mem);
 
         if (!_parseQuery())
             return false;
     }
 
-    // last part; \0-terminated this time
-    if (_parseTextUntil(text, close))
+    // last part; \0-terminated this time (or whatever our terminator is, in case we're recursively called)
+    if (_parseTextUntil(text, close) && text.size())
     {
-        if (text.size())
-        {
-            _emitPushLiteral(std::move(text));
-            ++parts;
-        }
-        else
-            text.clear(mem); // make sure to clear zero-length strings as well
+        _emitPushLiteral(std::move(text));
+        ++parts;
     }
+    text.clear(mem);
 
     if (!parts)
         return false;
@@ -430,7 +426,7 @@ bool Parser::_parseExpr(char close)
     return top.accept();
 }
 
-bool Parser::_parseExprStr()
+bool Parser::_parseQuery()
 {
     ParserTop top(*this);
     return _eat('{') && _parseExpr('}') && _eat('}') && top.accept();
@@ -438,7 +434,7 @@ bool Parser::_parseExprStr()
 
 // /path/to/thing[...]/blah
 // -> any number of keys and selectors
-bool Parser::_parseQuery()
+bool Parser::_parseQueryBody()
 {
     ParserTop top(*this);
     _skipSpace();
@@ -469,7 +465,7 @@ bool Parser::_parseKey()
 
     Var k;
     if (!_parseStr(k)) // try quoted literal first
-        _parseTextUntilAnyOf(k, " /[]{}"); // otherwise parse as far as possible
+        _parseTextUntilAnyOf(k, "/[]{}"); // otherwise parse as far as possible
     if (k.type() != Var::TYPE_STRING)
     {
         k.clear(mem);
@@ -512,7 +508,7 @@ bool Parser::_parseExtendedEval()
 {
     ParserTop top(*this);
     Var id;
-    if(_eat('{') && _skipSpace() && _parseExpr())
+    if(_eat('{') && _skipSpace() && _parseExpr('}'))
     {
         // all following things are transform names
         while(_skipSpace() && _parseIdentOrStr(id))

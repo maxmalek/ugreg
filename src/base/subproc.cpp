@@ -9,7 +9,7 @@
 #include "datatree.h"
 #include "json_in.h"
 
-static void procfail(ProcessReadStream& ps, const char **args)
+static void procfail(ProcessReadStream& ps, const char *procname)
 {
     size_t pos = ps.Tell();
     unsigned i = 0;
@@ -18,26 +18,27 @@ static void procfail(ProcessReadStream& ps, const char **args)
     while(((c = ps.Take())) && i++ < 100)
         os << c;
     if(!pos && !i)
-        printf("[%s] Did not produce output before it died\n", args[0]);
+        printf("[%s] Did not produce output before it died\n", procname);
     else
         printf("[%s] JSON parse error after reading %u bytes, before:\n%s\n",
-            args[0], unsigned(pos), os.str().c_str());
-
+            procname, unsigned(pos), os.str().c_str());
 }
 
-bool loadJsonFromProcess(DataTree *tree, const char** args)
+bool createProcess(subprocess_s* proc, const char** args, const char** env, int options)
 {
     // Aside from .exe, .bat is the only natively executable file on windows.
     // So to ease testing, we support using .bat stubs to start the actual scripts.
 #ifdef _WIN32
-    const char * const oldarg0 = args[0];
+    const char* const oldarg0 = args[0];
     std::string arg0 = args[0];
     arg0 += ".bat";
     args[0] = arg0.c_str();
 #endif
 
-    subprocess_s proc;
-    int err = subprocess_create(args, subprocess_option_enable_async | subprocess_option_no_window | subprocess_option_inherit_environment, &proc);
+    if (!env)
+        options |= subprocess_option_inherit_environment;
+
+    int err = subprocess_create_ex(args, options, env, proc);
 
 #ifdef _WIN32
     args[0] = oldarg0;
@@ -49,50 +50,64 @@ bool loadJsonFromProcess(DataTree *tree, const char** args)
         return false;
     }
 
+    return true;
+}
+
+bool loadJsonFromProcess(DataTree *tree, const char** args, const char **env)
+{
+    subprocess_s proc;
+    if(!createProcess(&proc, args, env, subprocess_option_enable_async | subprocess_option_no_window))
+        return false;
+    
+    bool ok = loadJsonFromProcess(tree, &proc, args[0]);
+    subprocess_destroy(&proc);
+    return ok;
+}
+
+bool loadJsonFromProcess(DataTree* tree, subprocess_s* proc, const char* procname)
+{
     char buf[12*1024];
-    ProcessReadStream ps(&proc, ProcessReadStream::DONTTOUCH, &buf[0], sizeof(buf));
+    ProcessReadStream ps(proc, ProcessReadStream::DONTTOUCH, &buf[0], sizeof(buf));
 
     bool ok = loadJsonDestructive(tree->root(), ps);
 
     if(ok)
     {
-        printf("[%s] parsed as json, waiting until it exits...\n", args[0]);
+        printf("[%s] parsed as json, waiting until it exits...\n", procname);
     }
     else
     {
-        procfail(ps, args);
-        if(subprocess_alive(&proc))
+        procfail(ps, procname);
+        if(subprocess_alive(proc))
         {
-            printf("[%s] failed to parse and still alive, killing\n", args[0]);
-            subprocess_terminate(&proc);
+            printf("[%s] failed to parse and still alive, killing\n", procname);
+            subprocess_terminate(proc);
         }
     }
 
     int ret = 0;
-    subprocess_join(&proc, &ret);
+    subprocess_join(proc, &ret);
     ok = !ret; // if the process reports failure, don't use it even if it's valid json
-    printf("[%s] exited with code %d\n", args[0], ret);
-    if(!ok && subprocess_stderr(&proc))
+    printf("[%s] exited with code %d\n", procname, ret);
+    if(!ok && subprocess_stderr(proc))
     {
         bool hdr = false;
         for(;;) // attempt to output stderr of failed process
         {
             char buf[1024];
-            unsigned rd = subprocess_read_stderr(&proc, buf, sizeof(buf));
+            unsigned rd = subprocess_read_stderr(proc, buf, sizeof(buf));
             if(!rd)
                 break;
             if(!hdr)
             {
-                printf("---- [%s] begin stderr dump ----\n", args[0]);
+                printf("---- [%s] begin stderr dump ----\n", procname);
                 hdr = true;
             }
             fwrite(buf, 1, sizeof(buf), stdout);
         }
         if(hdr)
-            printf("---- [%s] end stderr dump ----\n", args[0]);
+            printf("---- [%s] end stderr dump ----\n", procname);
     }
-
-    subprocess_destroy(&proc);
 
     return ok;
 }
@@ -109,7 +124,7 @@ DataTree * loadJsonFromProcessSync(AsyncLaunchConfig&& cfg)
     args[i] = NULL; // terminator
     
     DataTree *tree = new DataTree;
-    bool ok = loadJsonFromProcess(tree, args);
+    bool ok = loadJsonFromProcess(tree, args, NULL);
     if(!ok)
     {
         delete tree;
