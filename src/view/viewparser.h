@@ -14,10 +14,12 @@ class Executable;
   x?...    means some optional x
   ()       denotes a group
 
+parser starts with unquoted-text
 
-expr         = (literal-text? query)... literal-text?
+unquoted-text= (literal-text? query)... literal-text?
 query        = '{' querybody '}'
 querybody    = lookuproot lookupnext?...
+expr         = query | ''' unquoted-text '''
 lookuproot   = subkey | selector | eval
 lookupnext   = subkey | selector
 subkey       = '/' [^\[/]+         <--- this one doesn't ignore whitespace!

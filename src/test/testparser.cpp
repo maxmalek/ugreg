@@ -29,6 +29,9 @@ static const TestEntry tests[] =
 
     // positive tests
     { "{/hello/world}", true },
+    { "{[*]}", true },
+    { "{/hello[*]}", true },
+    { "{[name='test']}", true },
     { "{[name='test']/ids[*]}", true },
     { "{/hello/world[name='test']}", true },
     { "{/hello/world[name = 'test']}", true },
@@ -41,11 +44,14 @@ static const TestEntry tests[] =
     { "{/hello/world['this is fine'=0]}", true },
     { "{$x/subkey}", true },
     { "{$x[val=42]}", true },
+    { "string $with var", true },
+    { "just ;$a string, no var", true },
 
     //{ "{/hello[$x]}", true },   // TODO: support this? (use all in $x as key)
     // ^ not sure if we should. that would introduce a data-based lookup.
 
-    { "{/hello/world['/sub/key'=42]}", true }, // probably still broken
+    { "{/hello/world['/sub/key'=42]}", true }, // valid but misleading (CHECKKEY only)
+    { "{/hello/world[{/sub/key}=42]}", true }, // proper sub-sub-key selection
     { "{/rooms[name=$Q]/id}", true },
     { "{/users[room=${ids toint}]}", true },
 };
@@ -200,7 +206,7 @@ int main(int argc, char** argv)
 {
     testparse();
     //testexec();
-    testview();
+    //testview();
 
 
     return 0;

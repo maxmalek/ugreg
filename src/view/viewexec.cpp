@@ -425,6 +425,7 @@ void VM::push(VarCRef v)
 
 bool VM::exec(size_t ip)
 {
+    assert(ip < cmds.size());
     assert(!stack.empty() && "Must push initial data on the VM stack before starting to execute");
     if(stack.empty())
         return false;
@@ -710,6 +711,10 @@ size_t Executable::disasm(std::vector<std::string>& out) const
                 os << (keep ? " KEEP " : " DROP ") << dumpjson(VarCRef(mem, &literals[index]), false);
             }
             break;
+
+            case CM_CONCAT:
+                os << ' ' << c.param;
+                break;
 
             default:
                 assert(false);

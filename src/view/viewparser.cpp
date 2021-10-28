@@ -69,10 +69,11 @@ public:
     void rewind(const ParserState& ps);
     size_t parse(const char *s); // returns index where execution of the parsed block starts, or 0 on error
 
-    bool _parseExpr(char close);
+    bool _parseSubExpr(const char* s); // recursive call into self
+    bool _parseExpr();
     bool _parseQuery();
     bool _parseQueryBody();
-    bool _parseUnquotedText(char close);
+    bool _parseUnquotedText();
     bool _parseLookupRoot();
     bool _parseLookupNext();
     bool _parseKey();
@@ -176,6 +177,7 @@ void Parser::rewind(const ParserState& ps)
     }
 }
 
+// main entry point for parsing a thing
 size_t Parser::parse(const char *s)
 {
     ptr = s; // this must be done before creating top
@@ -188,13 +190,22 @@ size_t Parser::parse(const char *s)
         ++start;
     }
 
-    if(_skipSpace() && _parseExpr(0) && _skipSpace() && *ptr == 0)
+    if(_parseUnquotedText() && *ptr == 0)
     {
         _emit(CM_DONE, 0);
         top.accept();
         return start;
     }
     return 0;
+}
+
+bool Parser::_parseSubExpr(const char* s)
+{
+    const char* const oldptr = ptr, * const oldmax = maxptr;
+    bool ok = _parseUnquotedText();
+    ptr = oldptr;
+    maxptr = oldmax;
+    return ok;
 }
 
 // 1337
@@ -246,7 +257,7 @@ bool Parser::_parseStr(Var& v)
     if(!(open == '\'' || open == '\"'))
         return false;
 
-    if (!_parseTextUntil(v, open) && _eat(open))
+    if (!(_parseTextUntil(v, open) && _eat(open)))
     {
         v.clear(mem);
         return false;
@@ -271,6 +282,7 @@ bool view::Parser::_parseTextUntilAnyOf(Var& v, const char *close, size_t n)
     const char* s = ptr;
     bool esc = false;
     bool terminated = false;
+    std::ostringstream os;
     for (char c;;)
     {
         c = *s;
@@ -283,11 +295,13 @@ bool view::Parser::_parseTextUntilAnyOf(Var& v, const char *close, size_t n)
                 }
         if (!c) // unterminated
             break;
+        if(!esc) // ignore escapes
+            os << c;
         esc = c == ESC_CHAR;
         ++s;
     }
 done:
-    v.setStr(mem, ptr, s - ptr);
+    v.setStr(mem, os.str().c_str());
     ptr = s; // ptr is now on the closing char
     return terminated;
 }
@@ -391,12 +405,12 @@ bool Parser::_addMantissa(double& f, u64 i)
 //   "some text {/query/sub/} more text {query2} last text"
 // 2) Variable expansion:
 //   "n is $n, text is ${text lowercase}"
-bool Parser::_parseUnquotedText(char close)
+bool Parser::_parseUnquotedText()
 {
     ParserTop top(*this);
     Var text;
     unsigned parts = 0;
-    while(_parseTextUntilAnyOf(text, "${"))
+    while(*ptr && _parseTextUntilAnyOf(text, "${}\0", 4))
     {
         if(text.size())
         {
@@ -404,17 +418,15 @@ bool Parser::_parseUnquotedText(char close)
             ++parts;
         }
         text.clear(mem);
+        if (!*ptr)
+            break;
 
-        if (!_parseQuery())
+        if (_parseQuery() || _parseEval())
+            ++parts;
+        else
             return false;
     }
 
-    // last part; \0-terminated this time (or whatever our terminator is, in case we're recursively called)
-    if (_parseTextUntil(text, close) && text.size())
-    {
-        _emitPushLiteral(std::move(text));
-        ++parts;
-    }
     text.clear(mem);
 
     if (!parts)
@@ -426,10 +438,25 @@ bool Parser::_parseUnquotedText(char close)
     return top.accept();
 }
 
+bool Parser::_parseExpr()
+{
+    if (_parseQuery())
+        return true;
+
+    Var s;
+    bool ok = false;
+    if (_parseStr(s))
+    {
+        ok = _parseSubExpr(s.asCString(mem));
+    }
+    s.clear(mem);
+    return ok;
+}
+
 bool Parser::_parseQuery()
 {
     ParserTop top(*this);
-    return _eat('{') && _parseExpr('}') && _eat('}') && top.accept();
+    return _eat('{') && _parseQueryBody() && _eat('}') && top.accept();
 }
 
 // /path/to/thing[...]/blah
@@ -508,7 +535,7 @@ bool Parser::_parseExtendedEval()
 {
     ParserTop top(*this);
     Var id;
-    if(_eat('{') && _skipSpace() && _parseExpr('}'))
+    if(_eat('{') && _skipSpace() && _parseExpr())
     {
         // all following things are transform names
         while(_skipSpace() && _parseIdentOrStr(id))
@@ -649,8 +676,14 @@ bool Parser::_parseSelection()
         _emit(CM_TRANSFORM, GetTransformID("unpack"));
         ok = true;
     }
+    else
+    {
+        ParserTop top2(*this);
+        _emit(CM_DUP, 0);
+        ok = _parseExpr() && top2.accept(); // FIXME check this
+    }
 
-    return ok &&  _skipSpace() && top.accept();
+    return ok && _skipSpace() && top.accept();
 }
 
 // inside []:
