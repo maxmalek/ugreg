@@ -29,4 +29,5 @@
         "key": ["/sAMAccountName"],
         //"value": "/", // (optional) apply a transformation to the value before storing it
         "failcache": "5m" // (optional, time) cache failed keys so we don't try to query the backend again.
+    }
 }}
