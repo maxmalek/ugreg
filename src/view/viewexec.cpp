@@ -365,6 +365,56 @@ void VM::cmd_SelectStack()
     assert(false); // TODO WRITE ME
 }
 
+void VM::cmd_Concat(unsigned count)
+{
+    assert(count > 1);
+    size_t n = 0;
+    const size_t top = stack.size() - 1;
+    for(unsigned i = 0; i < count; ++i)
+    {
+        size_t elems = stack[top - i].refs.size();
+        if(elems != 1) // scalars don't count
+        {
+            if(!n)
+                n = elems;
+            else if(n != elems)
+            {
+                n = 0; // FIXME: should be a runtime error
+                assert(false && "number of elements in concat mismatched");
+            }
+        }
+    }
+    if(!n)
+        return; // attempt to concat an empty set, the result is still an empty set
+
+    StackFrame newtop;
+
+    assert(stack.size() >= count);
+    size_t start = top - (count - 1);
+    
+    // this is not optimized and probably very slow
+    for(size_t k = 0; k < n; ++k)
+    {
+        std::ostringstream os;
+        StrRef key = 0;
+        for(size_t i = start; i <= top; ++i)
+        {
+            const VarRefs& stk = stack[i].refs;
+            const VarEntry& e = stk[std::min(k, stk.size()-1)];
+            varToString(os, e.ref);
+            if(!key)
+                key = e.key;
+        }
+        Var s;
+        std::string tmp = os.str();
+        s.setStr(*this, tmp.c_str(), tmp.size());
+        newtop.addRel(*this, std::move(s), key); // FIXME: this assumes keys are always in the same order. do we want to ensure by-name matching if there is a key?
+    }
+    newtop.makeAbs();
+    stack.resize(stack.size() - count);
+    stack.push_back(std::move(newtop));
+}
+
 // keep refs in top only when a subkey has operator relation to a literal
 void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
 {
@@ -411,7 +461,7 @@ void VM::cmd_Transform(unsigned param)
     stack.pop_back();
     stack.emplace_back();
     // now there's a shiny new top, fill it
-    s_transforms[param].func(*this, stack[stack.size() - 1], oldfrm);
+    s_transforms[param].func(*this, stack.back(), oldfrm);
     oldfrm.clear(*this);
 }
 
@@ -453,6 +503,14 @@ bool VM::exec(size_t ip)
             }
             break;
 
+            case CM_PUSHROOT:
+            {
+                StackFrame add;
+                add.refs = stack[0].refs; // just copy the refs, but not the storage
+                stack.push_back(std::move(add));
+            }
+            break;
+
 
             case CM_GETVAR:
                 cmd_PushVar(c.param);
@@ -476,6 +534,11 @@ bool VM::exec(size_t ip)
 
             case CM_SELECTSTACK:
                 cmd_SelectStack();
+                break;
+
+            case CM_CONCAT:
+                cmd_Concat(c.param);
+                break;
 
             case CM_DONE:
                 return true;
@@ -631,6 +694,7 @@ static const char *s_opcodeNames[] =
     "SELECT",
     "SELECTSTACK",
     "CONCAT",
+    "PUSHROOT",
     "DONE"
 };
 static_assert(Countof(s_opcodeNames) == CM_DONE+1, "opcode enum vs name table mismatch");
@@ -671,6 +735,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
         {
             case CM_DUP:
             case CM_DONE:
+            case CM_PUSHROOT:
                 break; // do nothing
             case CM_GETVAR:
                 os << ' ' << literals[c.param].asCString(*mem);
@@ -679,7 +744,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
             case CM_LITERAL:
             case CM_SELECT:
                 os << ' ';
-                varToString(os, VarCRef(mem, &literals[c.param]));
+                varToStringDebug(os, VarCRef(mem, &literals[c.param]));
                 break;
             case CM_TRANSFORM:
                 os << " " << GetTransformName(c.param) << " (func #" << c.param << ")";
@@ -699,7 +764,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
                 os << " [ " << literals[key].asCString(*mem);
                 oprToStr(os, c.param & 0xf);
                 os << ' ';
-                varToString(os, VarCRef(mem, &literals[c.param2]));
+                varToStringDebug(os, VarCRef(mem, &literals[c.param2]));
                 os << " ]";
             }
             break;
@@ -732,7 +797,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
     {
         std::ostringstream os;
         os << " [" << i << "] = ";
-        varToString(os, VarCRef(mem, &literals[i]));
+        varToStringDebug(os, VarCRef(mem, &literals[i]));
         out.push_back(os.str());
     }
 

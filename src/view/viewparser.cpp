@@ -86,7 +86,7 @@ public:
     bool _parseBool(Var& v);
     size_t _parseVerbatim(const char *in); // returns length of match if matched, otherwise 0
     bool _parseLiteral(Var& v);
-    bool _parseValue(); // literal or eval
+    bool _parseAndEmitLiteral();
     bool _parseDecimal(u64& i);
     bool _parseSize(size_t& i);
     bool _addMantissa(double& f, u64 i);
@@ -199,6 +199,8 @@ size_t Parser::parse(const char *s)
     return 0;
 }
 
+// tokenizes a string into sub-expressions and emits CM_CONCAT if applicable.
+// otherwise emits a normal literal string.
 bool Parser::_parseSubExpr(const char* s)
 {
     const char* const oldptr = ptr, * const oldmax = maxptr;
@@ -345,16 +347,18 @@ bool Parser::_parseLiteral(Var& v)
     return _parseStr(v) || _parseNum(v) || _parseBool(v) || _parseNull();
 }
 
-bool Parser::_parseValue()
+bool Parser::_parseAndEmitLiteral()
 {
-    if(_parseEval())
-        return true;
-    Var v;
-    if(_parseLiteral(v))
+    Var lit;
+    if(_parseLiteral(lit))
     {
-        _emitPushLiteral(std::move(v));
+        if(lit.type() == Var::TYPE_STRING)
+            return _parseSubExpr(lit.asCString(mem));
+
+        _emitPushLiteral(std::move(lit));
         return true;
     }
+    lit.clear(mem);
     return false;
 }
 
@@ -438,19 +442,10 @@ bool Parser::_parseUnquotedText()
     return top.accept();
 }
 
+// anything that yields a value:
 bool Parser::_parseExpr()
 {
-    if (_parseQuery())
-        return true;
-
-    Var s;
-    bool ok = false;
-    if (_parseStr(s))
-    {
-        ok = _parseSubExpr(s.asCString(mem));
-    }
-    s.clear(mem);
-    return ok;
+   return _parseAndEmitLiteral() || _parseEval() || _parseQuery();
 }
 
 bool Parser::_parseQuery()
@@ -474,7 +469,13 @@ bool Parser::_parseQueryBody()
 
 bool Parser::_parseLookupRoot()
 {
-    return _parseEval() || _parseKey() || _parseSelector();
+    if(_parseEval()) // pushes stuff on the stack
+        return true;
+
+    // key lookup and selector don't push anything -> push the root
+    ParserTop top(*this);
+    _emit(CM_PUSHROOT, 0);
+    return (_parseKey() || _parseSelector()) && top.accept();
 }
 
 bool Parser::_parseLookupNext()
@@ -534,8 +535,10 @@ bool Parser::_parseSimpleEval()
 bool Parser::_parseExtendedEval()
 {
     ParserTop top(*this);
+    if(!_eat('{') && _skipSpace())
+        return false;
     Var id;
-    if(_eat('{') && _skipSpace() && _parseExpr())
+    if(_parseSimpleEval() || _parseExpr())
     {
         // all following things are transform names
         while(_skipSpace() && _parseIdentOrStr(id))

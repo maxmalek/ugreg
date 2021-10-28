@@ -90,7 +90,14 @@ static void writeStr(BufferedWriteStream& out, const char *s)
 int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
     const char *query = rq.query.c_str();
-    //printf("ViewDebugHandler: %s\n", query);
+    /*std::ostringstream qs;
+    qs << '{' << query << '}';
+    std::string qtmp = qs.str();
+    query = qtmp.c_str();*/
+    if(*query == '/')
+        ++query;
+
+    printf("ViewDebugHandler: %s\n", query);
     view::VM vm;
     view::Executable exe(vm);
     std::string err;

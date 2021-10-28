@@ -61,6 +61,7 @@ enum CmdType
     CM_SELECT,     // param = index into literals table
     CM_SELECTSTACK,// no param
     CM_CONCAT,     // param = how many stack frames to concat
+    CM_PUSHROOT,   // no param
 
     // ALWAYS LAST
     CM_DONE        // terminate execution at this point.
@@ -144,6 +145,7 @@ private:
     void cmd_Keysel(unsigned param);
     void cmd_Select(unsigned param);
     void cmd_SelectStack();
+    void cmd_Concat(unsigned count);
 };
 
 } // end namespace view

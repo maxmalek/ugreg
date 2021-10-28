@@ -19,7 +19,7 @@ parser starts with unquoted-text
 unquoted-text= (literal-text? query)... literal-text?
 query        = '{' querybody '}'
 querybody    = lookuproot lookupnext?...
-expr         = query | ''' unquoted-text '''
+expr         = literal | eval | query     <--- anything that yields one or more values
 lookuproot   = subkey | selector | eval
 lookupnext   = subkey | selector
 subkey       = '/' [^\[/]+         <--- this one doesn't ignore whitespace!
