@@ -39,6 +39,8 @@ VarRef DataTree::subtree(const char* path, bool create)
     if(!*path)
         return VarRef(*this, p);
 
+    assert(*path == '/');
+
     for(PathIter it(path); p && it.hasNext(); ++it)
     {
         PoolStr ps = it.value();

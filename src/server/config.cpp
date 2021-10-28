@@ -20,7 +20,10 @@ bool ServerConfig::apply(VarCRef root)
     listen.clear();
 
     if(!root)
+    {
+        printf("C: ERROR: no root node present -- the config tree is empty?!\n");
         return false;
+    }
 
     if(VarCRef L = root.lookup("listen"))
         for(size_t i = 0; i < L.size(); ++i)
