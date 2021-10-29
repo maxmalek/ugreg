@@ -61,6 +61,7 @@ static const TransformEntry s_transforms[] =
     { transformCompact, "compact" },
     { transformAsArray, "array" },
     { transformAsMap, "map" },
+    { transformToKeys, "keys" },
 };
 
 VM::VM()
@@ -391,7 +392,7 @@ void VM::cmd_Concat(unsigned count)
 
     assert(stack.size() >= count);
     size_t start = top - (count - 1);
-    
+
     // this is not optimized and probably very slow
     for(size_t k = 0; k < n; ++k)
     {

@@ -157,4 +157,17 @@ void transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
     newframe.addAbs(mem, std::move(mp), 0);
 }
 
+void transformToKeys(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
+{
+    const size_t N = oldframe.refs.size();
+    Var tmp;
+    for (size_t i = 0; i < N; ++i)
+        if(StrRef s = oldframe.refs[i].key)
+        {
+            tmp.setStrRef(mem, s);
+            newframe.addRel(mem, std::move(tmp), s);
+        }
+    newframe.makeAbs();
+}
+
 } // end namespace view

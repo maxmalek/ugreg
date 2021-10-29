@@ -17,6 +17,7 @@ void transformToInt(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
 void transformCompact(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
 void transformAsArray(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
 void transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
+void transformToKeys(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
 
 
 

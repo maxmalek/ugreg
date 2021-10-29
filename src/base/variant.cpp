@@ -758,6 +758,14 @@ StrRef Var::setStr(TreeMem& mem, const char* x, size_t len)
     return (( u.s = s ));
 }
 
+StrRef Var::setStrRef(TreeMem& mem, StrRef s)
+{
+    assert(s);
+    mem.increfS(s);
+    _settop(mem, BITS_STRING, mem.getL(s));
+    return ((u.s = s));
+}
+
 void* Var::setPtr(TreeMem& mem, void* p)
 {
     _transmute(mem, TYPE_PTR);

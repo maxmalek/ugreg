@@ -187,6 +187,7 @@ public:
     double setFloat(TreeMem& mem, double x);
     StrRef setStr(TreeMem& mem, const char *x);
     StrRef setStr(TreeMem& mem, const char* x, size_t len);
+    StrRef setStrRef(TreeMem& mem, StrRef r);
     void *setPtr(TreeMem& mem, void *p);
     Var *makeArray(TreeMem& mem, size_t n);
     Map *makeMap(TreeMem& mem, size_t prealloc = 0);
@@ -256,7 +257,7 @@ private:
 
 
 // Extra data attached to a Map that are uncommon enough to warrant externalizing to an extra struct.
-// 
+//
 class _VarExtra
 {
 public:
