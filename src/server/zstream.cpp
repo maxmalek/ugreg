@@ -21,7 +21,7 @@ DeflateWriteStream::~DeflateWriteStream()
 
 void DeflateWriteStream::finish()
 {
-    if(_dst) // Only output something if we ever got any data
+    if(_dst && Tell()) // Only output something if we ever got any data
     {
         Flush();
         z.next_in = NULL;
