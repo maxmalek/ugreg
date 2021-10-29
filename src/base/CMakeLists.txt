@@ -30,8 +30,6 @@ set(src
     subproc.h
     treefunc.cpp
     treefunc.h
-    fetcher.cpp
-    fetcher.h
     env.cpp
     env.h
     pathiter.cpp

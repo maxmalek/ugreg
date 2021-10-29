@@ -35,7 +35,7 @@ bool Fetcher::_doStartupCheck(VarCRef config) const
     if (VarCRef check = config.lookup("startup-check"))
     {
         subprocess_s proc;
-            
+
         if (!_createProcess(&proc, check, subprocess_option_combined_stdout_stderr))
         {
             printf("Fetcher init (startup-check): Failed to create subprocess\n");
@@ -128,9 +128,8 @@ bool Fetcher::_fetch(TreeMem& dst, VarCRef launch, const char* path) const
         vm.makeVar(ns, strlen(ns)) = it.value().s;
     }
 
-    //Var out = vm.fillTemplate(launch); // FIXME
-    Var out = launch.v->clone(vm, *launch.mem);
-
+    //Var out = vm.fillTemplate(vm, launch);
+    /*
     const char *procname = NULL;
     if(Var *a = out.array())
         procname = a[0].asCString(vm);
@@ -143,7 +142,7 @@ bool Fetcher::_fetch(TreeMem& dst, VarCRef launch, const char* path) const
     bool ok = loadJsonFromProcess(&tree, &proc, procname);
 
     subprocess_destroy(&proc);
-
+    */
     // TODO MERGE
 
     /*{

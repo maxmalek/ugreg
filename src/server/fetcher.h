@@ -2,6 +2,7 @@
 
 #include "variant.h"
 #include "treemem.h"
+#include "view/view.h"
 #include <vector>
 #include <string>
 
@@ -27,6 +28,8 @@ private:
     bool _useEnv;
     size_t pathparts;
     std::vector<std::string> _env;
+    //view::View fetchsingle, fetchall;
+    //view::View *postproc;
     // TODO: fail cache
 };
 

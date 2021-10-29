@@ -41,27 +41,14 @@ bool View::compile(const char *s, VarCRef val)
 
 bool View::load(VarCRef v)
 {
+    if (v.type() != Var::TYPE_MAP)
+        return false;
+
     bool ok = true;
-    if(VarCRef result = v.lookup("result"))
+    const Var::Map *m = v.v->map();
+    for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
     {
-        ok = compile("result", result) && ok;
-    }
-    else
-    {
-        printf("Key 'result' not present, abort\n");
-        ok = false;
-    }
-
-    if(VarCRef lookup = v.lookup("lookup"))
-    {
-        if(lookup.type() != Var::TYPE_MAP)
-            ok = false;
-
-        const Var::Map *m = lookup.v->map();
-        for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
-        {
-            ok = compile(v.mem->getS(it.key()), VarCRef(v.mem, &it.value())) && ok;
-        }
+        ok = compile(v.mem->getS(it.key()), VarCRef(v.mem, &it.value())) && ok;
     }
 
     // TODO: check up-front that all referenced variables are there

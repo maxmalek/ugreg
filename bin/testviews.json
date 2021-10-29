@@ -1,24 +1,18 @@
 {"view":{
     "users-by-room-name": {
-        "lookup": {
-            "ids": "/rooms[name=$Q]/id",
-            "P": "/users[room=${ids toint}]"
-        },
+        "ids": "{/rooms[name=$Q]/id}",
+        "P": "{/users[room=${ids toint}]}",
         "result": "$P",
     },
     
     "matrixurls": {
-        "lookup": {
-            "M": "/m.integrations/managers",
-        },
-        "var": {
-            "B": "base_url",
-        },
+        "M": "{/m.integrations/managers}",
+        "B": "base_url",
         "result": {
-            "home": "/m.homeserver/$B",
-            "id": "/m.identity_server/$B",
-            "api": "/$M/api_url",
-            "ui": "/$M/ui_url"
+            "home": "{/m.homeserver/$B}",
+            "id": "{/m.identity_server/$B}",
+            "api": "{/$M/api_url}",
+            "ui": "{/$M/ui_url}"
         },
     },
 }}
