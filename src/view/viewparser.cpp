@@ -118,6 +118,7 @@ public:
     const char *maxptr; // for error reporting only
     TreeMem& mem;
     Executable& exec;
+    std::vector<std::string> errors;
 };
 
 size_t parse(Executable& exe, const char *s, std::string& error)
@@ -138,6 +139,16 @@ size_t parse(Executable& exe, const char *s, std::string& error)
         }
         else
              error += "? Parse error somewhere\n";
+
+        if (!p.errors.empty())
+        {
+            error += "\nExtra errors reported by parser:\n";
+            for (size_t i = 0; i < p.errors.size(); ++i)
+            {
+                error += p.errors[i];
+                error += '\n';
+            }
+        }
     }
     return res;
 }
@@ -538,19 +549,26 @@ bool Parser::_parseExtendedEval()
     if(!_eat('{') && _skipSpace())
         return false;
     Var id;
+    bool ok = false;
     if(_parseSimpleEval() || _parseExpr())
     {
+        ok = true;
         // all following things are transform names
         while(_skipSpace() && _parseIdentOrStr(id))
         {
-            int tr = GetTransformID(id.asCString(mem));
+            const char* tf = id.asCString(mem);
+            int tr = GetTransformID(tf);
             if (tr < 0)
-                return false;
+            {
+                errors.push_back(std::string("Unknown transform: ") + tf);
+                ok = false;
+                break;
+            }
             _emit(CM_TRANSFORM, (unsigned)tr);
         }
     }
     id.clear(mem);
-    return _skipSpace() && _eat('}') && top.accept();
+    return ok && _skipSpace() && _eat('}') && top.accept();
 }
 
 bool Parser::_parseIdent(Var& id)
