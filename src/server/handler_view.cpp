@@ -25,7 +25,8 @@ static void writeToStream(BufferedWriteStream& ws, VarCRef sub, const Request& r
 
 int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
-    view::VM vm;
+    TreeMem work;
+    view::VM vm(work);
 
     const char *qbeg = rq.query.c_str();
     if(*qbeg == '/')
@@ -64,8 +65,8 @@ int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
     }
 
     // res is a copy of the data, so we don't need a lock here anymore
-    writeToStream(dst, VarCRef(vm, &res), rq);
-    res.clear(vm);
+    writeToStream(dst, VarCRef(vm.mem, &res), rq);
+    res.clear(vm.mem);
 
     return 0;
 }
@@ -98,8 +99,9 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
         ++query;
 
     printf("ViewDebugHandler: %s\n", query);
-    view::VM vm;
-    view::Executable exe(vm);
+    TreeMem work;
+    view::VM vm(work);
+    view::Executable exe(work);
     std::string err;
     size_t start = view::parse(exe, query, err);
     if (!start)
@@ -152,7 +154,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
     for (const view::VarEntry& e : out)
     {
         dst.Put('<');
-        const char *k = vm.getS(e.key);
+        const char *k = vm.mem.getS(e.key);
         writeStr(dst, k ? k : "(no key name)");
         dst.Put('>');
         dst.Put('\n');
@@ -163,7 +165,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
 
     writeStr(dst, "\n\n--- memory stats of VM after exec ---\n");
     std::ostringstream os;
-    dumpAllocInfoToString(os, vm);
+    dumpAllocInfoToString(os, vm.mem);
     writeStr(dst, os.str().c_str());
 
     return 0;

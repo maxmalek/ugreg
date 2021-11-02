@@ -114,7 +114,8 @@ void Fetcher::_prepareEnv(VarCRef config)
 
 bool Fetcher::_fetch(TreeMem& dst, VarCRef launch, const char* path) const
 {
-    view::VM vm;
+    TreeMem mem;
+    view::VM vm(mem);
 
     vm.makeVar("0", 1) = path; // $0 is the full path
 

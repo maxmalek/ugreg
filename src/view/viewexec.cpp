@@ -64,7 +64,8 @@ static const TransformEntry s_transforms[] =
     { transformToKeys, "keys" },
 };
 
-VM::VM()
+VM::VM(TreeMem& mem)
+    : mem(mem)
 {
 }
 
@@ -72,55 +73,55 @@ void VM::_freeStackFrame(void *p)
 {
     StackFrame* frm = static_cast<StackFrame*>(p);
     frm->~StackFrame();
-    this->Free(frm, sizeof(*frm));
+    mem.Free(frm, sizeof(*frm));
 }
 
 VM::~VM()
 {
     reset();
-    literals.clear(*this);
+    literals.clear(mem);
 
     if(Var::Map* m = evals.map())
         for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             if (void* p = it.value().asPtr())
                 _freeStackFrame(p);
-    evals.clear(*this);
+    evals.clear(mem);
 }
 
 void VM::init(const Executable& ex, const EntryPoint* eps, size_t numep)
 {
     cmds = ex.cmds; // make a copy
 
-    evals.makeMap(*this);
+    evals.makeMap(mem);
     if (numep)
     {
-        VarRef evalmap(*this, &evals);
+        VarRef evalmap(mem, &evals);
         for (size_t i = 0; i < numep; ++i)
         {
             DEBUG_PRINT("Eval entrypoint: [%s] = %u\n", eps[i].name.c_str(), (unsigned)eps[i].idx);
-            evalmap[eps[i].name.c_str()].v->setUint(*this, eps[i].idx);
+            evalmap[eps[i].name.c_str()].v->setUint(mem, eps[i].idx);
         }
     }
 
     // literals are only ever referred to by index, copy those as well
     const size_t N = ex.literals.size();
-    Var* a = literals.makeArray(*this, N);
+    Var* a = literals.makeArray(mem, N);
     for (size_t i = 0; i < N; ++i)
-        a[i] = std::move(ex.literals[i].clone(*this, *ex.mem));
+        a[i] = std::move(ex.literals[i].clone(mem, *ex.mem));
 }
 
 VarRef VM::makeVar(const char* name, size_t len)
 {
     // if there was previously a stackframe under that name, kill it
-    Var& dst = evals.map()->putKey(*this, name, len);
+    Var& dst = evals.map()->putKey(mem, name, len);
     if(void *prev = dst.asPtr())
         _freeStackFrame(prev);
 
-    void* p = this->Alloc(sizeof(StackFrame));
+    void* p = mem.Alloc(sizeof(StackFrame));
     StackFrame *sf = _X_PLACEMENT_NEW(p) StackFrame;
-    dst.setPtr(*this, sf);
-    sf->addAbs(*this, std::move(Var()), 0);
-    return VarRef(this, &sf->store[0]);
+    dst.setPtr(mem, sf);
+    sf->addAbs(mem, std::move(Var()), 0);
+    return VarRef(mem, &sf->store[0]);
 }
 
 bool VM::run(VarCRef v)
@@ -134,7 +135,7 @@ bool VM::run(VarCRef v)
 // replace all maps on top with a subkey of each
 void VM::cmd_GetKey(unsigned param)
 {
-    PoolStr ps = literals[param].asString(*this);
+    PoolStr ps = literals[param].asString(mem);
 
     StackFrame& top = _topframe();
     const size_t N = top.refs.size();
@@ -232,7 +233,7 @@ void VM::cmd_Filter(unsigned param)
     StackFrame vs = _popframe(); // check new top vs. this
     StackFrame& top = _topframe();
 
-    const char* keystr = literals[key].asCString(*this);
+    const char* keystr = literals[key].asCString(mem);
     VarRefs oldrefs;
     std::swap(oldrefs, top.refs);
     const size_t N = oldrefs.size();
@@ -261,28 +262,27 @@ void VM::cmd_Keysel(unsigned param)
     StackFrame& top = _topframe();
 
     StackFrame newtop;
-    TreeMem * const mymem = this;
     if(keep)
     {
         for(const VarEntry& e : top.refs)
             if(const Var::Map *src = e.ref.v->map())
             {
                 Var mm;
-                Var::Map *newmap = mm.makeMap(*this);
+                Var::Map *newmap = mm.makeMap(mem);
                 for(Var::Map::Iterator it = Lm->begin(); it != Lm->end(); ++it)
                 {
                     StrRef readk = it.value().asStrRef();
-                    if(mymem != e.ref.mem)
+                    if(&mem != e.ref.mem)
                     {
-                        PoolStr ps = this->getSL(readk);
+                        PoolStr ps = mem.getSL(readk);
                         readk = e.ref.mem->lookup(ps.s, ps.len);
                         if(!readk)
                             continue;
                     }
                     if(const Var *x = src->get(readk))
-                        newmap->put(*this, it.key(), std::move(x->clone(*this, *e.ref.mem)));
+                        newmap->put(mem, it.key(), std::move(x->clone(mem, *e.ref.mem)));
                 }
-                newtop.addRel(*this, std::move(mm), e.key);
+                newtop.addRel(mem, std::move(mm), e.key);
             }
     }
     else
@@ -291,22 +291,22 @@ void VM::cmd_Keysel(unsigned param)
             if (const Var::Map* src = e.ref.v->map())
             {
                 Var mm;
-                Var::Map* newmap = mm.makeMap(*this);
+                Var::Map* newmap = mm.makeMap(mem);
                 for (Var::Map::Iterator it = src->begin(); it != src->end(); ++it)
                 {
                     StrRef k = it.key();
                     PoolStr ps = e.ref.mem->getSL(k);
-                    StrRef myk = this->putNoRefcount(ps.s, ps.len);
+                    StrRef myk = mem.putNoRefcount(ps.s, ps.len);
                     assert(myk);
                     if(!Lm->get(myk))
-                        newmap->getOrCreate(*this, myk) = std::move(it.value().clone(*mymem, *e.ref.mem));
+                        newmap->getOrCreate(mem, myk) = std::move(it.value().clone(mem, *e.ref.mem));
                 }
-                newtop.addRel(*this, std::move(mm), e.key);
+                newtop.addRel(mem, std::move(mm), e.key);
             }
     }
 
     newtop.makeAbs();
-    top.clear(*this);
+    top.clear(mem);
     top = std::move(newtop);
 }
 
@@ -337,13 +337,13 @@ void VM::cmd_Select(unsigned param)
                             const Var::Range& ra = rbase[k];    // ...for each component of the range...
                             const size_t last = std::min(ra.last, asize);
                             for(size_t i = ra.first; i < last; ++i)
-                                tmp.push_back(std::move(asrc[i].clone(*this, *e.ref.mem))); // ... add an element
+                                tmp.push_back(std::move(asrc[i].clone(mem, *e.ref.mem))); // ... add an element
                         }
                     }
                     Var newa;
-                    Var *adst = newa.makeArray(*this, tmp.size());
+                    Var *adst = newa.makeArray(mem, tmp.size());
                     std::move(tmp.begin(), tmp.end(), adst);
-                    newtop.addRel(*this, std::move(newa), e.key);
+                    newtop.addRel(mem, std::move(newa), e.key);
                 }
             }
         }
@@ -355,7 +355,7 @@ void VM::cmd_Select(unsigned param)
     }
 
     newtop.makeAbs();
-    top.clear(*this);
+    top.clear(mem);
     top = std::move(newtop);
 }
 
@@ -408,8 +408,8 @@ void VM::cmd_Concat(unsigned count)
         }
         Var s;
         std::string tmp = os.str();
-        s.setStr(*this, tmp.c_str(), tmp.size());
-        newtop.addRel(*this, std::move(s), key); // FIXME: this assumes keys are always in the same order. do we want to ensure by-name matching if there is a key?
+        s.setStr(mem, tmp.c_str(), tmp.size());
+        newtop.addRel(mem, std::move(s), key); // FIXME: this assumes keys are always in the same order. do we want to ensure by-name matching if there is a key?
     }
     newtop.makeAbs();
     stack.resize(stack.size() - count);
@@ -424,10 +424,10 @@ void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
     const unsigned key = param >> 4;
     const Var::CompareMode cmp = Var::CompareMode(op);
 
-    const VarEntry checklit { VarCRef(*this, &literals[lit]), 0 };
+    const VarEntry checklit { VarCRef(mem, &literals[lit]), 0 };
     StackFrame& top = _topframe();
 
-    const char* keystr = literals[key].asCString(*this);
+    const char* keystr = literals[key].asCString(mem);
     VarRefs oldrefs;
     std::swap(oldrefs, top.refs);
     const size_t N = oldrefs.size();
@@ -462,8 +462,8 @@ void VM::cmd_Transform(unsigned param)
     stack.pop_back();
     stack.emplace_back();
     // now there's a shiny new top, fill it
-    s_transforms[param].func(*this, stack.back(), oldfrm);
-    oldfrm.clear(*this);
+    s_transforms[param].func(mem, stack.back(), oldfrm);
+    oldfrm.clear(mem);
 }
 
 void VM::push(VarCRef v)
@@ -494,7 +494,7 @@ bool VM::exec(size_t ip)
                 cmd_CheckKeyVsSingleLiteral(c.param, c.param2);
                 break;
             case CM_LITERAL:
-                push(VarCRef(*this, &literals[c.param]));
+                push(VarCRef(mem, &literals[c.param]));
                 break;
             case CM_DUP:
             {
@@ -551,7 +551,7 @@ void VM::reset()
 {
     // clear stack
     while(stack.size())
-        _popframe().clear(*this);
+        _popframe().clear(mem);
 
     _base.v = NULL;
     _base.mem = NULL;
@@ -565,15 +565,15 @@ const VarRefs& VM::results() const
 StackFrame *VM::storeTop(StrRef s)
 {
     StackFrame *frm = detachTop();
-    Var& val = evals.map()->getOrCreate(*this, s);
-    val.setPtr(*this, frm);
+    Var& val = evals.map()->getOrCreate(mem, s);
+    val.setPtr(mem, frm);
     return frm;
 }
 
 // alloc new frame and move top to it
 StackFrame* VM::detachTop()
 {
-    void* p = this->Alloc(sizeof(StackFrame));
+    void* p = mem.Alloc(sizeof(StackFrame));
     return _X_PLACEMENT_NEW(p) StackFrame(std::move(_popframe()));
 }
 
@@ -608,7 +608,7 @@ StackFrame* VM::_getVar(StrRef key)
     if(!v)
     {
         printf("Attempt to eval [%s], but does not exist\n",
-            this->getS(key));
+            mem.getS(key));
         return NULL;
     }
     StackFrame* frm = NULL;
@@ -616,20 +616,20 @@ StackFrame* VM::_getVar(StrRef key)
     {
         case Var::TYPE_PTR:
             frm = static_cast<StackFrame*>(v->asPtr());
-            DEBUG_PRINT("Eval [%s] cached, frame refs size = %u\n", this->getS(key), (unsigned)frm->refs.size());
+            DEBUG_PRINT("Eval [%s] cached, frame refs size = %u\n", mem.getS(key), (unsigned)frm->refs.size());
             break;
         case Var::TYPE_UINT:
         {
             size_t ip = *v->asUint();
-            v->clear(*this); // detect self-referencing
-            DEBUG_PRINT("Eval [%s], not stored, exec ip = %u\n", this->getS(key), (unsigned)ip);
+            v->clear(mem); // detect self-referencing
+            DEBUG_PRINT("Eval [%s], not stored, exec ip = %u\n", mem.getS(key), (unsigned)ip);
             frm = _evalVar(key, ip);
-            v->setPtr(*this, frm);
-            DEBUG_PRINT("Eval [%s] done, frame refs size = %u\n", this->getS(key), (unsigned)frm->refs.size());
+            v->setPtr(mem, frm);
+            DEBUG_PRINT("Eval [%s] done, frame refs size = %u\n", mem.getS(key), (unsigned)frm->refs.size());
             break;
         }
         case Var::TYPE_NULL:
-            printf("Eval [%s] not stored and self-referencing, abort\n", this->getS(key));
+            printf("Eval [%s] not stored and self-referencing, abort\n", mem.getS(key));
             break;
         default:
             assert(false);

@@ -39,6 +39,11 @@ bool View::compile(const char *s, VarCRef val)
     return false;
 }
 
+Var View::produceResult(TreeMem& mem, VarCRef root, VarCRef vars)
+{
+    return Var();
+}
+
 bool View::load(VarCRef v)
 {
     if (v.type() != Var::TYPE_MAP)

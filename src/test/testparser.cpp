@@ -123,7 +123,7 @@ void testview()
     vw.load(VarCRef(tree, &viewdata));
     disasm(vw.exe);
 
-    view::VM vm;
+    view::VM vm(tree);
     vm.init(vw.exe, vw.ep.data(), vw.ep.size());
     bool ok = vm.run(tree.root());
     assert(ok);
@@ -133,7 +133,7 @@ void testview()
     printf("VM out: %u vars\n", (unsigned)out.size());
     for (const VarEntry& e : out)
     {
-        printf("[%s]\n", vm.getS(e.key));
+        printf("[%s]\n", vm.mem.getS(e.key));
         dump(e.ref);
     }
 
@@ -188,7 +188,7 @@ void testexec()
     assert(start);
     disasm(exe);
 
-    view::VM vm;
+    view::VM vm(exm);
     vm.init(exe, NULL, 0);
     vm.run(tree.root());
     const view::VarRefs& out = vm.results();
@@ -196,7 +196,7 @@ void testexec()
     printf("VM out: %u vars\n", (unsigned)out.size());
     for (const VarEntry& e : out)
     {
-        printf("[%s]\n", vm.getS(e.key));
+        printf("[%s]\n", vm.mem.getS(e.key));
         dump(e.ref);
     }
 

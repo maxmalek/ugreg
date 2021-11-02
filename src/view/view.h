@@ -23,6 +23,7 @@ public:
 
 private:
     bool compile(const char* s, VarCRef val);
+    Var produceResult(TreeMem& mem, VarCRef root, VarCRef vars);
 };
 
 } // end namespace view
