@@ -14,6 +14,7 @@ class View
 public:
     View(TreeMem& mem);
     View(View&& o) noexcept;
+    View(const View&) = delete;
     ~View();
 
     bool load(VarCRef v); // load JSON structure describing the view
@@ -23,6 +24,8 @@ public:
 
 private:
     bool compile(const char* s, VarCRef val);
+
+    // The returned result is created using mem
     Var produceResult(TreeMem& mem, VarCRef root, VarCRef vars);
 };
 

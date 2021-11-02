@@ -178,7 +178,7 @@ int main(int argc, char** argv)
     puts("Ready!");
 
     while (!s_quit)
-        sleepMS(1000);
+        sleepMS(200);
 
     srv.stop();
     WebServer::StaticShutdown();

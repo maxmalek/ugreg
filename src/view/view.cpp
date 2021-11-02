@@ -41,7 +41,48 @@ bool View::compile(const char *s, VarCRef val)
 
 Var View::produceResult(TreeMem& mem, VarCRef root, VarCRef vars)
 {
-    return Var();
+    VM vm(mem);
+    vm.init(exe, ep.data(), ep.size());
+
+    if(vars)
+    {
+        const Var::Map *m = vars.v->map();
+        if(!m);
+        {
+            printf("View::produceResult: Passed vars is not map, aborting\n");
+            return Var();
+        }
+
+        for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+        {
+            PoolStr name = vars.mem->getSL(it.key());
+            VarRef v = vm.makeVar(name.s, name.len);
+            *v.v = it.value().clone(*v.mem, *vars.mem);
+        }
+    }
+
+    vm.run(root);
+
+    Var ret;
+    const view::VarRefs& out = vm.results();
+    switch(out.size())
+    {
+        case 0:
+            break; // just keep it null
+        case 1:
+            ret = out[0].ref.clone(mem);
+            break;
+        default: // user didn't pay attention and multiple things were returned
+            // -> make it an array with undefined ordering and hope for the best
+        {
+            size_t n = out.size();
+            Var *a = ret.makeArray(mem, n);
+            for(size_t i = 0; i < n; ++i)
+                a[i] = out[i].ref.clone(mem);
+        }
+    }
+
+    return ret;
 }
 
 bool View::load(VarCRef v)

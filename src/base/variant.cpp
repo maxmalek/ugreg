@@ -1045,6 +1045,11 @@ void VarRef::replace(const VarCRef& o)
     *v = std::move(o.v->clone(*mem, *o.mem));
 }
 
+Var VarRef::clone(TreeMem& dst) const
+{
+    return v->clone(dst, *mem);
+}
+
 VarRef VarRef::at(size_t idx) const
 {
     return VarRef(*mem, v->at(idx));
@@ -1064,6 +1069,12 @@ VarCRef VarCRef::lookup(const char* key) const
 {
     return VarCRef(*mem, v->lookup(mem->lookup(key, strlen(key))));
 }
+
+Var VarCRef::clone(TreeMem& dst) const
+{
+    return v->clone(dst, *mem);
+}
+
 
 Var::CompareResult VarCRef::compare(Var::CompareMode cmp, const VarCRef& o)
 {

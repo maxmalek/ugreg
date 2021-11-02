@@ -412,6 +412,8 @@ public:
     // Replaces own contents with o's contents.
     void replace(const VarCRef& o);
 
+    Var clone(TreeMem& dst) const;
+
     // TODO: op=(copy) and op=(move) ?
     // TODO: also optimize related code paths for this->mem == o.mem
 
@@ -457,6 +459,7 @@ public:
 
     VarCRef at(size_t idx) const;          // does not convert to array
     VarCRef lookup(const char *key) const; // does not convert to map
+    Var clone(TreeMem& dst) const;
 
     Var::CompareResult compare(Var::CompareMode cmp, const VarCRef& o);
 };
