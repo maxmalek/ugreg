@@ -17,16 +17,19 @@ public:
     View(const View&) = delete;
     ~View();
 
-    bool load(VarCRef v); // load JSON structure describing the view
+    bool load(VarCRef v); // load JSON structure describing the view, or a single string if no variables/temporaries are needed, or an array of strings
 
     Executable exe;
     std::vector<EntryPoint> ep;
 
 private:
-    bool compile(const char* s, VarCRef val);
+    std::vector<size_t> starts;
+
+    size_t compile(const char* s, VarCRef val); // returns 0 on error
 
     // The returned result is created using mem
     Var produceResult(TreeMem& mem, VarCRef root, VarCRef vars);
+    Var _produceResult(TreeMem& mem);
 };
 
 } // end namespace view

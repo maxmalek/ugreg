@@ -124,12 +124,12 @@ VarRef VM::makeVar(const char* name, size_t len)
     return VarRef(mem, &sf->store[0]);
 }
 
-bool VM::run(VarCRef v)
+bool VM::run(VarCRef v, size_t start /* = 1 */)
 {
     reset();
     _base = v;
     push(v);
-    return exec(1);
+    return exec(start);
 }
 
 // replace all maps on top with a subkey of each

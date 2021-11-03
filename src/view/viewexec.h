@@ -103,7 +103,7 @@ public:
     void init(const Executable& ex, const EntryPoint* eps, size_t numep);
     VarRef makeVar(const char *name, size_t len); // caller must fill returned ref
 
-    bool run(VarCRef v); // pass root of tree to operate on
+    bool run(VarCRef v, size_t start = 1); // pass root of tree to operate on
     const VarRefs& results() const; // only valid until reset() or re-run
 
     TreeMem& mem;
