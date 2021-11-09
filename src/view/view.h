@@ -23,13 +23,13 @@ public:
     std::vector<EntryPoint> ep;
 
 private:
-    std::vector<size_t> starts;
-
+    Var resultTemplate;
     size_t compile(const char* s, VarCRef val); // returns 0 on error
 
-    // The returned result is created using mem
-    Var produceResult(TreeMem& mem, VarCRef root, VarCRef vars);
-    Var _produceResult(TreeMem& mem);
+    // The returned result is created using dst
+    Var produceResult(TreeMem& dat, VarCRef root, VarCRef vars);
+
+    Var _loadTemplate(VarCRef in);
 };
 
 } // end namespace view

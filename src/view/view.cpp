@@ -5,14 +5,12 @@ namespace view {
 
 View::View(TreeMem& mem)
     : exe(mem)
-    , start(0)
 {
 }
 
 View::View(View&& o) noexcept
     : exe(std::move(o.exe))
     , ep(std::move(o.ep))
-    , start(0)
 {
 }
 
@@ -41,9 +39,9 @@ size_t View::compile(const char *s, VarCRef val)
     return 0;
 }
 
-Var View::produceResult(TreeMem& mem, VarCRef root, VarCRef vars)
+Var View::produceResult(TreeMem& dst, VarCRef root, VarCRef vars)
 {
-    VM vm(mem);
+    VM vm(dst);
     vm.init(exe, ep.data(), ep.size());
 
     if(vars)
@@ -90,55 +88,64 @@ Var View::produceResult(TreeMem& mem, VarCRef root, VarCRef vars)
     return ret;
 }
 
+Var View::_loadTemplate(VarCRef in)
+{
+    return Var();
+}
+
 bool View::load(VarCRef v)
 {
-    bool ok = true;
+    VarCRef result;
 
     switch(v.type())
     {
         case Var::TYPE_MAP:
         {
             const Var::Map *m = v.v->map();
+            VarCRef result;
 
             for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             {
+                size_t idx = 0;
                 const char *key = v.mem->getS(it.key());
-                size_t idx = compile(key, VarCRef(v.mem, &it.value()));
+                // A key named "result" is the final product, everything else
+                // are temporary variables
                 if (!strcmp(key, "result"))
-                    start = idx;
-                ok = ok && idx;
+                    result = VarCRef(v.mem, &it.value());
+                else
+                {
+                    idx = compile(key, VarCRef(v.mem, &it.value()));
+                    if (!idx)
+                    {
+                        printf("Failed to compile key '%s'\n", key);
+                        return false;
+                    }
+                }
+
+
             }
         }
         break;
 
-        case Var::TYPE_ARRAY:
-        {
-
-        }
-        break;
-
-        case Var::TYPE_STRING:
-            start = compile("result", v);
-            break;
-
         default:
-            printf("View dev is not map or string, this is invalid\n");
-            return false;
+            result = v;
+            break;
     }
 
-    if(!start)
+    if (result)
+        _loadTemplate(result);
+    else
     {
-        printf("View def is a map but 'result' key does not exist\n");
+        printf("Not sure what the result of the view is supposed to be. Either make the result a map with a 'result' key if you need variables, or any other value to use that.\n"\n");
         return false;
     }
-
 
     // TODO: check up-front that all referenced variables are there
     // also: add extra key: "external": ["a", ...] to make
     // variables that must be passed into the query (?a=...) explicit
     // so we can bail early when the client didn't supply one
 
-    return ok;
+    return true;
 }
 
 } // end namespace view
