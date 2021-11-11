@@ -34,6 +34,18 @@ set(src
     env.h
     pathiter.cpp
     pathiter.h
+    viewparser.cpp
+    viewparser.h
+    viewexec.cpp
+    viewexec.h
+    view.cpp
+    view.h
+    viewmgr.cpp
+    viewmgr.h
+    viewxform.cpp
+    viewxform.h
+    fetcher.cpp
+    fetcher.h
 )
 
 add_library(base ${src})

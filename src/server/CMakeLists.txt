@@ -18,9 +18,7 @@ set(src
     handler_view.h
     handler_debug.cpp
     handler_debug.h
-    fetcher.cpp
-    fetcher.h
 )
 
 add_executable(ugreg ${src})
-target_link_libraries(ugreg base viewengine alldeps)
+target_link_libraries(ugreg base alldeps)

@@ -4,15 +4,17 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include "view/viewexec.h"
-#include "view/viewparser.h"
+#include "viewexec.h"
+#include "viewparser.h"
 #include "pathiter.h"
 #include "util.h"
 #include "subproc.h"
 #include "datatree.h"
 
-Fetcher::Fetcher()
-    : _useEnv(false)
+#include "json_out.h"
+
+Fetcher::Fetcher(TreeMem& mem)
+    : _useEnv(false), pathparts(0), validity(0), fetchsingle(mem), fetchall(mem)
 {
 }
 
@@ -20,12 +22,52 @@ Fetcher::~Fetcher()
 {
 }
 
+Fetcher* Fetcher::New(TreeMem& mem, VarCRef config)
+{
+    Fetcher *f = (Fetcher*)mem.Alloc(sizeof(Fetcher));
+    if(f && !f->init(config))
+    {
+        f->destroy();
+        f = NULL;
+    }
+    return f;
+}
+
+void Fetcher::destroy()
+{
+    TreeMem * const pmem = fetchsingle.exe.mem; // this happens to store our mem
+    this->~Fetcher();
+    pmem->Free(this, sizeof(*this));
+}
+
 bool Fetcher::init(VarCRef config)
 {
-    _prepareEnv(config);
+    if(VarCRef validityref = config.lookup("validity"))
+    {
+        if(const char *s = validityref.asCString())
+        {
+            if(!strToDurationMS_NN(&validity, s).ok())
+            {
+                printf("validity: invalid duration: '%s'\n", s);
+                return false;
+            }
+        }
+        else
+        {
+            printf("validity: expected duration string, got %s", validityref.typestr());
+            return false;
+        }
 
+    }
+
+    _prepareEnv(config);
+     
     if(!_doStartupCheck(config))
+    {
+        printf("FATAL: Startup check failed. Exiting.\n");
+        exit(1);
         return false;
+    }
 
     return true;
 }
@@ -58,10 +100,10 @@ bool Fetcher::_doStartupCheck(VarCRef config) const
 
 
         int ret = 0;
-        int ok = subprocess_join(&proc, &ret);
+        int err = subprocess_join(&proc, &ret);
         subprocess_destroy(&proc);
 
-        if (!ok)
+        if (err)
         {
             printf("Fetcher init (startup-check): Failed subprocess_join()\n");
             return false;
@@ -94,6 +136,7 @@ void Fetcher::_prepareEnv(VarCRef config)
     VarCRef env = config.lookup("env");
 
     _env.clear();
+    // FIXME: this needs better rules when to use env
     _useEnv = env && env.type() == Var::TYPE_MAP && !env.v->map()->empty();
     if (_useEnv)
     {
@@ -106,7 +149,7 @@ void Fetcher::_prepareEnv(VarCRef config)
             if (const char* s = it.value().asCString(*env.mem))
             {
                 std::ostringstream os;
-                os << it.key() << '=' << s;
+                os << env.mem->getS(it.key()) << '=' << s;
                 _env.push_back(os.str());
             }
     }
@@ -126,31 +169,43 @@ bool Fetcher::_fetch(TreeMem& dst, VarCRef launch, const char* path) const
     {
         ++num;
         const char *ns = sizetostr_unsafe(buf, sizeof(buf), num);
+        printf("$%s = %s\n", ns, it.value().s); 
         vm.makeVar(ns, strlen(ns)) = it.value().s;
     }
 
-    //Var out = vm.fillTemplate(vm, launch);
-    /*
-    const char *procname = NULL;
-    if(Var *a = out.array())
-        procname = a[0].asCString(vm);
+    bool ok = false;
+    Var params = fetchsingle.produceResult(dst, launch, VarCRef()); // FIXME
 
+    // params should be an array of strings at this point. This will fail if it's not.
     subprocess_s proc;
-    if(!_createProcess(&proc, VarCRef(vm, &out), subprocess_option_enable_async | subprocess_option_no_window))
-        return false;
+    ok =_createProcess(&proc, VarCRef(mem, &params), subprocess_option_enable_async | subprocess_option_no_window);
+    if(ok)
+    {
+        const char *procname = NULL;
+        if(Var *a = params.array())
+            procname = a[0].asCString(mem);
 
-    DataTree tree;
-    bool ok = loadJsonFromProcess(&tree, &proc, procname);
+        DataTree tree;
+        bool ok = loadJsonFromProcess(&tree, &proc, procname);
 
-    subprocess_destroy(&proc);
-    */
+        subprocess_destroy(&proc);
+
+        printf("FETCH RESULT:\n-------\n%s\n---------\n", dumpjson(tree.root(), true).c_str());
+    }
+    else
+        printf("launch failed!\n");
+
+    params.clear(dst);
+
+
+    
     // TODO MERGE
 
     /*{
         std::unique_lock
     }*/
 
-    return true;
+    return ok;
 }
 
 bool Fetcher::_createProcess(subprocess_s *proc, VarCRef launch, int options) const
@@ -161,7 +216,12 @@ bool Fetcher::_createProcess(subprocess_s *proc, VarCRef launch, int options) co
     const size_t n = launch.size();
     const char** pcmd = (const char**)alloca((n + 1) * sizeof(const char*));
     for (size_t i = 0; i < n; ++i)
-        pcmd[i] = a[i].asCString(*launch.mem);
+    {
+        const char *s = a[i].asCString(*launch.mem);
+        if(!s)
+            return false;
+        pcmd[i] = s;
+    }
     pcmd[n] = NULL;
 
     options |= subprocess_option_no_window;
