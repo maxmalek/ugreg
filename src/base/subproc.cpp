@@ -26,31 +26,29 @@ static void procfail(ProcessReadStream& ps, const char *procname)
 
 bool createProcess(subprocess_s* proc, const char** args, const char** env, int options)
 {
-    // Aside from .exe, .bat is the only natively executable file on windows.
-    // So to ease testing, we support using .bat stubs to start the actual scripts.
-#ifdef _WIN32
-    const char* const oldarg0 = args[0];
-    std::string arg0 = args[0];
-    arg0 += ".bat";
-    args[0] = arg0.c_str();
-#endif
-
     if (!env)
         options |= subprocess_option_inherit_environment;
 
     int err = subprocess_create_ex(args, options, env, proc);
 
 #ifdef _WIN32
-    args[0] = oldarg0;
+    if(err)
+    {
+        // Aside from .exe, .bat is the only natively executable file on windows.
+        // So to ease testing, we support using .bat stubs to start the actual scripts.
+        const char* const oldarg0 = args[0];
+        std::string arg0 = args[0];
+        arg0 += ".bat";
+        args[0] = arg0.c_str();
+        err = subprocess_create_ex(args, options, env, proc);
+        args[0] = oldarg0;
+    }
 #endif
 
     if (err)
-    {
         printf("Failed to create process [%s]\n", args[0]);
-        return false;
-    }
 
-    return true;
+    return err == 0;
 }
 
 bool loadJsonFromProcess(DataTree *tree, const char** args, const char **env)
