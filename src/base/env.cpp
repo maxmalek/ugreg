@@ -38,9 +38,9 @@ std::vector<std::string> enumerateEnvVars()
             e, -1, &tmp[0], tmp.size(), 0, NULL);
 
         assert(wc > 0 && size_t(wc) == tmp.size());
-
-        ret.push_back(&tmp[0]);
-        e += ret.back().length() + 1; // skip over \0
+        if(tmp[0] != '=') // some weird entries begin with '=', skip those
+            ret.push_back(&tmp[0]);
+        e += tmp.size(); // \0 is included, skip over \0 as well
     }
     ::FreeEnvironmentStringsW(env);
 #else
