@@ -1,33 +1,22 @@
 {"fetch":{
     // query /ldap/<username>/...
-    "ldap-users": { // some unique name
-        "where": "/ldap", // where in the tree the fetcher is registered
+    "/ldap": { // where the fetcher is registered; also serves as unique name
         "pathparts": 1,   // how many parts of the path are forwarded to the script, from the right
                           // ie. if we query "a/b/c" and pathparts=2, then the script will see "b/c".
         "env": {   // variables for script execution. will be available as env vars
             // example config; instead of changing this consider overriding this
             // with a secret config loaded after this one
-            "BIND_DN": "uid=readonly,dc=ipa,dc=example,dc=com",
-            "BIND_PASS": "password",
-            "SEARCH_BASE": "cn=users,dc=ipa,dc=example,dc=com",
-            "SEARCH_HOST": "ldaps://ldap.ipa.example.com",
-            "SEARCH_FILTER": "memberOf=cn=staff",
-            "SEARCH_FIELDS": "cn displayName mail uid",
+            "DN": "uid=readonly,dc=ipa,dc=example,dc=com",
+            "PASS": "password",
+            "BASE": "cn=users,dc=ipa,dc=example,dc=com",
+            "HOST": "ldaps://ldap.ipa.example.com",
+            "FILTER": "memberOf=cn=staff",
+            "FIELDS": "cn displayName mail uid",
         },
-        "startup-check": ["ldap.sh", "--test"], // check to be run at startup whether the endpoint will work
+        "startup-check": ["python", "ldap.py", "--test"], // check to be run at startup whether the endpoint will work
         
-        // launch configs (can use any kind of expression for the params)
-        // $1, $2, ... refer to path parts
-        // $0 is the full query after "where"
-        "fetch-single": ["ldap.sh", "$1" ], // query single element
-        "fetch-all": ["ldap.sh", "--all" ], // query all elements (optional if supported)
+        "fetch-all": ["python", "ldap.sh"], // query all elements (optional if supported)
         "validity": "10s", // upper limit until any retrieved data expire
-        // store under this key after 'where'.
-        // The array must have 'pathparts' entries in total and they all must resolve to strings.
-        // Can use any kind of transform expression here.
-        // '/' refers to the root of the retrieved data.
-        "key": ["/sAMAccountName"],
-        //"value": "/", // (optional) apply a transformation to the value before storing it
         "failcache": "5m" // (optional, time) cache failed keys so we don't try to query the backend again.
     }
 }}
