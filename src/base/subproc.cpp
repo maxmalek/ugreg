@@ -84,7 +84,12 @@ bool loadJsonFromProcess(DataTree* tree, subprocess_s* proc, const char* procnam
     }
 
     int ret = 0;
-    subprocess_join(proc, &ret);
+    int err = subprocess_join(proc, &ret);
+    if(err)
+    {
+        printf("[%s] subprocess_join failed\n", procname);
+        return false;
+    }
     ok = !ret; // if the process reports failure, don't use it even if it's valid json
     printf("[%s] exited with code %d\n", procname, ret);
     if(!ok && subprocess_stderr(proc))
