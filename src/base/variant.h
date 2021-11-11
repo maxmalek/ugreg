@@ -381,6 +381,7 @@ public:
     inline operator const Var* () const { return v; }
 
     Var::Type type() const { return v->type(); }
+    const char* typestr() const { return v->typestr(); }
     bool isNull() const { return v->isNull(); }
     const s64* asInt() const { return v->asInt(); }
     const u64* asUint() const { return v->asUint(); }
@@ -389,6 +390,7 @@ public:
     const double* asFloat() const { return v->asFloat(); };
     bool asBool() const { return v->asBool(); }
     const Var::Range* asRange() const { return v->asRange(); }
+    void* asPtr() const { return v->asPtr(); }
 
     // Returns this, transmuted to a different type. If the type is changed, old values are lost.
     VarRef& makeMap();
@@ -447,6 +449,7 @@ public:
     inline operator const Var* () const { return v; }
 
     Var::Type type() const { return v->type(); }
+    const char* typestr() const { return v->typestr(); }
     size_t size() const { return v->size(); }
     bool isNull() const { return v->isNull(); }
     const s64* asInt() const { return v->asInt(); }
@@ -456,6 +459,7 @@ public:
     const double* asFloat() const { return v->asFloat(); };
     bool asBool() const { return v->asBool(); }
     const Var::Range *asRange() const { return v->asRange(); }
+    void *asPtr() const { return v->asPtr(); }
 
     VarCRef at(size_t idx) const;          // does not convert to array
     VarCRef lookup(const char *key) const; // does not convert to map

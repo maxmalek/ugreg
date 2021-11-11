@@ -1,5 +1,5 @@
-#include "view/viewparser.h"
-#include "view/viewexec.h"
+#include "viewparser.h"
+#include "viewexec.h"
 #include "util.h"
 #include <stdio.h>
 #include <assert.h>
@@ -8,7 +8,7 @@
 #include "json_out.h"
 #include "jsonstreamwrapper.h"
 #include "debugfunc.h"
-#include "view/view.h"
+#include "view.h"
 
 using namespace view;
 

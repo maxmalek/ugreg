@@ -16,8 +16,9 @@
 #include "treefunc.h"
 #include "util.h"
 #include "handler_view.h"
-#include "view/viewmgr.h"
+#include "viewmgr.h"
 #include "handler_debug.h"
+#include "fetcher.h"
 
 #ifndef SIGQUIT
 #define SIGQUIT 3
@@ -132,6 +133,18 @@ int main(int argc, char** argv)
 
     // TEST DATA START
     DataTree tree;
+
+    // register fetchers
+    if(VarCRef fetch = cfgtree.subtree("/fetch"))
+        if(const Var::Map *m = fetch.v->map())
+            for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+            {
+                const char *path = fetch.mem->getS(it.key());
+                printf("Init fetcher [%s] ...\n", path);
+                if(Fetcher *f = Fetcher::New(cfgtree, VarCRef(cfgtree, &it.value())))
+                    if(VarRef dst = tree.subtree(path, true))
+                        dst.v->makeMap(tree)->ensureExtra(tree)->fetcher = f;
+            }
 
     InfoHandler hinfo(tree, "/info");
     srv.registerHandler(hinfo);

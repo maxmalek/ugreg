@@ -1,9 +1,9 @@
 #include <string.h>
 #include <sstream>
 #include "handler_view.h"
-#include "view/viewmgr.h"
-#include "view/viewexec.h"
-#include "view/viewparser.h"
+#include "viewmgr.h"
+#include "viewexec.h"
+#include "viewparser.h"
 #include "civetweb/civetweb.h"
 #include "json_out.h"
 #include "debugfunc.h"

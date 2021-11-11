@@ -11,6 +11,7 @@
 #include "util.h"
 #include "accessor.h"
 #include "datatree.h"
+#include "fetcher.h"
 
 const Var Var::Null;
 
@@ -813,11 +814,14 @@ _VarMap::_VarMap(_VarMap&& o) noexcept
 _VarMap::~_VarMap()
 {
     assert(_storage.empty()); // Same thing as in ~Var()
+    assert(!_extra);
 }
 
 void _VarMap::destroy(TreeMem& mem)
 {
     clear(mem);
+    if(_extra)
+        _DeleteExtra(mem, _extra);
     this->~_VarMap();
     mem.Free(this, sizeof(*this));
 }
@@ -1089,12 +1093,14 @@ _VarExtra* _VarExtra::clone(TreeMem& mem, _VarMap& m)
 }
 
 _VarExtra::_VarExtra(_VarMap& m, TreeMem& mem)
-    : expiryTS(0), mymap(m), mem(mem)
+    : expiryTS(0), mymap(m), mem(mem), fetcher(NULL)
 {
 }
 
 _VarExtra::~_VarExtra()
 {
+    if(fetcher)
+        fetcher->destroy();
 }
 
 bool _VarExtra::check(const Accessor& a) const
