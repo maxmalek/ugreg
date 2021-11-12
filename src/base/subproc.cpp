@@ -51,23 +51,23 @@ bool createProcess(subprocess_s* proc, const char** args, const char** env, int 
     return err == 0;
 }
 
-bool loadJsonFromProcess(DataTree *tree, const char** args, const char **env)
+bool loadJsonFromProcess(VarRef root, const char** args, const char **env)
 {
     subprocess_s proc;
     if(!createProcess(&proc, args, env, subprocess_option_enable_async | subprocess_option_no_window))
         return false;
-    
-    bool ok = loadJsonFromProcess(tree, &proc, args[0]);
+
+    bool ok = loadJsonFromProcess(root, &proc, args[0]);
     subprocess_destroy(&proc);
     return ok;
 }
 
-bool loadJsonFromProcess(DataTree* tree, subprocess_s* proc, const char* procname)
+bool loadJsonFromProcess(VarRef root, subprocess_s* proc, const char* procname)
 {
     char buf[12*1024];
     ProcessReadStream ps(proc, ProcessReadStream::DONTTOUCH, &buf[0], sizeof(buf));
 
-    bool ok = loadJsonDestructive(tree->root(), ps);
+    bool ok = loadJsonDestructive(root, ps);
 
     if(ok)
     {
@@ -125,9 +125,9 @@ DataTree * loadJsonFromProcessSync(AsyncLaunchConfig&& cfg)
     for(i = 0; i < cfg.args.size(); ++i)
         args[i] = cfg.args[i].c_str();
     args[i] = NULL; // terminator
-    
+
     DataTree *tree = new DataTree;
-    bool ok = loadJsonFromProcess(tree, args, NULL);
+    bool ok = loadJsonFromProcess(tree->root(), args, NULL);
     if(!ok)
     {
         delete tree;

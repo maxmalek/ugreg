@@ -13,6 +13,7 @@ public:
     ~PathIter();
 
     PoolStr value() const { return _cur; }
+    const char* remain() const { return _cur.s + _cur.len; }
     bool hasNext() const { return !!*_cur.s; }
 
     PathIter& operator++();

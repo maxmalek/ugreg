@@ -335,7 +335,7 @@ public:
     u64 getExpiryTime() const { return _extra ? _extra->expiryTS : 0; }
 
     bool check(const Accessor& a) const;
-    void ensureData(u64 now) const;
+    //void ensureData(u64 now) const;
 
 private:
     _VarMap(const _VarMap&) = delete;

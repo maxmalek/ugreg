@@ -7,6 +7,7 @@
 #include "civetweb/civetweb.h"
 #include "json_out.h"
 #include "debugfunc.h"
+#include "pathiter.h"
 
 ViewHandler::ViewHandler(const view::Mgr& mgr, const DataTree& tree, const char* prefix, const ServerConfig& cfg)
     : RequestHandler(prefix)
@@ -28,18 +29,16 @@ int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
     TreeMem work;
     view::VM vm(work);
 
-    const char *qbeg = rq.query.c_str();
-    if(*qbeg == '/')
-        ++qbeg;
-    const char *qend = strchr(qbeg, '/');
-    if(!qend)
-        qend = qbeg + rq.query.length();
+    PathIter it(rq.query.c_str());
+    PoolStr part = it.value();
 
-    if(!_vmgr.initVM(vm, qbeg, qend - qbeg - 1))
+    if(!_vmgr.initVM(vm, part.s, part.len))
     {
         mg_send_http_error(conn, 404, "");
         return 404;
     }
+
+    // TODO: use it.remain() and make that acessible in the view
 
     bool ok;
     const char *err = "Error executing view";

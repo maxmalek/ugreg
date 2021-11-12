@@ -8,6 +8,14 @@
 
 class Accessor;
 
+// bitmask
+enum SubtreeQueryFlags
+{
+    SQ_DEFAULT   = 0x00,
+    SQ_CREATE    = 0x01,
+    SQ_NOFETCH   = 0x02, // fetching is on by default
+};
+
 // Root of tree with memory pool
 class DataTree : public TreeMem
 {
@@ -28,7 +36,7 @@ public:
     // An empty string ("") returns the root, a valid json pointer ("/...") returns that,
     // and an invalid JSON pointer (one that starts not with '/') returns an invalid ref.
     // Don't forget to check if the returned ref is valid before accessing it.
-    VarRef  subtree(const char *path, bool create = false);
+    VarRef  subtree(const char *path, SubtreeQueryFlags flags = SQ_DEFAULT);
     VarCRef subtree(const char* path) const;
 
     // Maintenance

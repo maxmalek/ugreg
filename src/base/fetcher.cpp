@@ -4,8 +4,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include "viewexec.h"
-#include "viewparser.h"
 #include "pathiter.h"
 #include "util.h"
 #include "subproc.h"
@@ -24,7 +22,10 @@ Fetcher::~Fetcher()
 
 Fetcher* Fetcher::New(TreeMem& mem, VarCRef config)
 {
-    Fetcher *f = (Fetcher*)mem.Alloc(sizeof(Fetcher));
+    void *p = mem.Alloc(sizeof(Fetcher));
+    if (!p)
+        return NULL;
+    Fetcher* f = _X_PLACEMENT_NEW(p) Fetcher(mem);
     if(f && !f->init(config))
     {
         f->destroy();
@@ -61,7 +62,7 @@ bool Fetcher::init(VarCRef config)
     }
 
     _prepareEnv(config);
-     
+
     if(!_doStartupCheck(config))
     {
         printf("FATAL: Startup check failed. Exiting.\n");
@@ -69,6 +70,7 @@ bool Fetcher::init(VarCRef config)
         return false;
     }
 
+    _config = config;
     return true;
 }
 
@@ -121,14 +123,14 @@ bool Fetcher::_doStartupCheck(VarCRef config) const
     return true;
 }
 
-Var Fetcher::fetchOne(TreeMem& mem, VarCRef spec) const
+bool Fetcher::fetchOne(VarRef dst, const char *suffix) const
 {
-    return Var();
+    return false; // FIXME
 }
 
-Var Fetcher::fetchAll(TreeMem& mem, VarCRef spec) const
+bool Fetcher::fetchAll(VarRef dst, const char *suffix) const
 {
-    return Var();
+    return _fetch(dst, fetchall, suffix);
 }
 
 void Fetcher::_prepareEnv(VarCRef config)
@@ -155,12 +157,16 @@ void Fetcher::_prepareEnv(VarCRef config)
     }
 }
 
-bool Fetcher::_fetch(TreeMem& dst, VarCRef launch, const char* path) const
+bool Fetcher::_fetch(VarRef dst, const view::View& vw, const char* path) const
 {
-    TreeMem mem;
-    view::VM vm(mem);
+    TreeMem tmpmem;
 
-    vm.makeVar("0", 1) = path; // $0 is the full path
+    bool ok = false;
+
+    Var vars;
+    VarRef vmvars(tmpmem, &vars);
+
+    vmvars["0"] = path; // $0 is the full path
 
     char buf[32];
     size_t num = 0;
@@ -169,41 +175,32 @@ bool Fetcher::_fetch(TreeMem& dst, VarCRef launch, const char* path) const
     {
         ++num;
         const char *ns = sizetostr_unsafe(buf, sizeof(buf), num);
-        printf("$%s = %s\n", ns, it.value().s); 
-        vm.makeVar(ns, strlen(ns)) = it.value().s;
+        printf("$%s = %s\n", ns, it.value().s);
+        vmvars[ns] = it.value().s;
     }
 
-    bool ok = false;
-    Var params = fetchsingle.produceResult(dst, launch, VarCRef()); // FIXME
+    Var params = vw.produceResult(tmpmem, _config, vmvars);
+    printf("FETCH EXEC: %s", dumpjson(VarCRef(tmpmem, &params)).c_str());
 
     // params should be an array of strings at this point. This will fail if it's not.
     subprocess_s proc;
-    ok =_createProcess(&proc, VarCRef(mem, &params), subprocess_option_enable_async | subprocess_option_no_window);
+    ok =_createProcess(&proc, VarCRef(tmpmem, &params), subprocess_option_enable_async | subprocess_option_no_window);
     if(ok)
     {
         const char *procname = NULL;
         if(Var *a = params.array())
-            procname = a[0].asCString(mem);
+            procname = a[0].asCString(tmpmem);
 
-        DataTree tree;
-        bool ok = loadJsonFromProcess(&tree, &proc, procname);
+        ok = loadJsonFromProcess(dst, &proc, procname);
 
         subprocess_destroy(&proc);
 
-        printf("FETCH RESULT:\n-------\n%s\n---------\n", dumpjson(tree.root(), true).c_str());
+        printf("FETCH RESULT:\n-------\n%s\n---------\n", dumpjson(dst, true).c_str());
     }
     else
         printf("launch failed!\n");
 
-    params.clear(dst);
-
-
-    
-    // TODO MERGE
-
-    /*{
-        std::unique_lock
-    }*/
+    params.clear(tmpmem);
 
     return ok;
 }

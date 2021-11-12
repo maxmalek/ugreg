@@ -46,7 +46,7 @@ static void finalizeAndMerge(TreeMergeResult& res, DataTree& dst, DataTree& t, c
     { // BEGIN WRITE LOCK
         std::unique_lock<std::shared_mutex> lock(dst.mutex);
         printf("Begin merge into [%s], flags = %u\n", where.c_str(), merge);
-        if (VarRef sub = dst.subtree(where.c_str(), true))
+        if (VarRef sub = dst.subtree(where.c_str(), SQ_CREATE))
             res.ok = sub.merge(t.root(), merge);
     } // END WRITE LOCK
 }

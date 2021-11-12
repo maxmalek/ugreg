@@ -14,8 +14,8 @@ public:
     static Fetcher *New(TreeMem& mem, VarCRef config);
     void destroy();
 
-    Var fetchOne(TreeMem& mem, VarCRef spec) const;
-    Var fetchAll(TreeMem& mem, VarCRef spec) const;
+    bool fetchOne(VarRef dst, const char *suffix) const;
+    bool fetchAll(VarRef dst, const char *suffix) const;
 
 private:
     Fetcher(TreeMem& mem);
@@ -24,10 +24,11 @@ private:
 
     void _prepareEnv(VarCRef config);
     bool _doStartupCheck(VarCRef config) const;
-    bool _fetch(TreeMem& dst, VarCRef launch, const char *path) const;
+    bool _fetch(VarRef dst, const view::View& vw, const char *path) const;
     bool _createProcess(subprocess_s *proc, VarCRef launch, int options) const;
 
     bool _useEnv;
+    VarCRef _config; // references the original config. assumed not to change afterwards.
     size_t pathparts; // TODO: use
     u64 validity; // TODO: use
     std::vector<std::string> _env;

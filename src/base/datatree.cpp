@@ -4,13 +4,14 @@
 #include "util.h"
 #include "treeiter.h"
 #include "pathiter.h"
+#include "fetcher.h"
 
 
 // Const-accessors -- safe to cast the const away since walking the tree doesn't change it
 
 VarCRef DataTree::subtree(const char *path) const
 {
-    return VarCRef(const_cast<DataTree*>(this)->subtree(path, false));
+    return VarCRef(const_cast<DataTree*>(this)->subtree(path));
 }
 
 
@@ -33,21 +34,23 @@ VarCRef DataTree::root() const
     return VarCRef(*this, &_root);
 }
 
-VarRef DataTree::subtree(const char* path, bool create)
+VarRef DataTree::subtree(const char* path, SubtreeQueryFlags flags)
 {
     Var* p = &_root;
     if(!*path)
         return VarRef(*this, p);
 
     assert(*path == '/');
+    Var::Extra* lastExtra = NULL;
 
-    for(PathIter it(path); p && it.hasNext(); ++it)
+    PathIter it(path);
+    for(; p && it.hasNext(); ++it)
     {
         PoolStr ps = it.value();
         switch(p->type())
         {
             default:
-                if(!create)
+                if(!(flags & SQ_CREATE))
                 {
                     p = NULL;
                     break; // thing isn't container
@@ -59,9 +62,11 @@ VarRef DataTree::subtree(const char* path, bool create)
             {
                 StrRef ref = this->lookup(ps.s, ps.len);
                 Var *nextp = p->lookup(ref);
-                if(create && !nextp)
+                if((flags & SQ_CREATE) && !nextp)
                     nextp = &p->map_unsafe()->putKey(*this, ps.s, ps.len);
                 p = nextp;
+                if (p)
+                    lastExtra = p->getExtra();
                 break;
             }
             break;
@@ -78,13 +83,22 @@ VarRef DataTree::subtree(const char* path, bool create)
                     break;
                 }
                 Var *nextp = p->at(idx);
-                if(create && !nextp)
+                if((flags & SQ_CREATE) && !nextp)
                     if(size_t newsize = idx + 1) // overflow check
                         nextp = &p->makeArray(*this, newsize)[idx];
                 p = nextp;
             }
             break;
         }
+    }
+
+    if (!p && !(flags & SQ_NOFETCH) && lastExtra)
+    {
+        Fetcher* f = lastExtra->fetcher;
+        Var tmp;
+        f->fetchAll(VarRef(this, &tmp), it.remain());
+        tmp.clear(*this);
+        // FIXME: make sure this works
     }
 
     return VarRef(*this, p);

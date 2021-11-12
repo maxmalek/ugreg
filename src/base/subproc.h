@@ -1,6 +1,7 @@
 #pragma once
 
 #include "jsonstreamwrapper.h"
+#include "variant.h"
 
 #include <future>
 #include <vector>
@@ -10,8 +11,8 @@ class DataTree;
 
 // args[0] is the executable, args[1...] the params. args[] is terminated by a NULL entry.
 // output from process is parsed into json tree
-bool loadJsonFromProcess(DataTree *tree, const char **args, const char **env, int options);
-bool loadJsonFromProcess(DataTree *tree, subprocess_s *proc, const char *procname);
+bool loadJsonFromProcess(VarRef root, const char **args, const char **env, int options);
+bool loadJsonFromProcess(VarRef root, subprocess_s *proc, const char *procname);
 
 bool createProcess(subprocess_s *proc, const char** args, const char** env, int options);
 
