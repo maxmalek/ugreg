@@ -106,7 +106,7 @@ Var View::produceResult(TreeMem& dst, VarCRef root, VarCRef vars) const
     if(vars)
     {
         const Var::Map *m = vars.v->map();
-        if(!m);
+        if(!m)
         {
             printf("View::produceResult: Passed vars is not map, aborting\n");
             return Var();
