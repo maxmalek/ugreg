@@ -12,7 +12,8 @@
 #include "json_out.h"
 
 Fetcher::Fetcher()
-    : _useEnv(false), validity(0), fetchsingle(*this), fetchall(*this)
+    : _useEnv(false), validity(0)
+    , fetchsingle(*this), fetchall(*this), postall(*this)
 {
 }
 
@@ -70,6 +71,9 @@ bool Fetcher::init(VarCRef config)
         return false;
     
     if(!_prepareView(fetchsingle, config, "fetch-single"))
+        return false;
+
+    if (!_prepareView(postall, config, "post-all"))
         return false;
 
     _config = config;
@@ -151,7 +155,24 @@ Var Fetcher::fetchOne(const char *suffix, size_t len)
 Var Fetcher::fetchAll()
 {
     alldata.clear(*this);
-    return _fetch(fetchall, NULL, 0);
+    Var ret = _fetch(fetchall, NULL, 0);
+
+    if(postall.exe.cmds.size())
+    {
+        Var newret = postall.produceResult(*this, VarCRef(this, &ret), _config);
+        if(newret.type() != Var::TYPE_MAP)
+            printf("Fetcher::fetchAll: Was %s before postproc, is now %s", ret.typestr(), newret.typestr());
+
+        ret.clear(*this);
+        ret = std::move(newret);
+    }
+
+    if(!ret.isNull() && ret.type() != Var::TYPE_MAP)
+    {
+        printf("Fetcher::fetchAll: Expected map but got %s. This is an error.\n", ret.typestr());
+        ret.clear(*this);
+    }
+    return ret;
 }
 
 void Fetcher::_prepareEnv(VarCRef config)
@@ -220,7 +241,7 @@ Var Fetcher::_fetch(const view::View& vw, const char* path, size_t len)
     }
 
     Var params = vw.produceResult(*this, _config, vmvars);
-    printf("FETCH EXEC (path: %s): %s", path, dumpjson(VarCRef(this, &params)).c_str());
+    printf("FETCH EXEC (path: %s): %s\n", path, dumpjson(VarCRef(this, &params)).c_str());
 
     Var ret;
 
@@ -237,7 +258,7 @@ Var Fetcher::_fetch(const view::View& vw, const char* path, size_t len)
 
         subprocess_destroy(&proc);
 
-        printf("FETCH RESULT:\n-------\n%s\n---------\n", dumpjson(VarCRef(this, &ret), true).c_str());
+        //printf("FETCH RESULT:\n-------\n%s\n---------\n", dumpjson(VarCRef(this, &ret), true).c_str());
     }
     else
     {

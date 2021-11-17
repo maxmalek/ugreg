@@ -23,8 +23,6 @@ View::~View()
 
 size_t View::compile(const char *s, VarCRef val)
 {
-    printf("%s\n", s);
-
     if (const char *code = val.asCString())
     {
         std::string err;

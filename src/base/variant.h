@@ -19,6 +19,12 @@ struct _VarRange
     size_t last; // inclusive
 };
 
+struct LockableMem
+{
+    TreeMem& mem;
+    std::shared_mutex& mutex;
+};
+
 // For merge() operations.
 // If not recursive, simply assign keys and replace the values of keys that are overwritten.
 // If recursive, merge all maps recursively (all other values are replaced);
@@ -225,10 +231,26 @@ public:
     const Var::Map* map_unsafe() const;
           Var* lookup(StrRef s);     // NULL if not map or no such key
     const Var* lookup(StrRef s) const;
-          Var* fetch(TreeMemReadLocker& mr, const char *key, size_t len); // like lookup(), but try to fetch from remote if possible
+          Var* fetch(LockableMem& mr, const char *key, size_t len); // like lookup(), but try to fetch from remote if key doesn't exist
+    bool fetchAll(LockableMem& mr); // fetch stuff and populate. returns true on success. Caller must check canFetch() first.
     const bool canFetch() const;
     Var::Extra *getExtra();
     const Var::Extra *getExtra() const;
+
+    // tree traversal
+    // bitmask
+    enum SubtreeQueryFlags
+    {
+        SQ_DEFAULT = 0x00,
+        SQ_CREATE = 0x01,
+        SQ_NOFETCH = 0x02, // fetching is on by default; this turns it off
+    };
+
+    // /path/to/subnode
+    Var *subtreeOrFetch(LockableMem& mr, const char *path, SubtreeQueryFlags qf = SQ_DEFAULT);
+    
+    // like subtree(..., SQ_NOFETCH)
+    const Var *subtreeConst(const TreeMem& mem, const char *path) const;
 
     // instantiate from types
     inline Var(std::nullptr_t) : Var() {}
@@ -313,7 +335,8 @@ public:
     Var& getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
     Var* get(StrRef key);
     const Var* get(StrRef key) const;
-    Var *fetch(TreeMemReadLocker& mr, const char *key, size_t len);
+    Var *fetch(LockableMem& mr, const char *key, size_t len); // always fetch
+    bool fetchAll(LockableMem& mr);                           // always fetch and replace own data
 
     Var& putKey(TreeMem& mem, const char* key, size_t len);
 

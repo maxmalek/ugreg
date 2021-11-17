@@ -12,6 +12,7 @@
 #include "accessor.h"
 #include "datatree.h"
 #include "fetcher.h"
+#include "pathiter.h"
 
 const Var Var::Null;
 
@@ -422,9 +423,14 @@ const Var* Var::lookup(StrRef k) const
     return _topbits() == BITS_MAP ? u.m->get(k) : NULL;
 }
 
-Var* Var::fetch(TreeMemReadLocker& mr, const char *key, size_t len)
+Var* Var::fetch(LockableMem& mr, const char *key, size_t len)
 {
     return _topbits() == BITS_MAP ? u.m->fetch(mr, key, len) : NULL;
+}
+
+bool Var::fetchAll(LockableMem& mr)
+{
+    return _topbits() == BITS_MAP ? u.m->fetchAll(mr) : false;
 }
 
 Var::Type Var::type() const
@@ -796,6 +802,87 @@ const bool Var::canFetch() const
     return x && x->fetcher;
 }
 
+Var* Var::subtreeOrFetch(LockableMem& mr, const char* path, SubtreeQueryFlags qf)
+{
+    Var* p = this;
+    if (!*path)
+        return p;
+
+    assert(*path == '/');
+
+    PathIter it(path);
+    for (; p && it.hasNext(); ++it)
+    {
+        PoolStr ps = it.value();
+        switch (p->type())
+        {
+        default:
+            if (!(qf & SQ_CREATE))
+            {
+                p = NULL;
+                break; // thing isn't container
+            }
+            // it's not a map, make it one
+            p->makeMap(mr.mem);
+            [[fallthrough]];
+        case Var::TYPE_MAP:
+        {
+            StrRef ref = mr.mem.lookup(ps.s, ps.len);
+            Var* nextp = p->lookup(ref);
+            if (!nextp)
+            {
+                if (!(qf & SQ_NOFETCH) && p->canFetch())
+                    nextp = p->fetch(mr, ps.s, ps.len);
+                if (!nextp && (qf & SQ_CREATE))
+                    nextp = &p->map_unsafe()->putKey(mr.mem, ps.s, ps.len);
+            }
+
+            p = nextp;
+            break;
+        }
+        break;
+
+        case Var::TYPE_ARRAY:
+        {
+            // try looking up using an integer
+            size_t idx;
+            NumConvertResult cvt = strtosizeNN(&idx, ps.s, ps.len);
+            // In case not all chars were consumed, it's an invalid key
+            if (!cvt.used || cvt.overflow || cvt.used != ps.len)
+            {
+                p = NULL;
+                break;
+            }
+            Var* nextp = p->at(idx);
+            if ((qf & SQ_CREATE) && !nextp)
+                if (size_t newsize = idx + 1) // overflow check
+                    nextp = &p->makeArray(mr.mem, newsize)[idx];
+            p = nextp;
+        }
+        break;
+        }
+    }
+
+    // if we end up returning a fetching endpoint, just fetch everything
+    // TODO: this doesn't have to be done here.
+    // It would suffice to:
+    // - fetchAll() in begin()
+    // - fetch(key) in a lookup
+    // But not sure how to handle this properly since the tree would need to be write-locked at that point
+    // and making sure both operations don't modify the tree makes sense and is probably for the better.
+    if (!(qf & SQ_NOFETCH) && p && p->canFetch())
+        if(!p->fetchAll(mr))
+            return NULL;
+
+    return p;
+}
+
+const Var* Var::subtreeConst(const TreeMem& mem, const char* path) const
+{
+    LockableMem mr { const_cast<TreeMem&>(mem), *(std::shared_mutex*)NULL }; // i'm sorry
+    return const_cast<Var*>(this)->subtreeOrFetch(mr, path, SQ_NOFETCH); // never actually uses mr.mutex
+}
+
 void _VarMap::_checkmem(const TreeMem& m) const
 {
 #ifdef _DEBUG
@@ -975,35 +1062,70 @@ void _VarMap::ensureData(u64 now, StrRef k) const
 }
 */
 
-// FIXME: make sure this is fine
-Var* _VarMap::fetch(TreeMemReadLocker& mr, const char* key, size_t len)
+Var* _VarMap::fetch(LockableMem& mr, const char* key, size_t len)
 {
     _checkmem(mr.mem);
     if (_extra && _extra->fetcher)
     {
-        mr.mutex().unlock_shared();
-
         // Lock the fetcher until we're done with fv
         std::lock_guard<std::mutex> fetchlock(_extra->fetcher->mutex);
+        // Make sure two threads competing for the same key ask the fetcher only once
+        if(StrRef k = mr.mem.lookup(key, len))
+            if(Var *v = _storage.getp(k))
+                return v;
         // --- This may take a while ---
         // --- Don't want to hold any other mutexes here ---
         Var fv = _extra->fetcher->fetchOne(key, len);
         // -----------------------------
 
-        mr.mutex().lock_shared();
-
         if(!fv.isNull())
         {
-            std::unique_lock lock(mr.mutex());
+            std::unique_lock<std::shared_mutex> lock(mr.mutex);
+            // --- WRITE LOCK ON ----
             Var& dst = putKey(mr.mem, key, len);
             dst.clear(mr.mem);
             dst = std::move(fv.clone(mr.mem, *_extra->fetcher));
+            fv.clear(*_extra->fetcher);
             return &dst;
             // ----------
         }
     }
 
     return NULL;
+}
+
+// FIXME: if two threads compete for fetchlock, only one of them should actually fetch
+bool _VarMap::fetchAll(LockableMem& mr)
+{
+    _checkmem(mr.mem);
+    if (_extra && _extra->fetcher)
+    {
+        // Lock the fetcher until we're done with fv
+        std::lock_guard<std::mutex> fetchlock(_extra->fetcher->mutex);
+        // --- This may take a while ---
+        // --- Don't want to hold any other mutexes here ---
+        Var fv = _extra->fetcher->fetchAll();
+        // -----------------------------
+
+        if (!fv.isNull())
+        {
+            const _VarMap *m = fv.map();
+            assert(m);
+            std::unique_lock<std::shared_mutex> lock(mr.mutex);
+            // --- WRITE LOCK ON ----
+            _storage.clear(mr.mem);
+            for(Iterator it = m->begin(); it != m->end(); ++it)
+            {
+                PoolStr ps = _extra->fetcher->getSL(it.key());
+                StrRef k = mr.mem.put(ps.s, ps.len);
+                _storage.at(mr.mem, k) = std::move(it.value().clone(mr.mem, *_extra->fetcher));
+            }
+            return true;
+            // ----------
+        }
+    }
+
+    return false;
 }
 
 Var* _VarMap::get(StrRef k)

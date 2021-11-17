@@ -9,11 +9,12 @@
             "BASE": "cn=users,dc=ipa,dc=example,dc=com",
             "HOST": "ldaps://ldap.ipa.example.com",
             "FILTER": "memberOf=cn=staff",
-            "FIELDS": "cn displayName mail uid",
+            "FIELDS": "cn displayName mail uid sAMAccountName",
         },
         "startup-check": ["python", "ldap.py", "--test"], // check to be run at startup whether the endpoint will work
         
         "fetch-all": ["python", "ldap.py"], // query all elements (optional if supported)
+        "post-all": "{[key '/sAMAccountName']}",
         "validity": "10s", // upper limit until any retrieved data expire
         "failcache": "5m" // (optional, time) cache failed keys so we don't try to query the backend again.
     }

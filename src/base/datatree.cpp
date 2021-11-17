@@ -7,14 +7,6 @@
 #include "fetcher.h"
 
 
-// Const-accessors -- safe to cast the const away since walking the tree doesn't change it
-
-VarCRef DataTree::subtree(const char *path) const
-{
-    return VarCRef(const_cast<DataTree*>(this)->subtree(path));
-}
-
-
 DataTree::DataTree()
 {
 }
@@ -36,72 +28,17 @@ VarCRef DataTree::root() const
 
 // TODO: check expiry
 // TODO: check permissions
-VarRef DataTree::subtree(const char* path, SubtreeQueryFlags flags)
+VarRef DataTree::subtree(const char* path, Var::SubtreeQueryFlags qf)
 {
-    Var* p = &_root;
-    if(!*path)
-        return VarRef(*this, p);
-
-    assert(*path == '/');
-
-    PathIter it(path);
-    for(; p && it.hasNext(); ++it)
-    {
-        PoolStr ps = it.value();
-        switch(p->type())
-        {
-            default:
-                if(!(flags & SQ_CREATE))
-                {
-                    p = NULL;
-                    break; // thing isn't container
-                }
-                // it's not a map, make it one
-                p->makeMap(*this);
-                [[fallthrough]];
-            case Var::TYPE_MAP:
-            {
-                StrRef ref = this->lookup(ps.s, ps.len);
-                Var *nextp = p->lookup(ref);
-                if(!nextp)
-                {
-                    if(!(flags & SQ_NOFETCH) && p->canFetch())
-                    {
-                        TreeMemReadLocker mr(*this); // FIXME: this sucks
-                        nextp = p->fetch(mr, ps.s, ps.len);
-                    }
-                    if(!nextp && (flags & SQ_CREATE))
-                        nextp = &p->map_unsafe()->putKey(*this, ps.s, ps.len);
-                }
-                    
-                p = nextp;
-                break;
-            }
-            break;
-
-            case Var::TYPE_ARRAY:
-            {
-                // try looking up using an integer
-                size_t idx;
-                NumConvertResult cvt = strtosizeNN(&idx, ps.s, ps.len);
-                // In case not all chars were consumed, it's an invalid key
-                if(!cvt.used || cvt.overflow || cvt.used != ps.len)
-                {
-                    p = NULL;
-                    break;
-                }
-                Var *nextp = p->at(idx);
-                if((flags & SQ_CREATE) && !nextp)
-                    if(size_t newsize = idx + 1) // overflow check
-                        nextp = &p->makeArray(*this, newsize)[idx];
-                p = nextp;
-            }
-            break;
-        }
-    }
-
-    return VarRef(*this, p);
+    LockableMem mr { *this, mutex };
+    return VarRef(*this, _root.subtreeOrFetch(mr, path, qf));
 }
+
+VarCRef DataTree::subtreeConst(const char *path) const
+{
+    return VarCRef(*this, _root.subtreeConst(*this, path));
+}
+
 
 struct CollectExpiredVars : public MutTreeIterFunctor
 {

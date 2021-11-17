@@ -36,7 +36,7 @@ private:
     VarCRef _config; // references the original config. assumed not to change afterwards.
     u64 validity; // TODO: use
     std::vector<std::string> _env;
-    view::View fetchsingle, fetchall;
+    view::View fetchsingle, fetchall, postall;
     Var alldata; // used when fetchOne() is called but only fetchAll() is available
 
     //view::View *postproc;
