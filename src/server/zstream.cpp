@@ -44,8 +44,11 @@ int DeflateWriteStream::packloop(int flush)
         z.avail_out = b.remain;
 
         status = mz_deflate(&z, flush);
-         if(status < 0) // error? gtfo
+        if(status < 0) // error? gtfo
+        {
+            assert(z.avail_in == 0);
             break;
+        }
         assert(status == MZ_OK || (flush == MZ_FINISH && status == MZ_STREAM_END));
 
         // The packer may or may not output bytes. If it does, forward them to the underlying stream
