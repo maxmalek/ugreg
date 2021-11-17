@@ -34,6 +34,8 @@ VarCRef DataTree::root() const
     return VarCRef(*this, &_root);
 }
 
+// TODO: check expiry
+// TODO: check permissions
 VarRef DataTree::subtree(const char* path, SubtreeQueryFlags flags)
 {
     Var* p = &_root;
@@ -41,7 +43,6 @@ VarRef DataTree::subtree(const char* path, SubtreeQueryFlags flags)
         return VarRef(*this, p);
 
     assert(*path == '/');
-    Var::Extra* lastExtra = NULL;
 
     PathIter it(path);
     for(; p && it.hasNext(); ++it)
@@ -62,11 +63,18 @@ VarRef DataTree::subtree(const char* path, SubtreeQueryFlags flags)
             {
                 StrRef ref = this->lookup(ps.s, ps.len);
                 Var *nextp = p->lookup(ref);
-                if((flags & SQ_CREATE) && !nextp)
-                    nextp = &p->map_unsafe()->putKey(*this, ps.s, ps.len);
+                if(!nextp)
+                {
+                    if(!(flags & SQ_NOFETCH) && p->canFetch())
+                    {
+                        TreeMemReadLocker mr(*this); // FIXME: this sucks
+                        nextp = p->fetch(mr, ps.s, ps.len);
+                    }
+                    if(!nextp && (flags & SQ_CREATE))
+                        nextp = &p->map_unsafe()->putKey(*this, ps.s, ps.len);
+                }
+                    
                 p = nextp;
-                if (p)
-                    lastExtra = p->getExtra();
                 break;
             }
             break;
@@ -90,15 +98,6 @@ VarRef DataTree::subtree(const char* path, SubtreeQueryFlags flags)
             }
             break;
         }
-    }
-
-    if (!p && !(flags & SQ_NOFETCH) && lastExtra)
-    {
-        Fetcher* f = lastExtra->fetcher;
-        Var tmp;
-        f->fetchAll(VarRef(this, &tmp), it.remain());
-        tmp.clear(*this);
-        // FIXME: make sure this works
     }
 
     return VarRef(*this, p);

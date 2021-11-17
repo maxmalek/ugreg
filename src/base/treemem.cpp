@@ -10,4 +10,11 @@ TreeMem::~TreeMem()
 {
 }
 
+TreeMemReadLocker::TreeMemReadLocker(TreeMem& mem)
+    : mem(mem), lock(mem.mutex)
+{
+}
 
+TreeMemReadLocker::~TreeMemReadLocker()
+{
+}

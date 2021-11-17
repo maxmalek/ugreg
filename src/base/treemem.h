@@ -12,6 +12,7 @@ passed to the allocation.
 
 #include "types.h"
 #include "containers.h"
+#include <shared_mutex>
 
 struct LuaAlloc;
 
@@ -20,4 +21,18 @@ class TreeMem : public BlockAllocator, public StringPool
 public:
     TreeMem();
     ~TreeMem();
+    mutable std::shared_mutex mutex;
+};
+
+// Locks TreeMem for reading (which can be further locked for writing)
+class TreeMemReadLocker
+{
+public:
+    TreeMemReadLocker(TreeMem& mem);
+    ~TreeMemReadLocker();
+
+    TreeMem& mem;
+    inline std::shared_mutex& mutex() { return mem.mutex; }
+
+    const std::shared_lock<std::shared_mutex> lock;
 };

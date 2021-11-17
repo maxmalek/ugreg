@@ -141,7 +141,7 @@ int main(int argc, char** argv)
             {
                 const char *path = fetch.mem->getS(it.key());
                 printf("Init fetcher [%s] ...\n", path);
-                if(Fetcher *f = Fetcher::New(cfgtree, VarCRef(cfgtree, &it.value())))
+                if(Fetcher *f = Fetcher::New(VarCRef(cfgtree, &it.value())))
                     if(VarRef dst = tree.subtree(path, SQ_CREATE))
                         dst.v->makeMap(tree)->ensureExtra(tree)->fetcher = f;
             }
@@ -163,12 +163,12 @@ int main(int argc, char** argv)
 
     {
         //loadAndMergeJsonFromFile(&tree, "test/citylots.json", "/citylots", MERGE_FLAT);
-        loadAndMergeJsonFromFile(&tree, "test/mock_users.json", "/users", MERGE_FLAT);
-        loadAndMergeJsonFromFile(&tree, "test/mock_rooms.json", "/rooms", MERGE_FLAT);
+        //loadAndMergeJsonFromFile(&tree, "test/mock_users.json", "/users", MERGE_FLAT);
+        //loadAndMergeJsonFromFile(&tree, "test/mock_rooms.json", "/rooms", MERGE_FLAT);
         {
-            AsyncLaunchConfig cfg;
+            /*AsyncLaunchConfig cfg;
             cfg.args.push_back("./twitter.sh");
-            loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/twitter", MERGE_FLAT);
+            loadAndMergeJsonFromProcess(&tree, std::move(cfg), "/twitter", MERGE_FLAT);*/
         }
         /*{
             AsyncLaunchConfig cfg;

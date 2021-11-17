@@ -11,21 +11,19 @@
 
 #include "json_out.h"
 
-Fetcher::Fetcher(TreeMem& mem)
-    : _useEnv(false), pathparts(0), validity(0), fetchsingle(mem), fetchall(mem)
+Fetcher::Fetcher()
+    : _useEnv(false), validity(0), fetchsingle(*this), fetchall(*this)
 {
 }
 
 Fetcher::~Fetcher()
 {
+    alldata.clear(*this);
 }
 
-Fetcher* Fetcher::New(TreeMem& mem, VarCRef config)
+Fetcher* Fetcher::New(VarCRef config)
 {
-    void *p = mem.Alloc(sizeof(Fetcher));
-    if (!p)
-        return NULL;
-    Fetcher* f = _X_PLACEMENT_NEW(p) Fetcher(mem);
+    Fetcher* f = new Fetcher;
     if(f && !f->init(config))
     {
         f->destroy();
@@ -36,9 +34,7 @@ Fetcher* Fetcher::New(TreeMem& mem, VarCRef config)
 
 void Fetcher::destroy()
 {
-    TreeMem * const pmem = fetchsingle.exe.mem; // this happens to store our mem
-    this->~Fetcher();
-    pmem->Free(this, sizeof(*this));
+    delete this;
 }
 
 bool Fetcher::init(VarCRef config)
@@ -69,6 +65,12 @@ bool Fetcher::init(VarCRef config)
         exit(1);
         return false;
     }
+
+    if(!_prepareView(fetchall, config, "fetch-all"))
+        return false;
+    
+    if(!_prepareView(fetchsingle, config, "fetch-single"))
+        return false;
 
     _config = config;
     return true;
@@ -123,14 +125,33 @@ bool Fetcher::_doStartupCheck(VarCRef config) const
     return true;
 }
 
-bool Fetcher::fetchOne(VarRef dst, const char *suffix) const
+Var Fetcher::fetchOne(const char *suffix, size_t len)
 {
-    return false; // FIXME
+    if(fetchsingle.ep.size())
+        return _fetch(fetchsingle, suffix, len);
+
+    // TODO: check if valid/expired
+    Var ret;
+
+    StrRef k = this->lookup(suffix, len); // will be 0 if not yet known string
+    if (Var* v = alldata.lookup(k))
+        ret = std::move(*v);
+    else
+    {
+        alldata = std::move(fetchAll());
+        if(!k)
+            k = this->lookup(suffix, len); // at this point the string is pooled if it exists
+        if(Var *v = alldata.lookup(k))
+            ret = std::move(*v);
+    }
+
+    return ret;
 }
 
-bool Fetcher::fetchAll(VarRef dst, const char *suffix) const
+Var Fetcher::fetchAll()
 {
-    return _fetch(dst, fetchall, suffix);
+    alldata.clear(*this);
+    return _fetch(fetchall, NULL, 0);
 }
 
 void Fetcher::_prepareEnv(VarCRef config)
@@ -157,52 +178,76 @@ void Fetcher::_prepareEnv(VarCRef config)
     }
 }
 
-bool Fetcher::_fetch(VarRef dst, const view::View& vw, const char* path) const
+bool Fetcher::_prepareView(view::View& vw, VarCRef config, const char* key)
 {
-    TreeMem tmpmem;
+    if (VarCRef v = config.lookup(key))
+        if (vw.load(v))
+            printf("Loaded view for %s (%u ops)\n", key, (unsigned)vw.exe.cmds.size());
+        else
+        {
+            printf("Failed to load view for %s\n", key);
+            return false;
+        }
 
+    return true;
+}
+
+Var Fetcher::_fetch(const view::View& vw, const char* path, size_t len)
+{
     bool ok = false;
 
     Var vars;
-    VarRef vmvars(tmpmem, &vars);
+    VarRef vmvars(this, &vars);
 
-    vmvars["0"] = path; // $0 is the full path
-
-    char buf[32];
-    size_t num = 0;
-    // $1 becomes first path fragment, and so on
-    for(PathIter it(path); it.hasNext(); ++it)
+    if(path)
     {
-        ++num;
-        const char *ns = sizetostr_unsafe(buf, sizeof(buf), num);
-        printf("$%s = %s\n", ns, it.value().s);
-        vmvars[ns] = it.value().s;
+        vmvars["0"].setStr(path, len); // $0 is the full path
+
+        // TODO: should this ever be extended to be called with more than a single subdir, pass the individual path fragments along
+        assert(!strchr(path, '/'));
+        /*
+        char buf[32];
+        size_t num = 0;
+        // $1 becomes first path fragment, and so on
+        for(PathIter it(path); it.hasNext(); ++it)
+        {
+            ++num;
+            const char *ns = sizetostr_unsafe(buf, sizeof(buf), num);
+            printf("$%s = %s\n", ns, it.value().s);
+            vmvars[ns] = it.value().s;
+        }
+        */
     }
 
-    Var params = vw.produceResult(tmpmem, _config, vmvars);
-    printf("FETCH EXEC: %s", dumpjson(VarCRef(tmpmem, &params)).c_str());
+    Var params = vw.produceResult(*this, _config, vmvars);
+    printf("FETCH EXEC (path: %s): %s", path, dumpjson(VarCRef(this, &params)).c_str());
+
+    Var ret;
 
     // params should be an array of strings at this point. This will fail if it's not.
     subprocess_s proc;
-    ok =_createProcess(&proc, VarCRef(tmpmem, &params), subprocess_option_enable_async | subprocess_option_no_window);
+    ok =_createProcess(&proc, VarCRef(this, &params), subprocess_option_enable_async | subprocess_option_no_window);
     if(ok)
     {
         const char *procname = NULL;
         if(Var *a = params.array())
-            procname = a[0].asCString(tmpmem);
+            procname = a[0].asCString(*this);
 
-        ok = loadJsonFromProcess(dst, &proc, procname);
+        ok = loadJsonFromProcess(VarRef(this, &ret), &proc, procname);
 
         subprocess_destroy(&proc);
 
-        printf("FETCH RESULT:\n-------\n%s\n---------\n", dumpjson(dst, true).c_str());
+        printf("FETCH RESULT:\n-------\n%s\n---------\n", dumpjson(VarCRef(this, &ret), true).c_str());
     }
     else
+    {
         printf("launch failed!\n");
+        ret.clear(*this);
+    }
 
-    params.clear(tmpmem);
+    params.clear(*this);
 
-    return ok;
+    return ret;
 }
 
 bool Fetcher::_createProcess(subprocess_s *proc, VarCRef launch, int options) const

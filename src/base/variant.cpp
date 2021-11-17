@@ -422,6 +422,11 @@ const Var* Var::lookup(StrRef k) const
     return _topbits() == BITS_MAP ? u.m->get(k) : NULL;
 }
 
+Var* Var::fetch(TreeMemReadLocker& mr, const char *key, size_t len)
+{
+    return _topbits() == BITS_MAP ? u.m->fetch(mr, key, len) : NULL;
+}
+
 Var::Type Var::type() const
 {
     static const Type types[] = { TYPE_NULL, TYPE_STRING, TYPE_ARRAY, TYPE_MAP }; // first element is never used
@@ -785,6 +790,12 @@ Var::Extra* Var::getExtra()
     return m ? m->getExtra() : NULL;
 }
 
+const bool Var::canFetch() const
+{
+    const Extra *x = getExtra();
+    return x && x->fetcher;
+}
+
 void _VarMap::_checkmem(const TreeMem& m) const
 {
 #ifdef _DEBUG
@@ -963,6 +974,37 @@ void _VarMap::ensureData(u64 now, StrRef k) const
     _extra->expiryTS = timeNowMS() + validity; // fetching may have taken some time, use real current time
 }
 */
+
+// FIXME: make sure this is fine
+Var* _VarMap::fetch(TreeMemReadLocker& mr, const char* key, size_t len)
+{
+    _checkmem(mr.mem);
+    if (_extra && _extra->fetcher)
+    {
+        mr.mutex().unlock_shared();
+
+        // Lock the fetcher until we're done with fv
+        std::lock_guard<std::mutex> fetchlock(_extra->fetcher->mutex);
+        // --- This may take a while ---
+        // --- Don't want to hold any other mutexes here ---
+        Var fv = _extra->fetcher->fetchOne(key, len);
+        // -----------------------------
+
+        mr.mutex().lock_shared();
+
+        if(!fv.isNull())
+        {
+            std::unique_lock lock(mr.mutex());
+            Var& dst = putKey(mr.mem, key, len);
+            dst.clear(mr.mem);
+            dst = std::move(fv.clone(mr.mem, *_extra->fetcher));
+            return &dst;
+            // ----------
+        }
+    }
+
+    return NULL;
+}
 
 Var* _VarMap::get(StrRef k)
 {

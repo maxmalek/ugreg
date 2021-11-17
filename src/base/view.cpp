@@ -32,13 +32,14 @@ size_t View::compile(const char *s, VarCRef val)
         {
             view::EntryPoint e { s, idx };
             ep.push_back(std::move(e));
+            printf("View key [%s] ok, ep = %u\n", s, (unsigned)idx);
             return idx;
         }
         else
-            printf("Key [%s] parse error:\n%s\n", s, err.c_str());
+            printf("View key [%s] parse error:\n%s\n", s, err.c_str());
     }
     else
-        printf("Key [%s] is not string value; skipped\n", s);
+        printf("View key [%s] is not string value; skipped\n", s);
     return 0;
 }
 
@@ -54,7 +55,7 @@ struct ViewProducerVisitor : public MutTreeIterFunctor
     bool operator()(VarRef v)
     {
         assert(v.mem == &vm.mem);
-
+        
         if(v.v->isContainer())
             return true; // recurse
 
@@ -62,6 +63,7 @@ struct ViewProducerVisitor : public MutTreeIterFunctor
         {
             // TYPE_PTR is used to store an entry point, and is not actually a ptr here
             uintptr_t start = (uintptr_t)v.asPtr();
+            printf("ViewProducerVisitor: Got ptr, executing ep = %u\n", (unsigned)start);
             v.v->clear(vm.mem);
             vm.run(base, start);
             *v.v = std::move(ExportResult(vm));
@@ -103,21 +105,18 @@ Var View::produceResult(TreeMem& dst, VarCRef root, VarCRef vars) const
     VM vm(dst);
     vm.init(exe, ep.data(), ep.size());
 
-    if(vars)
+    if(vars && !vars.isNull())
     {
         const Var::Map *m = vars.v->map();
-        if(!m)
-        {
-            printf("View::produceResult: Passed vars is not map, aborting\n");
-            return Var();
-        }
-
-        for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
-        {
-            PoolStr name = vars.mem->getSL(it.key());
-            VarRef v = vm.makeVar(name.s, name.len);
-            *v.v = it.value().clone(*v.mem, *vars.mem);
-        }
+        if(m)
+            for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+            {
+                PoolStr name = vars.mem->getSL(it.key());
+                VarRef v = vm.makeVar(name.s, name.len);
+                *v.v = it.value().clone(*v.mem, *vars.mem);
+            }
+        else
+            printf("View::produceResult: Passed vars is not map, ignoring\n");
     }
 
     Var ret = resultTemplate.clone(dst, *exe.mem);
@@ -152,7 +151,10 @@ struct ViewTemplateCompilerVisitor : public MutTreeIterFunctor
         {
             std::string err;
             if (size_t idx = view::parse(exe, code, err))
+            {
+                printf("ViewTemplateCompilerVisitor: Compiled to ep = %u\n", (unsigned)idx);
                 v = (void*)(uintptr_t)idx;
+            }
             else
             {
                 errors << err << "\n";

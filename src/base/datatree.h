@@ -3,7 +3,7 @@
 #include "variant.h"
 #include "treemem.h"
 
-#include <shared_mutex>
+
 #include <vector>
 
 class Accessor;
@@ -43,7 +43,4 @@ public:
     void fillExpiredSubnodes(std::vector<Var*>& v);
 
     Var _root;
-
-public:
-    mutable std::shared_mutex mutex;
 };

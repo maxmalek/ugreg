@@ -72,6 +72,7 @@ VM::VM(TreeMem& mem)
 void VM::_freeStackFrame(void *p)
 {
     StackFrame* frm = static_cast<StackFrame*>(p);
+    frm->clear(mem);
     frm->~StackFrame();
     mem.Free(frm, sizeof(*frm));
 }
@@ -119,6 +120,7 @@ VarRef VM::makeVar(const char* name, size_t len)
 
     void* p = mem.Alloc(sizeof(StackFrame));
     StackFrame *sf = _X_PLACEMENT_NEW(p) StackFrame;
+    sf->store.reserve(1);
     dst.setPtr(mem, sf);
     sf->addAbs(mem, std::move(Var()), 0);
     return VarRef(mem, &sf->store[0]);

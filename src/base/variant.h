@@ -11,6 +11,7 @@ class _VarMap;
 class _VarExtra;
 class Accessor;
 class Fetcher;
+class TreeMemReadLocker;
 
 struct _VarRange
 {
@@ -224,6 +225,8 @@ public:
     const Var::Map* map_unsafe() const;
           Var* lookup(StrRef s);     // NULL if not map or no such key
     const Var* lookup(StrRef s) const;
+          Var* fetch(TreeMemReadLocker& mr, const char *key, size_t len); // like lookup(), but try to fetch from remote if possible
+    const bool canFetch() const;
     Var::Extra *getExtra();
     const Var::Extra *getExtra() const;
 
@@ -265,7 +268,6 @@ public:
     _VarMap *fetchedBy;
     _VarMap& mymap;
     TreeMem& mem;
-    std::mutex mutex; // TODO: a manual reset event instead of a mutex would be better
     Fetcher *fetcher;
 
 
@@ -311,6 +313,7 @@ public:
     Var& getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
     Var* get(StrRef key);
     const Var* get(StrRef key) const;
+    Var *fetch(TreeMemReadLocker& mr, const char *key, size_t len);
 
     Var& putKey(TreeMem& mem, const char* key, size_t len);
 
@@ -421,12 +424,22 @@ public:
 
     // value assignment
     void clear() { v->clear(*mem); }
-    inline VarRef& operator=(std::nullptr_t)     { v->clear(*mem);       return *this; }
+    inline VarRef& operator=(std::nullptr_t){ v->clear(*mem);       return *this; }
     inline VarRef& operator=(bool x)        { v->setBool(*mem, x);  return *this; }
     inline VarRef& operator=(s64 x)         { v->setInt(*mem, x);   return *this; }
     inline VarRef& operator=(u64 x)         { v->setUint(*mem, x);  return *this; }
     inline VarRef& operator=(double x)      { v->setFloat(*mem, x); return *this; }
     inline VarRef& operator=(const char *s) { v->setStr(*mem, s);   return *this; }
+    inline VarRef& operator=(void *p)       { v->setPtr(*mem, p);   return *this; }
+
+    inline void setStr(const char *s, size_t len) { v->setStr(*mem, s, len); }
+
+private:
+    // Template resolution comes before (implicit) cast, so we don't accidentally convert
+    // 'const void*' to bool when assigning.
+    // This is to prevent hard to track down errorneous implicit casts.
+    // If this ever pops an error, explicitly cast upon assigning.
+    template<typename T> VarRef& operator=(const T&); // not defined anywhere
 };
 
 // Like VarRef, except immutable and can be constructed from VarRef

@@ -1,8 +1,6 @@
 {"fetch":{
     // query /ldap/<username>/...
     "/ldap": { // where the fetcher is registered; also serves as unique name
-        "pathparts": 1,   // how many parts of the path are forwarded to the script, from the right
-                          // ie. if we query "a/b/c" and pathparts=2, then the script will see "b/c".
         "env": {   // variables for script execution. will be available as env vars
             // example config; instead of changing this consider overriding this
             // with a secret config loaded after this one
@@ -15,7 +13,7 @@
         },
         "startup-check": ["python", "ldap.py", "--test"], // check to be run at startup whether the endpoint will work
         
-        "fetch-all": ["python", "ldap.sh"], // query all elements (optional if supported)
+        "fetch-all": ["python", "ldap.py"], // query all elements (optional if supported)
         "validity": "10s", // upper limit until any retrieved data expire
         "failcache": "5m" // (optional, time) cache failed keys so we don't try to query the backend again.
     }

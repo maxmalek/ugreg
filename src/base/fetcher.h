@@ -5,34 +5,40 @@
 #include "view.h"
 #include <vector>
 #include <string>
+#include <mutex>
 
 struct subprocess_s;
 
-class Fetcher
+class Fetcher : public TreeMem
 {
 public:
-    static Fetcher *New(TreeMem& mem, VarCRef config);
+    static Fetcher *New(VarCRef config);
     void destroy();
 
-    bool fetchOne(VarRef dst, const char *suffix) const;
-    bool fetchAll(VarRef dst, const char *suffix) const;
+    // The returned Var uses the fetcher's memory
+    Var fetchOne(const char *suffix, size_t len);
+    Var fetchAll();
+
+    std::mutex mutex; // externally locked
 
 private:
-    Fetcher(TreeMem& mem);
+    Fetcher();
     ~Fetcher();
     bool init(VarCRef config);
 
     void _prepareEnv(VarCRef config);
+    bool _prepareView(view::View& vw, VarCRef config, const char *key);
     bool _doStartupCheck(VarCRef config) const;
-    bool _fetch(VarRef dst, const view::View& vw, const char *path) const;
+    Var _fetch(const view::View& vw, const char *path, size_t len);
     bool _createProcess(subprocess_s *proc, VarCRef launch, int options) const;
 
     bool _useEnv;
     VarCRef _config; // references the original config. assumed not to change afterwards.
-    size_t pathparts; // TODO: use
     u64 validity; // TODO: use
     std::vector<std::string> _env;
     view::View fetchsingle, fetchall;
+    Var alldata; // used when fetchOne() is called but only fetchAll() is available
+
     //view::View *postproc;
     // TODO: fail cache
 };
