@@ -9,6 +9,7 @@
 #include "mem.h"
 #include "json_out.h"
 #include "viewxform.h"
+#include "viewparser.h"
 
 #ifndef NDEBUG
 #define DEBUG_PRINT printf
@@ -91,6 +92,7 @@ VM::~VM()
 
 void VM::init(const Executable& ex, const EntryPoint* eps, size_t numep)
 {
+    assert(ex.cmds.size());
     cmds = ex.cmds; // make a copy
 
     evals.makeMap(mem);
@@ -253,10 +255,28 @@ void VM::cmd_Filter(unsigned param)
     DEBUG_PRINT("... %u refs passed the filter\n", (unsigned)top.refs.size());
 }
 
+static void _TryStoreElementViaSubkeys(TreeMem& vmmem, const Var::Map* Lm, Var::Map *newmap, const TreeMem& srcmem, const Var& srcvar)
+{
+    for (Var::Map::Iterator kit = Lm->begin(); kit != Lm->end(); ++kit)
+    {
+        if(const Var* sub = srcvar.subtreeConst(srcmem, kit.value().asCString(vmmem))) // this will serve as new key
+        {
+            PoolStr ps = sub->asString(srcmem);
+            if(ps.s)
+            {
+                StrRef newkey = vmmem.putNoRefcount(ps.s, ps.len);
+                Var& ins = newmap->getOrCreate(vmmem, newkey);
+                ins.clear(vmmem); // overwrite if already present
+                ins = std::move(srcvar.clone(vmmem, srcmem));
+            }
+        }
+    }
+}
+
 void VM::cmd_Keysel(unsigned param)
 {
-    const unsigned keep = param & 1;
-    const unsigned index = param >> 1u;
+    const KeySelOp op = KeySelOp(param & 3);
+    const unsigned index = param >> 2u;
     const Var& lit = literals[index];
     assert(lit.type() == Var::TYPE_MAP);
 
@@ -264,8 +284,9 @@ void VM::cmd_Keysel(unsigned param)
     StackFrame& top = _topframe();
 
     StackFrame newtop;
-    if(keep)
+    switch(op)
     {
+        case KEYSEL_KEEP:
         for(const VarEntry& e : top.refs)
             if(const Var::Map *src = e.ref.v->map())
             {
@@ -286,9 +307,9 @@ void VM::cmd_Keysel(unsigned param)
                 }
                 newtop.addRel(mem, std::move(mm), e.key);
             }
-    }
-    else
-    {
+        break;
+
+        case KEYSEL_DROP:
         for (const VarEntry& e : top.refs)
             if (const Var::Map* src = e.ref.v->map())
             {
@@ -305,6 +326,30 @@ void VM::cmd_Keysel(unsigned param)
                 }
                 newtop.addRel(mem, std::move(mm), e.key);
             }
+        break;
+
+        case KEYSEL_KEY:
+        for (const VarEntry& e : top.refs)
+        {
+            Var mm;
+            Var::Map* newmap = NULL;
+            if (const Var::Map* src = e.ref.v->map())
+            {
+                newmap = mm.makeMap(mem);
+                for(Var::Map::Iterator it = src->begin(); it != src->end(); ++it)
+                    _TryStoreElementViaSubkeys(mem, Lm, newmap, *e.ref.mem, it.value());
+            }
+            else if(const Var *a = e.ref.v->array())
+            {
+                newmap = mm.makeMap(mem);
+                const size_t n = e.ref.v->size();
+                for(size_t i = 0; i < n; ++i)
+                    _TryStoreElementViaSubkeys(mem, Lm, newmap, *e.ref.mem, a[i]);
+            }
+            if(newmap)
+                newtop.addRel(mem, std::move(mm), e.key);
+        }
+        break;
     }
 
     newtop.makeAbs();
@@ -774,9 +819,9 @@ size_t Executable::disasm(std::vector<std::string>& out) const
 
             case CM_KEYSEL:
             {
-                unsigned index = c.param >> 1u;
-                unsigned keep = c.param & 1;
-                os << (keep ? " KEEP " : " DROP ") << dumpjson(VarCRef(mem, &literals[index]), false);
+                unsigned index = c.param >> 2u;
+                KeySelOp op = KeySelOp(c.param & 3);
+                os << getKeySelOpName(op) << dumpjson(VarCRef(mem, &literals[index]), false);
             }
             break;
 

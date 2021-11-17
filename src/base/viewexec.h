@@ -57,7 +57,7 @@ enum CmdType
     CM_CHECKKEY,   // shortcut. key can be a json pointer (if it starts with '/', or just a regular key name)
                    // param = invert | (OpType << 1) | (index << 4); index into literals table (to look up name of key)
                    // param2 = index of the literal to check against in the literals table
-    CM_KEYSEL,     // param = (keep | (index << 1)); index into literals table. keep = 1 keeps the keys, 0 drops them
+    CM_KEYSEL,     // param = (KeySelOp | (index << 2)); index into literals table
     CM_SELECT,     // param = index into literals table
     CM_SELECTSTACK,// no param
     CM_CONCAT,     // param = how many stack frames to concat
@@ -65,6 +65,14 @@ enum CmdType
 
     // ALWAYS LAST
     CM_DONE        // terminate execution at this point.
+};
+
+// currently occupies 2 bits in CM_KEYSEL. code changes are required for more bits.
+enum KeySelOp
+{
+    KEYSEL_KEEP, // keep (and optionally rename) keys in list
+    KEYSEL_DROP, // drop keys in list
+    KEYSEL_KEY   // if array, convert to map. lookup subvalue from each entry, use that subvalue as new key for entry
 };
 
 // >= 0 when successful. < 0 when there is no transform with that name

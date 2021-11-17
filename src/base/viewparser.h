@@ -2,6 +2,7 @@
 
 #include <string>
 #include "variant.h"
+#include "viewexec.h"
 
 namespace view {
 
@@ -33,7 +34,7 @@ range        = range-entry (',' range-entry)...
 range-entry  = (literal-int ':' literal-int) | literal-int
 keycmp       = ident cmpOp eval
 keysel       = keysel-op | ws | (keysel-list | eval)
-keysel-op    = 'keep' | 'drop'
+keysel-op    = 'keep' | 'drop' | 'key'
 keysel-list  = keysel...
 keysel-entry = idstr ('=' idstr)?
 literal      = literal-str | literal-int | literal-flt | literal-bool | literal-null
@@ -48,5 +49,7 @@ ws           = <1 or more whitespace chars>
 
 // Return entry point (index) when successfuly parsed, 0 on error
 size_t parse(Executable& exe, const char *s, std::string& error);
+
+const char *getKeySelOpName(KeySelOp op);
 
 }

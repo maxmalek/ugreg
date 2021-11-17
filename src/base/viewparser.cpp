@@ -49,6 +49,19 @@ static const OpEntry ops[] =
     { "?>",  Var::CMP_ENDSWITH, 0 },
 };
 
+struct KeySelOpEntry
+{
+    const char text[8];
+    KeySelOp op;
+};
+
+static const KeySelOpEntry keyselOps[] =
+{
+    { "keep", KEYSEL_KEEP },
+    { "drop", KEYSEL_DROP },
+    { "key",  KEYSEL_KEY  },
+};
+
 
 
 struct ParserState
@@ -94,6 +107,7 @@ public:
     bool _parseSelection();
     bool _parseKeyCmp();
     bool _parseKeySel();
+    bool _parseKeySelOp(KeySelOp& op);
     bool _parseKeySelEntry(Var::Map& m, bool allowRename);
     bool _parseEval();
     bool _parseSimpleEval();
@@ -151,6 +165,14 @@ size_t parse(Executable& exe, const char *s, std::string& error)
         }
     }
     return res;
+}
+
+const char* getKeySelOpName(KeySelOp op)
+{
+    for(size_t i = 0; i < Countof(keyselOps); ++i)
+        if(op == keyselOps[i].op)
+            return keyselOps[i].text;
+    return NULL;
 }
 
 struct ParserTop
@@ -748,10 +770,8 @@ bool Parser::_parseKeySel()
 {
     ParserTop top(*this);
 
-    unsigned keep = 0;
-    if(_parseVerbatim("keep"))
-        keep = 1;
-    else if(!_parseVerbatim("drop"))
+    KeySelOp op;
+    if(!_parseKeySelOp(op))
         return false;
 
     if(!_skipSpace(true))
@@ -760,16 +780,27 @@ bool Parser::_parseKeySel()
     size_t n = 0;
     Var entries;
     Var::Map *m = entries.makeMap(mem);
-    while(_parseKeySelEntry(*m, !!keep) && _skipSpace())
+    while(_parseKeySelEntry(*m, op == KEYSEL_KEEP) && _skipSpace())
         ++n;
 
     if(!n)
         return false;
 
     unsigned lit = _addLiteral(std::move(entries));
-    _emit(CM_KEYSEL, (lit << 1) | keep, 0);
+    _emit(CM_KEYSEL, (lit << 2) | op, 0);
 
     return top.accept();
+}
+
+bool Parser::_parseKeySelOp(KeySelOp& op)
+{
+    for(size_t i = 0; i < Countof(keyselOps); ++i)
+        if(_parseVerbatim(keyselOps[i].text))
+        {
+            op = keyselOps[i].op;
+            return true;
+        }
+    return false;
 }
 
 bool Parser::_parseKeySelEntry(Var::Map& m, bool allowRename)
