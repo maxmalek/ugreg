@@ -291,6 +291,7 @@ public:
     _VarMap& mymap;
     TreeMem& mem;
     Fetcher *fetcher;
+    bool datavalid; // false if expired, not fetched, etc // TODO: reset this to false at some point
 
 
     // TODO: ptr back to owning map?
@@ -312,7 +313,7 @@ private:
 // Note: Methods that don't take TreeMem don't modify the string keys' refcount!
 class _VarMap
 {
-    typedef TinyHashMap<Var, typename Var::Policy> _Map;
+    typedef TinyHashMap<Var /*, typename Var::Policy*/ > _Map; // FIXME: use policy
     ~_VarMap(); // call destroy() instead
 public:
     // there's rarely any reason to change things while iterating,

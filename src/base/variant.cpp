@@ -1102,6 +1102,11 @@ bool _VarMap::fetchAll(LockableMem& mr)
     {
         // Lock the fetcher until we're done with fv
         std::lock_guard<std::mutex> fetchlock(_extra->fetcher->mutex);
+
+        // Don't compete; one thread fetching at a time is enough
+        if(_extra->datavalid)
+            return true;
+
         // --- This may take a while ---
         // --- Don't want to hold any other mutexes here ---
         Var fv = _extra->fetcher->fetchAll();
@@ -1114,7 +1119,7 @@ bool _VarMap::fetchAll(LockableMem& mr)
             assert(m);
             acme::upgrade_lock lock(mr.mutex);
             // --- WRITE LOCK ON ----
-            _storage.clear(mr.mem);
+            clear(mr.mem);
             for(Iterator it = m->begin(); it != m->end(); ++it)
             {
                 PoolStr ps = fm.getSL(it.key());
@@ -1122,6 +1127,7 @@ bool _VarMap::fetchAll(LockableMem& mr)
                 _storage.at(mr.mem, k) = std::move(it.value().clone(mr.mem, fm));
             }
             fv.clear(fm);
+            _extra->datavalid = true;
             return true;
             // ----------
         }
@@ -1259,7 +1265,7 @@ _VarExtra* _VarExtra::clone(TreeMem& mem, _VarMap& m)
 }
 
 _VarExtra::_VarExtra(_VarMap& m, TreeMem& mem)
-    : expiryTS(0), mymap(m), mem(mem), fetcher(NULL)
+    : expiryTS(0), mymap(m), mem(mem), fetcher(NULL), datavalid(false)
 {
 }
 

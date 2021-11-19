@@ -56,7 +56,7 @@ public:
 
     struct Bucket
     {
-        typedef _HashHatPolicyBase<Allocator> Policy;
+        typedef _HashHatPolicyBase<Allocator> _Policy;
 
         StrRef *_keys;
         SZ *_indices; // never contains 0
@@ -173,7 +173,7 @@ public:
         const_iterator end()   const { return const_iterator(this); }
     };
 
-    typedef LVector<Bucket, u32, typename Bucket::Policy> Storage;
+    typedef LVector<Bucket, u32, typename Bucket::_Policy> Storage;
 
     HashHatKeyStore()
     {
