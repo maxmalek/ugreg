@@ -611,7 +611,10 @@ bool Parser::_parseIdent(Var& id)
 
 bool Parser::_parseIdentOrStr(Var& id)
 {
-    return _parseIdent(id) || (_parseLiteral(id) && id.type() == Var::TYPE_STRING);
+    bool ok = _parseIdent(id) || (_parseLiteral(id) && id.type() == Var::TYPE_STRING);
+    if(!ok)
+        id.clear(mem);
+    return ok;
 }
 
 // :5,15:20,50,100:
