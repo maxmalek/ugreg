@@ -92,7 +92,7 @@ bool loadJsonFromProcess(VarRef root, subprocess_s* proc, const char* procname)
     }
     ok = !ret; // if the process reports failure, don't use it even if it's valid json
     printf("[%s] exited with code %d\n", procname, ret);
-    if(!ok && subprocess_stderr(proc))
+    if(subprocess_stderr(proc))
     {
         bool hdr = false;
         for(;;) // attempt to output stderr of failed process
@@ -106,7 +106,7 @@ bool loadJsonFromProcess(VarRef root, subprocess_s* proc, const char* procname)
                 printf("---- [%s] begin stderr dump ----\n", procname);
                 hdr = true;
             }
-            fwrite(buf, 1, sizeof(buf), stdout);
+            fwrite(buf, 1, rd, stdout);
         }
         if(hdr)
             printf("---- [%s] end stderr dump ----\n", procname);
