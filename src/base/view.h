@@ -18,6 +18,7 @@ public:
     ~View();
 
     bool load(VarCRef v); // load JSON structure describing the view, or a single string if no variables/temporaries are needed, or an array of strings
+    bool loaded() const { return !exe.cmds.empty(); }
 
     // Runs a temporary VM. The returned result is created using dst
     Var produceResult(TreeMem& dst, VarCRef root, VarCRef vars) const;

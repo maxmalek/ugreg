@@ -597,22 +597,15 @@ bool Parser::_parseIdent(Var& id)
 {
     const char *s = ptr;
     char c = *s;
-    bool ok = false;
-    // C/C++ rules: identifiers start wit ha char or underscore...
-    if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_')
-    {
+
+    while((c = *s) && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c >= '0' && c <= '9')))
         ++s;
 
-        // ... and may have numbers afterwards
-        while((c = *s) && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c >= '0' && c <= '9')))
-            ++s;
-
-        ok = s != ptr;
-        if(ok)
-        {
-            id.setStr(mem, ptr, s - ptr);
-            ptr = s;
-        }
+    bool ok = s != ptr;
+    if(ok)
+    {
+        id.setStr(mem, ptr, s - ptr);
+        ptr = s;
     }
     return ok;
 }

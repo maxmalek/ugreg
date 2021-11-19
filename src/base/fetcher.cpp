@@ -131,7 +131,7 @@ bool Fetcher::_doStartupCheck(VarCRef config) const
 
 Var Fetcher::fetchOne(const char *suffix, size_t len)
 {
-    if(fetchsingle.ep.size())
+    if(fetchsingle.loaded())
         return _fetch(fetchsingle, suffix, len);
 
     // TODO: check if valid/expired
@@ -157,7 +157,7 @@ Var Fetcher::fetchAll()
     alldata.clear(*this);
     Var ret = _fetch(fetchall, NULL, 0);
 
-    if(postall.exe.cmds.size())
+    if(postall.loaded())
     {
         Var newret = postall.produceResult(*this, VarCRef(this, &ret), _config);
         if(newret.type() != Var::TYPE_MAP)
@@ -243,6 +243,7 @@ Var Fetcher::_fetch(const view::View& vw, const char* path, size_t len)
     }
 
     Var params = vw.produceResult(*this, _config, vmvars);
+    vars.clear(*this); // no longer needed after this
     printf("FETCH EXEC (path: %s): %s\n", path, dumpjson(VarCRef(this, &params)).c_str());
 
     Var ret;
