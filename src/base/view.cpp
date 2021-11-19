@@ -130,11 +130,12 @@ Var View::produceResult(TreeMem& dst, VarCRef root, VarCRef vars) const
 // Any code encountered is recorded into exe
 struct ViewTemplateCompilerVisitor : public MutTreeIterFunctor
 {
-    ViewTemplateCompilerVisitor(Executable& exe) : exe(exe), fail(false) {}
+    ViewTemplateCompilerVisitor(Executable& exe) : exe(exe), fail(false), n(0) {}
 
     Executable& exe;
     std::ostringstream errors;
     bool fail;
+    size_t n;
 
     // Var was encountered. Return true to recurse (eventually End*() will be called).
     // Return false not to recurse (End*() will not be called)
@@ -152,6 +153,7 @@ struct ViewTemplateCompilerVisitor : public MutTreeIterFunctor
             {
                 printf("ViewTemplateCompilerVisitor: Compiled to ep = %u\n", (unsigned)idx);
                 v = (void*)(uintptr_t)idx;
+                ++n;
             }
             else
             {
@@ -179,6 +181,13 @@ bool View::_loadTemplate(VarCRef in)
 
     ViewTemplateCompilerVisitor vis(this->exe);
     treeIter_T(vis, VarRef(exe.mem, &resultTemplate));
+
+    if(!vis.fail && !vis.n)
+        printf("WARNING: _loadTemplate(): No compile-able strings. This view returns constant data, which is probably an error.\n");
+
+    std::string errs = vis.errors.str();
+    if(!errs.empty())
+        printf("_loadTemplate() errors:\n%s\n", errs.c_str());
 
     return !vis.fail;
 }
@@ -211,8 +220,6 @@ bool View::load(VarCRef v)
                         return false;
                     }
                 }
-
-
             }
         }
         break;
@@ -223,7 +230,10 @@ bool View::load(VarCRef v)
     }
 
     if (result)
-        _loadTemplate(result);
+    {
+        if(!_loadTemplate(result))
+            return false;
+    }
     else
     {
         printf("Not sure what the result of the view is supposed to be. Either make the result a map with a 'result' key if you need variables, or any other value to use that.\n");

@@ -202,6 +202,7 @@ void Fetcher::_prepareEnv(VarCRef config)
 bool Fetcher::_prepareView(view::View& vw, VarCRef config, const char* key)
 {
     if (VarCRef v = config.lookup(key))
+    {
         if (vw.load(v))
             printf("Loaded view for %s (%u ops)\n", key, (unsigned)vw.exe.cmds.size());
         else
@@ -209,6 +210,7 @@ bool Fetcher::_prepareView(view::View& vw, VarCRef config, const char* key)
             printf("Failed to load view for %s\n", key);
             return false;
         }
+    }
 
     return true;
 }
