@@ -33,6 +33,8 @@ set(src
     impls.cpp
     miniz.c
     miniz.h
+    upgrade_mutex.cpp
+    upgrade_mutex.h
 )
 
 add_library(alldeps ${src})

@@ -2,7 +2,7 @@
 #include "treeiter.h"
 #include "json_in.h"
 #include <mutex>
-#include <shared_mutex>
+#include "upgrade_mutex.h"
 #include <utility>
 #include <type_traits>
 
@@ -44,7 +44,7 @@ static void finalizeAndMerge(TreeMergeResult& res, DataTree& dst, DataTree& t, c
 {
     //res.expiryTime = getTreeMinExpiryTime(t.root());
     { // BEGIN WRITE LOCK
-        std::unique_lock<std::shared_mutex> lock(dst.mutex);
+        std::unique_lock lock(dst.mutex);
         printf("Begin merge into [%s], flags = %u\n", where.c_str(), merge);
         if (VarRef sub = dst.subtree(where.c_str(), Var::SQ_CREATE))
             res.ok = sub.merge(t.root(), merge);

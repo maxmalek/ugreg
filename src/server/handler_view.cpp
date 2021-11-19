@@ -45,7 +45,7 @@ int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
     Var res;
     {
         // --- LOCK READ ---
-        std::shared_lock<std::shared_mutex> lock(_tree.mutex);
+        std::shared_lock lock(_tree.mutex);
         ok = vm.run(_tree.root());
         if(ok)
         {
@@ -126,7 +126,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
     vm.init(exe, NULL, 0);
 
     // --- LOCK READ ---
-    std::shared_lock<std::shared_mutex> lock(_tree.mutex);
+    std::shared_lock lock(_tree.mutex);
 
     if(!vm.run(_tree.root()))
     {

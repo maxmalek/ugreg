@@ -3,7 +3,7 @@
 #include "types.h"
 
 #include "tinyhashmap.h"
-#include <shared_mutex>
+#include "upgrade_mutex.h"
 
 class TreeMem;
 class Var;
@@ -22,7 +22,7 @@ struct _VarRange
 struct LockableMem
 {
     TreeMem& mem;
-    std::shared_mutex& mutex;
+    acme::upgrade_mutex& mutex;
 };
 
 // For merge() operations.
@@ -312,8 +312,7 @@ private:
 // Note: Methods that don't take TreeMem don't modify the string keys' refcount!
 class _VarMap
 {
-    //typedef std::unordered_map<StrRef, Var> _Map;
-    typedef TinyHashMap<Var> _Map;
+    typedef TinyHashMap<Var, typename Var::Policy> _Map;
     ~_VarMap(); // call destroy() instead
 public:
     // there's rarely any reason to change things while iterating,

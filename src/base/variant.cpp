@@ -879,7 +879,7 @@ Var* Var::subtreeOrFetch(LockableMem& mr, const char* path, SubtreeQueryFlags qf
 
 const Var* Var::subtreeConst(const TreeMem& mem, const char* path) const
 {
-    LockableMem mr { const_cast<TreeMem&>(mem), *(std::shared_mutex*)NULL }; // i'm sorry
+    LockableMem mr { const_cast<TreeMem&>(mem), *(acme::upgrade_mutex*)NULL }; // i'm sorry
     return const_cast<Var*>(this)->subtreeOrFetch(mr, path, SQ_NOFETCH); // never actually uses mr.mutex
 }
 
@@ -1080,7 +1080,7 @@ Var* _VarMap::fetch(LockableMem& mr, const char* key, size_t len)
 
         if(!fv.isNull())
         {
-            std::unique_lock<std::shared_mutex> lock(mr.mutex);
+            acme::upgrade_lock lock(mr.mutex);
             // --- WRITE LOCK ON ----
             Var& dst = putKey(mr.mem, key, len);
             dst.clear(mr.mem);
@@ -1109,17 +1109,19 @@ bool _VarMap::fetchAll(LockableMem& mr)
 
         if (!fv.isNull())
         {
+            TreeMem& fm = *_extra->fetcher; // fetcher's memory
             const _VarMap *m = fv.map();
             assert(m);
-            std::unique_lock<std::shared_mutex> lock(mr.mutex);
+            acme::upgrade_lock lock(mr.mutex);
             // --- WRITE LOCK ON ----
             _storage.clear(mr.mem);
             for(Iterator it = m->begin(); it != m->end(); ++it)
             {
-                PoolStr ps = _extra->fetcher->getSL(it.key());
+                PoolStr ps = fm.getSL(it.key());
                 StrRef k = mr.mem.put(ps.s, ps.len);
-                _storage.at(mr.mem, k) = std::move(it.value().clone(mr.mem, *_extra->fetcher));
+                _storage.at(mr.mem, k) = std::move(it.value().clone(mr.mem, fm));
             }
+            fv.clear(fm);
             return true;
             // ----------
         }

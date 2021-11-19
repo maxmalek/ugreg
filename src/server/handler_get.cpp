@@ -29,7 +29,7 @@ int TreeHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
     // ---- BEGIN READ LOCK ----
     // Tree query and use of the result must be locked.
     // Can't risk a merge or expire process to drop parts of the tree in another thread that we're still using here.
-    std::shared_lock<std::shared_mutex> lock(tree.mutex);
+    std::shared_lock lock(tree.mutex);
 
     VarCRef sub = tree.subtree(rq.query.c_str());
 

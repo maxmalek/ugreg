@@ -3,7 +3,7 @@
 #include "variant.h"
 #include "treemem.h"
 
-#include <shared_mutex>
+#include "upgrade_mutex.h"
 #include <vector>
 
 // Root of tree with memory pool and mutex
@@ -34,5 +34,5 @@ public:
 
     Var _root;
 
-    mutable std::shared_mutex mutex;
+    mutable acme::upgrade_mutex mutex;
 };

@@ -25,7 +25,7 @@ int InfoHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
     std::string out;
     {
         std::ostringstream os;
-        std::shared_lock<std::shared_mutex> lock(_tree.mutex);
+        std::shared_lock lock(_tree.mutex);
         dumpAllocInfoToString(os, _tree);
         out = os.str();
     }
@@ -48,7 +48,7 @@ int DebugStrpoolHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn
     size_t n = 0;
 
     {
-        std::shared_lock<std::shared_mutex> lock(_tree.mutex);
+        std::shared_lock lock(_tree.mutex);
         coll = _tree.collate(&n);
     }
 
@@ -66,7 +66,7 @@ int DebugStrpoolHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn
             dst.Put('\n');
         }
 
-        std::shared_lock<std::shared_mutex> lock(_tree.mutex);
+        std::shared_lock lock(_tree.mutex);
         _tree.collateFree(coll);
     }
 
@@ -84,7 +84,7 @@ DebugCleanupHandler::~DebugCleanupHandler()
 
 int DebugCleanupHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
-    std::unique_lock<std::shared_mutex> lock(_tree.mutex);
+    std::unique_lock lock(_tree.mutex);
 
     char buf[64];
 
