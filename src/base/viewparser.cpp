@@ -880,7 +880,7 @@ unsigned Parser::_emitGetKey(Var&& v)
 {
     assert(v.type() == Var::TYPE_STRING);
     unsigned lit = _addLiteral(std::move(v));
-    _emit(CM_GETKEY, lit);
+    _emit(CM_LOOKUP, lit);
     return lit;
 }
 

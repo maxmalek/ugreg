@@ -48,7 +48,7 @@ struct EntryPoint
 
 enum CmdType
 {
-    CM_GETKEY,     // param = index into literals table (to look up name of key). replace top with top[key].
+    CM_LOOKUP,     // param = index into literals table (to look up name of key). replace top with top[key].
     CM_GETVAR,     // param = index into literals table (to look up variable name). push value of variable.
     CM_TRANSFORM,  // param = function ID. transform top in place.
     CM_FILTER,     // param = (OpType << 1) | invert. pop A, keep elements in top only when op(top, A) is true
@@ -146,7 +146,7 @@ private:
     Var literals; // always array (constant after init)
     Commands cmds; // copied(!) from Executable
 
-    void cmd_GetKey(unsigned param);
+    void cmd_Lookup(unsigned param);
     void cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit);
     void cmd_PushVar(unsigned param);
     void cmd_Transform(unsigned param);

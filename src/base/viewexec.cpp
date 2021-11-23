@@ -137,7 +137,7 @@ bool VM::run(VarCRef v, size_t start /* = 1 */)
 }
 
 // replace all maps on top with a subkey of each
-void VM::cmd_GetKey(unsigned param)
+void VM::cmd_Lookup(unsigned param)
 {
     PoolStr ps = literals[param].asString(mem);
 
@@ -149,15 +149,19 @@ void VM::cmd_GetKey(unsigned param)
     // TODO: make variant for json ptr?
     assert(ps.s[0] != '/');
 
+
     for (size_t i = 0; i < N; ++i)
-        if(const Var *sub = ain[i].ref.lookup(ps.s)) // NULL if not map
+    {
+        LockableMem mlock { *ain[i].ref.mem,
+        if (const Var* sub = ain[i].ref.v->fetch(ps.s, ps.len)) // NULL if not map
         {
             aout->ref.mem = ain[i].ref.mem;
             aout->ref.v = sub;
             aout->key = ain[i].key;
-            if(const Var::Extra *extra = sub->getExtra())
+            if (const Var::Extra* extra = sub->getExtra())
                 aout->extra = extra;
             ++aout;
+        }
         }
     top.refs.resize(aout - ain);
 }
@@ -534,7 +538,7 @@ bool VM::exec(size_t ip)
 
         switch(c.type)
         {
-            case CM_GETKEY:
+            case CM_LOOKUP:
                 cmd_GetKey(c.param);
                 break;
             case CM_CHECKKEY:
@@ -731,7 +735,7 @@ void Executable::clear()
 
 static const char *s_opcodeNames[] =
 {
-    "GETKEY",
+    "LOOKUP",
     "GETVAR",
     "TRANSFORM",
     "FILTER",
@@ -788,7 +792,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
             case CM_GETVAR:
                 os << ' ' << literals[c.param].asCString(*mem);
                 break;
-            case CM_GETKEY:
+            case CM_LOOKUP:
             case CM_LITERAL:
             case CM_SELECT:
                 os << ' ';

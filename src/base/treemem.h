@@ -18,6 +18,9 @@ struct LuaAlloc;
 
 class TreeMem : public BlockAllocator, public StringPool
 {
+    TreeMem(const TreeMem&) = delete;
+    TreeMem& operator=(const TreeMem&) = delete;
+
 public:
     TreeMem();
     ~TreeMem();
