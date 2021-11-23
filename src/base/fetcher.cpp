@@ -13,7 +13,7 @@
 
 Fetcher::Fetcher()
     : _useEnv(false), validity(0)
-    , fetchsingle(*this), fetchall(*this), postall(*this)
+    , fetchsingle(*this), fetchall(*this), postall(*this), postsingle(*this)
 {
 }
 
@@ -69,11 +69,14 @@ bool Fetcher::init(VarCRef config)
 
     if(!_prepareView(fetchall, config, "fetch-all"))
         return false;
-    
+
     if(!_prepareView(fetchsingle, config, "fetch-single"))
         return false;
 
     if (!_prepareView(postall, config, "post-all"))
+        return false;
+
+    if (!_prepareView(postsingle, config, "post-single"))
         return false;
 
     _config = config;
@@ -134,6 +137,7 @@ Var Fetcher::fetchOne(const char *suffix, size_t len)
     if(fetchsingle.loaded())
         return _fetch(fetchsingle, suffix, len);
 
+    // Use fetch-all to fetch everything and then extract a single element
     // TODO: check if valid/expired
     Var ret;
 
@@ -142,29 +146,41 @@ Var Fetcher::fetchOne(const char *suffix, size_t len)
         ret = std::move(*v);
     else
     {
-        alldata = std::move(fetchAll());
+        alldata = std::move(_fetchAllNoPost());
         if(!k)
             k = this->lookup(suffix, len); // at this point the string is pooled if it exists
         if(Var *v = alldata.lookup(k))
             ret = std::move(*v);
     }
 
-    return ret;
+    return _postproc(postsingle, std::move(ret));
 }
 
 Var Fetcher::fetchAll()
+{
+    if (!postsingle.loaded())
+        return _fetchAllNoPost();
+
+    // Apply post-single to all individual values (at this point we know it's a map)
+    Var all = std::move(_fetchAllNoPost());
+    if (Var::Map* m = all.map())
+        for (Var::Map::MutIterator it = m->begin(); it != m->end(); ++it)
+             it.value()= std::move(_postproc(postsingle, std::move(it.value())));
+
+    return all;
+}
+
+Var Fetcher::_fetchAllNoPost()
 {
     alldata.clear(*this);
     Var ret = _fetch(fetchall, NULL, 0);
 
     if(postall.loaded())
     {
-        Var newret = postall.produceResult(*this, VarCRef(this, &ret), _config);
-        if(newret.type() != Var::TYPE_MAP)
-            printf("Fetcher::fetchAll: Was %s before postproc, is now %s", ret.typestr(), newret.typestr());
-
-        ret.clear(*this);
-        ret = std::move(newret);
+        const char* oldtype = ret.typestr();
+        Var ret = _postproc(postall, std::move(ret));
+        if(ret.type() != Var::TYPE_MAP)
+            printf("Fetcher::fetchAll: Was %s before postproc, is now %s", oldtype, ret.typestr());
     }
 
     if(!ret.isNull() && ret.type() != Var::TYPE_MAP)
@@ -173,6 +189,13 @@ Var Fetcher::fetchAll()
         ret.clear(*this);
     }
     return ret;
+}
+
+Var Fetcher::_postproc(const view::View& vw, Var&& var)
+{
+    Var res = vw.produceResult(*this, VarCRef(this, &var), _config);
+    var.clear(*this);
+    return res;
 }
 
 void Fetcher::_prepareEnv(VarCRef config)

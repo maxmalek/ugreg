@@ -32,11 +32,15 @@ private:
     Var _fetch(const view::View& vw, const char *path, size_t len);
     bool _createProcess(subprocess_s *proc, VarCRef launch, int options) const;
 
+    // does not do post-single processing
+    Var _fetchAllNoPost();
+    Var _postproc(const view::View& vw, Var&& var);
+
     bool _useEnv;
     VarCRef _config; // references the original config. assumed not to change afterwards.
     u64 validity; // TODO: use
     std::vector<std::string> _env;
-    view::View fetchsingle, fetchall, postall;
+    view::View fetchsingle, fetchall, postall, postsingle;
     Var alldata; // used when fetchOne() is called but only fetchAll() is available
 
     //view::View *postproc;
