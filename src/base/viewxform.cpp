@@ -48,7 +48,9 @@ void transformUnpack(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
         }
         break;
 
-        default: assert(false); break;
+        default: // can't unpack thing, just keep it
+            newframe.refs.push_back(src);
+            break;
         }
     }
 }
