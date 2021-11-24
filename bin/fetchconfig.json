@@ -27,5 +27,6 @@
     },
     "/users": {
         "fetch-all": ["./slowcat.sh", "mock_users.json"],
+        "post-all": "{[key '/email']}",
     },
 }}
