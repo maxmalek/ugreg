@@ -144,7 +144,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
         char buf[64];
         sprintf(buf, "--- Results: %u ---\n", (unsigned)out.size());
         writeStr(dst, buf);
-        if(out.size() > 0)
+        if(out.size() > 1)
             writeStr(dst, "--- WARNING: Reduce the number of results to 1 for live data, else this will fail!\n");
 
     }
