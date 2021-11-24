@@ -8,14 +8,24 @@
             "PASS": "password",
             "BASE": "cn=users,dc=ipa,dc=example,dc=com",
             "HOST": "ldaps://ldap.ipa.example.com",
-            "FILTER": "(&(sAMAccountName={0})(memberOf=cn=staff))", // template for str.format(); use {0} to insert the user name
+            "FILTER": "(&(sAMAccountName={0})(memberOf=cn=staff))", // handled in the script: template for str.format(); use {0} to insert the user name
             "FIELDS": "cn displayName mail uid sAMAccountName",
         },
-        "startup-check": ["python", "ldap.py", "--check"], // check to be run at startup whether the endpoint will work
+        "startup-check": ["python", "ldap.py", "--check"], // run at startup to check for dependencies in scripts and whether the exec will work
         "fetch-all":     ["python", "ldap.py", "--all"], // query all elements (optional if supported)
-        "fetch-single":  ["python", "ldap.py", "--single", "$0"], // query all elements (optional if supported)
+        "fetch-single":  ["python", "ldap.py", "--single", "$0"], // query a single element (optional if supported, uses fetch-all otherwise)
         "post-all": "{[key '/sAMAccountName']}",
         "validity": "10s", // upper limit until any retrieved data expire
         "failcache": "5m" // (optional, time) cache failed keys so we don't try to query the backend again.
-    }
+    },
+    
+    "/twitter": {
+        "fetch-all": ["./slowcat.sh", "twitter.json"],
+    },
+    "/rooms": {
+        "fetch-all": ["./slowcat.sh", "mock_rooms.json"],
+    },
+    "/users": {
+        "fetch-all": ["./slowcat.sh", "mock_users.json"],
+    },
 }}

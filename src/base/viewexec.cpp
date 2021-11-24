@@ -152,8 +152,7 @@ void VM::cmd_Lookup(unsigned param)
 
     for (size_t i = 0; i < N; ++i)
     {
-        LockableMem mlock { *ain[i].ref.mem,
-        if (const Var* sub = ain[i].ref.v->fetch(ps.s, ps.len)) // NULL if not map
+        if (const Var* sub = ain[i].ref.lookup(ps.s, ps.len)) // NULL if not map
         {
             aout->ref.mem = ain[i].ref.mem;
             aout->ref.v = sub;
@@ -268,8 +267,7 @@ static void _TryStoreElementViaSubkeys(TreeMem& vmmem, const Var::Map* Lm, Var::
             PoolStr ps = sub->asString(srcmem);
             if(ps.s)
             {
-                StrRef newkey = vmmem.putNoRefcount(ps.s, ps.len);
-                Var& ins = newmap->getOrCreate(vmmem, newkey);
+                Var& ins = newmap->putKey(vmmem, ps.s, ps.len);
                 ins.clear(vmmem); // overwrite if already present
                 ins = std::move(srcvar.clone(vmmem, srcmem));
             }
@@ -298,15 +296,8 @@ void VM::cmd_Keysel(unsigned param)
                 Var::Map *newmap = mm.makeMap(mem);
                 for(Var::Map::Iterator it = Lm->begin(); it != Lm->end(); ++it)
                 {
-                    StrRef readk = it.value().asStrRef();
-                    if(&mem != e.ref.mem)
-                    {
-                        PoolStr ps = mem.getSL(readk);
-                        readk = e.ref.mem->lookup(ps.s, ps.len);
-                        if(!readk)
-                            continue;
-                    }
-                    if(const Var *x = src->get(readk))
+                    StrRef k = mem.translateS(*e.ref.mem, it.value().asStrRef());
+                    if(const Var *x = src->get(k))
                         newmap->put(mem, it.key(), std::move(x->clone(mem, *e.ref.mem)));
                 }
                 newtop.addRel(mem, std::move(mm), e.key);
@@ -323,10 +314,8 @@ void VM::cmd_Keysel(unsigned param)
                 {
                     StrRef k = it.key();
                     PoolStr ps = e.ref.mem->getSL(k);
-                    StrRef myk = mem.putNoRefcount(ps.s, ps.len);
-                    assert(myk);
-                    if(!Lm->get(myk))
-                        newmap->getOrCreate(mem, myk) = std::move(it.value().clone(mem, *e.ref.mem));
+                    if(!Lm->get(mem, ps.s, ps.len))
+                        newmap->putKey(mem, ps.s, ps.len) = std::move(it.value().clone(mem, *e.ref.mem));
                 }
                 newtop.addRel(mem, std::move(mm), e.key);
             }
@@ -539,7 +528,7 @@ bool VM::exec(size_t ip)
         switch(c.type)
         {
             case CM_LOOKUP:
-                cmd_GetKey(c.param);
+                cmd_Lookup(c.param);
                 break;
             case CM_CHECKKEY:
                 cmd_CheckKeyVsSingleLiteral(c.param, c.param2);
@@ -655,7 +644,7 @@ StackFrame* VM::_evalVar(StrRef key, size_t pc)
 
 StackFrame* VM::_getVar(StrRef key)
 {
-    Var* v = evals.lookup(key);
+    Var* v = evals.lookupNoFetch(key);
     if(!v)
     {
         printf("Attempt to eval [%s], but does not exist\n",
@@ -825,7 +814,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
             {
                 unsigned index = c.param >> 2u;
                 KeySelOp op = KeySelOp(c.param & 3);
-                os << getKeySelOpName(op) << dumpjson(VarCRef(mem, &literals[index]), false);
+                os << ' ' << getKeySelOpName(op) << dumpjson(VarCRef(mem, &literals[index]), false);
             }
             break;
 

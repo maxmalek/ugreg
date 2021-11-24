@@ -103,6 +103,9 @@ public:
     void collateFree(char *coll) const;
     void defrag();
 
+    // translate one foreign StrRef to own memory space. Does not add or incref in own pool.
+    StrRef translateS(const StringPool& other, StrRef s) const;
+
 private:
     strpool_t _sp;
 };

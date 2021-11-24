@@ -19,12 +19,6 @@ struct _VarRange
     size_t last; // inclusive
 };
 
-struct LockableMem
-{
-    TreeMem& mem;
-    acme::upgrade_mutex& mutex;
-};
-
 // For merge() operations.
 // If not recursive, simply assign keys and replace the values of keys that are overwritten.
 // If recursive, merge all maps recursively (all other values are replaced);
@@ -229,10 +223,14 @@ public:
     inline const Var::Map* map() const { return _topbits() == BITS_MAP ? u.m : 0; }
           Var::Map* map_unsafe();    // asserts that map
     const Var::Map* map_unsafe() const;
-          Var* lookup(StrRef s);     // NULL if not map or no such key
+          Var* lookupNoFetch(StrRef s);     // NULL if not map or no such key
+    const Var* lookupNoFetch(StrRef s) const;
+          Var* lookup(StrRef s);     // NULL if not map or no such key, and try to fetch
     const Var* lookup(StrRef s) const;
-          Var* fetch(LockableMem& mr, const char *key, size_t len); // like lookup(), but try to fetch from remote if key doesn't exist
-    bool fetchAll(LockableMem& mr); // fetch stuff and populate. returns true on success. Caller must check canFetch() first.
+          Var* lookup(const TreeMem& mem, const char* key, size_t len);     // lookup first, fetch if it doesn't exist
+    const Var* lookup(const TreeMem& mem, const char* key, size_t len) const;
+    Var* fetchOne(const char *key, size_t len); // like lookup(), but try to fetch from remote if key doesn't exist
+    bool fetchAll(); // fetch stuff and populate. returns true on success. Caller must check canFetch() first.
     const bool canFetch() const;
     Var::Extra *getExtra();
     const Var::Extra *getExtra() const;
@@ -247,8 +245,8 @@ public:
     };
 
     // /path/to/subnode
-    Var *subtreeOrFetch(LockableMem& mr, const char *path, SubtreeQueryFlags qf = SQ_DEFAULT);
-    
+    Var *subtreeOrFetch(TreeMem& mem, const char *path, SubtreeQueryFlags qf = SQ_DEFAULT);
+
     // like subtree(..., SQ_NOFETCH)
     const Var *subtreeConst(const TreeMem& mem, const char *path) const;
 
@@ -287,18 +285,18 @@ class _VarExtra
 {
 public:
     u64 expiryTS; // timestamp when the map this is attached to expires
-    _VarMap *fetchedBy;
     _VarMap& mymap;
+    acme::upgrade_mutex& writemutex;
+    //_VarMap *fetchedBy;
     TreeMem& mem;
     Fetcher *fetcher;
+
+    // FIXME: this should probably be atomic
     bool datavalid; // false if expired, not fetched, etc // TODO: reset this to false at some point
-
-
-    // TODO: ptr back to owning map?
 
     bool check(const Accessor& a) const;
     _VarExtra *clone(TreeMem& mem, _VarMap& m);
-    _VarExtra(_VarMap& m, TreeMem& mem);
+    _VarExtra(_VarMap& m, TreeMem& mem, acme::upgrade_mutex& mutex);
     ~_VarExtra(); // TODO: kill dtor, replace with destroy() method? (then it can be refcounted)
 
 private:
@@ -333,23 +331,27 @@ public:
     inline size_t size() const { return _storage.size(); }
 
     Var& getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
-    Var* get(StrRef key);
+          Var* getNoFetch(StrRef key);
+    const Var* getNoFetch(StrRef key) const;
+          Var* get(const TreeMem& mem, const char* key, size_t len);
+    const Var* get(const TreeMem& mem, const char* key, size_t len) const;
+          Var* get(StrRef key);
     const Var* get(StrRef key) const;
-    Var *fetch(LockableMem& mr, const char *key, size_t len); // always fetch
-    bool fetchAll(LockableMem& mr);                           // always fetch and replace own data
+    Var* fetchOne(const char *key, size_t len); // always fetch
+    bool fetchAll();                       // always fetch and replace own data
 
     Var& putKey(TreeMem& mem, const char* key, size_t len);
 
     Var& put(TreeMem& mem, StrRef k, Var&& x); // increases refcount if new key stored
 
-    inline Iterator begin() const { return _storage.begin(); }
+    Iterator begin() const;
     inline Iterator end() const { return _storage.end(); }
-    inline MutIterator begin() { return _storage.begin(); }
+    MutIterator begin();
     inline MutIterator end() { return _storage.end(); }
 
     bool equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othermem) const;
 
-    Extra* ensureExtra(TreeMem& mem);
+    Extra* ensureExtra(TreeMem& mem, acme::upgrade_mutex& mutex);
     inline Extra* getExtra() const { return _extra; }
 
     // intended for setting the extra data after creating the map
@@ -424,6 +426,7 @@ public:
 
     VarRef at(size_t idx) const;          // does not convert to array
     VarRef lookup(const char* key) const; // does not convert to map
+    VarRef lookup(const char* key, size_t len) const; // does not convert to map
 
     // converts into a map, creates key if not present, so that a construction like this:
     // VarRef ref = ...;
@@ -499,6 +502,7 @@ public:
 
     VarCRef at(size_t idx) const;          // does not convert to array
     VarCRef lookup(const char *key) const; // does not convert to map
+    VarCRef lookup(const char *key, size_t len) const; // does not convert to map
     Var clone(TreeMem& dst) const;
 
     Var::CompareResult compare(Var::CompareMode cmp, const VarCRef& o);

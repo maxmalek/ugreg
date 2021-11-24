@@ -142,14 +142,14 @@ Var Fetcher::fetchOne(const char *suffix, size_t len)
     Var ret;
 
     StrRef k = this->lookup(suffix, len); // will be 0 if not yet known string
-    if (Var* v = alldata.lookup(k))
+    if (Var* v = alldata.lookupNoFetch(k))
         ret = std::move(*v);
     else
     {
         alldata = std::move(_fetchAllNoPost());
         if(!k)
             k = this->lookup(suffix, len); // at this point the string is pooled if it exists
-        if(Var *v = alldata.lookup(k))
+        if(Var *v = alldata.lookupNoFetch(k))
             ret = std::move(*v);
     }
 

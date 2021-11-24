@@ -64,7 +64,7 @@ bool Mgr::initVM(VM& vm, const char* key, size_t keylen) const
     if(!k)
         return false;
 
-    const Var *v = _store.lookup(k);
+    const Var *v = _store.lookupNoFetch(k);
     if(!v)
         return false;
 

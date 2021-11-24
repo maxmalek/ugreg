@@ -30,8 +30,7 @@ VarCRef DataTree::root() const
 // TODO: check permissions
 VarRef DataTree::subtree(const char* path, Var::SubtreeQueryFlags qf)
 {
-    LockableMem mr { *this, mutex };
-    return VarRef(*this, _root.subtreeOrFetch(mr, path, qf));
+    return VarRef(*this, _root.subtreeOrFetch(*this, path, qf));
 }
 
 VarCRef DataTree::subtreeConst(const char *path) const

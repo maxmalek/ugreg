@@ -139,3 +139,13 @@ void StringPool::defrag()
 {
     strpool_defrag(&_sp);
 }
+
+StrRef StringPool::translateS(const StringPool& other, StrRef s) const
+{
+    if (this != &other)
+    {
+        PoolStr ps = other.getSL(s);
+        s = lookup(ps.s, ps.len);
+    }
+    return s;
+}

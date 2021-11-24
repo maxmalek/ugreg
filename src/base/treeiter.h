@@ -48,7 +48,10 @@ void treeIter_T(Functor& func, const typename Functor::VarWrapType src)
 
     assert(src.v);
 
-    // Early-out if it's a single element
+    // HACK: early return below breaks if src is an empty map with an attached fetcher
+    const_cast<Var*>(src.v)->fetchAll();
+
+    // Early-out if it's a single element, but make sure begin() of maps is called so that a fetch can take place if necessary
     if (!func(src))
         return;
 

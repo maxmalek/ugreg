@@ -62,10 +62,10 @@ static void _DeleteArray(TreeMem& mem, Var *p, size_t n)
     }
 }
 
-static _VarExtra*_NewExtra(TreeMem& mem, _VarMap& m)
+static _VarExtra*_NewExtra(TreeMem& mem, _VarMap& m, acme::upgrade_mutex& mutex)
 {
     void *p = (_VarExtra*)mem.Alloc(sizeof(_VarExtra));
-    _VarExtra*ex = _X_PLACEMENT_NEW(p) _VarExtra(m, mem);
+    _VarExtra *ex = _X_PLACEMENT_NEW(p) _VarExtra(m, mem, mutex);
     return ex;
 }
 
@@ -413,24 +413,44 @@ const Var::Map *Var::map_unsafe() const
     return u.m;
 }
 
-Var* Var::lookup(StrRef k)
+Var* Var::lookupNoFetch(StrRef k)
 {
-    return _topbits() == BITS_MAP ? u.m->get(k) : NULL;
+    return _topbits() == BITS_MAP ? u.m->getNoFetch(k) : NULL;
 }
 
-const Var* Var::lookup(StrRef k) const
+const Var* Var::lookupNoFetch(StrRef k) const
 {
-    return _topbits() == BITS_MAP ? u.m->get(k) : NULL;
+    return _topbits() == BITS_MAP ? u.m->getNoFetch(k) : NULL;
 }
 
-Var* Var::fetch(LockableMem& mr, const char *key, size_t len)
+Var* Var::lookup(StrRef s)
 {
-    return _topbits() == BITS_MAP ? u.m->fetch(mr, key, len) : NULL;
+    return _topbits() == BITS_MAP ? u.m->get(s) : NULL;
 }
 
-bool Var::fetchAll(LockableMem& mr)
+const Var* Var::lookup(StrRef s) const
 {
-    return _topbits() == BITS_MAP ? u.m->fetchAll(mr) : false;
+    return _topbits() == BITS_MAP ? u.m->get(s) : NULL;
+}
+
+Var* Var::fetchOne(const char *key, size_t len)
+{
+    return _topbits() == BITS_MAP ? u.m->fetchOne(key, len) : NULL;
+}
+
+Var* Var::lookup(const TreeMem& mem, const char* key, size_t len)
+{
+    return _topbits() == BITS_MAP ? u.m->get(mem, key, len) : NULL;
+}
+
+const Var* Var::lookup(const TreeMem& mem, const char* key, size_t len) const
+{
+    return _topbits() == BITS_MAP ? u.m->get(mem, key, len) : NULL;
+}
+
+bool Var::fetchAll()
+{
+    return _topbits() == BITS_MAP ? u.m->fetchAll() : false;
 }
 
 Var::Type Var::type() const
@@ -802,7 +822,7 @@ const bool Var::canFetch() const
     return x && x->fetcher;
 }
 
-Var* Var::subtreeOrFetch(LockableMem& mr, const char* path, SubtreeQueryFlags qf)
+Var* Var::subtreeOrFetch(TreeMem& mem, const char* path, SubtreeQueryFlags qf)
 {
     Var* p = this;
     if (!*path)
@@ -823,20 +843,15 @@ Var* Var::subtreeOrFetch(LockableMem& mr, const char* path, SubtreeQueryFlags qf
                 break; // thing isn't container
             }
             // it's not a map, make it one
-            p->makeMap(mr.mem);
+            p->makeMap(mem);
             [[fallthrough]];
         case Var::TYPE_MAP:
         {
-            StrRef ref = mr.mem.lookup(ps.s, ps.len);
-            Var* nextp = p->lookup(ref);
-            if (!nextp)
-            {
-                if (!(qf & SQ_NOFETCH) && p->canFetch())
-                    nextp = p->fetch(mr, ps.s, ps.len);
-                if (!nextp && (qf & SQ_CREATE))
-                    nextp = &p->map_unsafe()->putKey(mr.mem, ps.s, ps.len);
-            }
-
+            Var* nextp = !(qf & SQ_NOFETCH)
+                ? p->lookup(mem, ps.s, ps.len)
+                : p->lookupNoFetch(mem.lookup(ps.s, ps.len));
+            if (!nextp && (qf & SQ_CREATE))
+                nextp = &p->map_unsafe()->putKey(mem, ps.s, ps.len);
             p = nextp;
             break;
         }
@@ -856,31 +871,19 @@ Var* Var::subtreeOrFetch(LockableMem& mr, const char* path, SubtreeQueryFlags qf
             Var* nextp = p->at(idx);
             if ((qf & SQ_CREATE) && !nextp)
                 if (size_t newsize = idx + 1) // overflow check
-                    nextp = &p->makeArray(mr.mem, newsize)[idx];
+                    nextp = &p->makeArray(mem, newsize)[idx];
             p = nextp;
         }
         break;
         }
     }
 
-    // if we end up returning a fetching endpoint, just fetch everything
-    // TODO: this doesn't have to be done here.
-    // It would suffice to:
-    // - fetchAll() in begin()
-    // - fetch(key) in a lookup
-    // But not sure how to handle this properly since the tree would need to be write-locked at that point
-    // and making sure both operations don't modify the tree makes sense and is probably for the better.
-    if (!(qf & SQ_NOFETCH) && p && p->canFetch())
-        if(!p->fetchAll(mr))
-            return NULL;
-
     return p;
 }
 
 const Var* Var::subtreeConst(const TreeMem& mem, const char* path) const
 {
-    LockableMem mr { const_cast<TreeMem&>(mem), *(acme::upgrade_mutex*)NULL }; // i'm sorry
-    return const_cast<Var*>(this)->subtreeOrFetch(mr, path, SQ_NOFETCH); // never actually uses mr.mutex
+    return const_cast<Var*>(this)->subtreeOrFetch(const_cast<TreeMem&>(mem), path, SQ_NOFETCH); // never actually uses mr.mutex
 }
 
 void _VarMap::_checkmem(const TreeMem& m) const
@@ -973,12 +976,12 @@ bool _VarMap::equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othe
 }
 
 
-_VarExtra* _VarMap::ensureExtra(TreeMem& mem)
+_VarExtra* _VarMap::ensureExtra(TreeMem& mem, acme::upgrade_mutex& mutex)
 {
     _checkmem(mem);
     _VarExtra* ex = _extra;
     if (!ex)
-        _extra = ex = _NewExtra(mem, *this);
+        _extra = ex = _NewExtra(mem, *this, mutex);
     return ex;
 }
 
@@ -992,7 +995,7 @@ bool _VarMap::isExpired(u64 now) const
 void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags)
 {
     _checkmem(dstmem);
-    for(Iterator it = o._storage.begin(); it != o._storage.end(); ++it)
+    for(Iterator it = o.begin(); it != o.end(); ++it)
     {
         PoolStr ps = srcmem.getSL(it.key());
         Var& dst = putKey(dstmem, ps.s, ps.len);
@@ -1035,7 +1038,7 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
     _checkmem(srcmem);
     _VarMap *cp = _NewMap(dstmem, size());
     cp->_extra = _extra ? _extra->clone(dstmem, *cp) : NULL;
-    for(Iterator it = _storage.begin(); it != _storage.end(); ++it)
+    for(Iterator it = begin(); it != end(); ++it)
     {
         PoolStr k = srcmem.getSL(it.key());
         cp->_storage.at(dstmem, dstmem.put(k.s, k.len)) = std::move(it.value().clone(dstmem, srcmem));
@@ -1062,15 +1065,15 @@ void _VarMap::ensureData(u64 now, StrRef k) const
 }
 */
 
-Var* _VarMap::fetch(LockableMem& mr, const char* key, size_t len)
+Var* _VarMap::fetchOne(const char* key, size_t len)
 {
-    _checkmem(mr.mem);
     if (_extra && _extra->fetcher)
     {
+        _checkmem(_extra->mem);
         // Lock the fetcher until we're done with fv
         std::lock_guard<std::mutex> fetchlock(_extra->fetcher->mutex);
         // Make sure two threads competing for the same key ask the fetcher only once
-        if(StrRef k = mr.mem.lookup(key, len))
+        if(StrRef k = _extra->mem.lookup(key, len))
             if(Var *v = _storage.getp(k))
                 return v;
         // --- This may take a while ---
@@ -1080,11 +1083,11 @@ Var* _VarMap::fetch(LockableMem& mr, const char* key, size_t len)
 
         if(!fv.isNull())
         {
-            acme::upgrade_lock lock(mr.mutex);
+            acme::upgrade_lock lock(_extra->writemutex);
             // --- WRITE LOCK ON ----
-            Var& dst = putKey(mr.mem, key, len);
-            dst.clear(mr.mem);
-            dst = std::move(fv.clone(mr.mem, *_extra->fetcher));
+            Var& dst = putKey(_extra->mem, key, len);
+            dst.clear(_extra->mem);
+            dst = std::move(fv.clone(_extra->mem, *_extra->fetcher));
             fv.clear(*_extra->fetcher);
             return &dst;
             // ----------
@@ -1094,12 +1097,11 @@ Var* _VarMap::fetch(LockableMem& mr, const char* key, size_t len)
     return NULL;
 }
 
-// FIXME: if two threads compete for fetchlock, only one of them should actually fetch
-bool _VarMap::fetchAll(LockableMem& mr)
+bool _VarMap::fetchAll()
 {
-    _checkmem(mr.mem);
     if (_extra && _extra->fetcher)
     {
+        _checkmem(_extra->mem);
         // Lock the fetcher until we're done with fv
         std::lock_guard<std::mutex> fetchlock(_extra->fetcher->mutex);
 
@@ -1117,14 +1119,14 @@ bool _VarMap::fetchAll(LockableMem& mr)
             TreeMem& fm = *_extra->fetcher; // fetcher's memory
             const _VarMap *m = fv.map();
             assert(m);
-            acme::upgrade_lock lock(mr.mutex);
+            acme::upgrade_lock lock(_extra->writemutex);
             // --- WRITE LOCK ON ----
-            clear(mr.mem);
+            clear(_extra->mem);
             for(Iterator it = m->begin(); it != m->end(); ++it)
             {
                 PoolStr ps = fm.getSL(it.key());
-                StrRef k = mr.mem.put(ps.s, ps.len);
-                _storage.at(mr.mem, k) = std::move(it.value().clone(mr.mem, fm));
+                StrRef k = _extra->mem.put(ps.s, ps.len);
+                _storage.at(_extra->mem, k) = std::move(it.value().clone(_extra->mem, fm));
             }
             fv.clear(fm);
             _extra->datavalid = true;
@@ -1136,14 +1138,48 @@ bool _VarMap::fetchAll(LockableMem& mr)
     return false;
 }
 
-Var* _VarMap::get(StrRef k)
+Var* _VarMap::getNoFetch(StrRef k)
 {
     return k ? _storage.getp(k) : NULL;
 }
 
-const Var* _VarMap::get(StrRef k) const
+const Var* _VarMap::getNoFetch(StrRef k) const
 {
     return k ? _storage.getp(k) : NULL;
+}
+
+Var* _VarMap::get(const TreeMem& mem, const char* key, size_t len)
+{
+    // TODO: check expiry? (better done elsewhere?)
+    StrRef k = mem.lookup(key, len);
+    if(k)
+        if (Var* v = _storage.getp(k))
+            return v;
+
+    return fetchOne(key, len);
+}
+
+const Var* _VarMap::get(const TreeMem& mem, const char* key, size_t len) const
+{
+    return const_cast<_VarMap*>(this)->get(mem, key, len); // hack?
+}
+
+Var* _VarMap::get(StrRef k)
+{
+    if (!k)
+        return NULL;
+    Var* v = _storage.getp(k);
+    if (!v && _extra)
+    {
+        PoolStr ps = _extra->mem.getSL(k);
+        v = fetchOne(ps.s, ps.len);
+    }
+    return v;
+}
+
+const Var* _VarMap::get(StrRef k) const
+{
+    return const_cast<_VarMap*>(this)->get(k);
 }
 
 Var& _VarMap::putKey(TreeMem& mem, const char* key, size_t len)
@@ -1164,6 +1200,20 @@ Var& _VarMap::put(TreeMem& mem, StrRef k, Var&& x)
     if(ins.newly_inserted)
         mem.increfS(k);
     return ins.ref;
+}
+
+_VarMap::Iterator _VarMap::begin() const
+{
+    if (_extra && _extra->fetcher && !_extra->datavalid)
+        const_cast<_VarMap*>(this)->fetchAll();
+    return _storage.begin();
+}
+
+_VarMap::MutIterator _VarMap::begin()
+{
+    if (_extra && _extra->fetcher && !_extra->datavalid)
+        const_cast<_VarMap*>(this)->fetchAll();
+    return _storage.begin();
 }
 
 void _VarMap::setExtra(Extra* extra)
@@ -1233,7 +1283,12 @@ VarRef VarRef::at(size_t idx) const
 
 VarRef VarRef::lookup(const char* key) const
 {
-    return VarRef(*mem, v->lookup(mem->lookup(key, strlen(key))));
+    return lookup(key, strlen(key));
+}
+
+VarRef VarRef::lookup(const char* key, size_t len) const
+{
+    return VarRef(*mem, v->lookup(*mem, key, len));
 }
 
 VarCRef VarCRef::at(size_t idx) const
@@ -1243,7 +1298,12 @@ VarCRef VarCRef::at(size_t idx) const
 
 VarCRef VarCRef::lookup(const char* key) const
 {
-    return VarCRef(*mem, v->lookup(mem->lookup(key, strlen(key))));
+    return lookup(key, strlen(key));
+}
+
+VarCRef VarCRef::lookup(const char* key, size_t len) const
+{
+    return VarCRef(*mem, v->lookup(*mem, key, len));
 }
 
 Var VarCRef::clone(TreeMem& dst) const
@@ -1259,13 +1319,13 @@ Var::CompareResult VarCRef::compare(Var::CompareMode cmp, const VarCRef& o)
 
 _VarExtra* _VarExtra::clone(TreeMem& mem, _VarMap& m)
 {
-    _VarExtra *e = _NewExtra(mem, m);
+    _VarExtra *e = _NewExtra(mem, m, writemutex);
     e->expiryTS = expiryTS;
     return e;
 }
 
-_VarExtra::_VarExtra(_VarMap& m, TreeMem& mem)
-    : expiryTS(0), mymap(m), mem(mem), fetcher(NULL), datavalid(false)
+_VarExtra::_VarExtra(_VarMap& m, TreeMem& mem, acme::upgrade_mutex& mutex)
+    : expiryTS(0), mymap(m), writemutex(mutex), mem(mem), fetcher(NULL), datavalid(false)
 {
 }
 
