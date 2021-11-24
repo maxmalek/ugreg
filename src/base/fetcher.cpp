@@ -134,26 +134,32 @@ bool Fetcher::_doStartupCheck(VarCRef config) const
 
 Var Fetcher::fetchOne(const char *suffix, size_t len)
 {
-    if(fetchsingle.loaded())
-        return _fetch(fetchsingle, suffix, len);
-
-    // Use fetch-all to fetch everything and then extract a single element
-    // TODO: check if valid/expired
     Var ret;
 
-    StrRef k = this->lookup(suffix, len); // will be 0 if not yet known string
-    if (Var* v = alldata.lookupNoFetch(k))
-        ret = std::move(*v);
+    if(fetchsingle.loaded())
+        ret = _fetch(fetchsingle, suffix, len);
     else
     {
-        alldata = std::move(_fetchAllNoPost());
-        if(!k)
-            k = this->lookup(suffix, len); // at this point the string is pooled if it exists
-        if(Var *v = alldata.lookupNoFetch(k))
+        // Use fetch-all to fetch everything and then extract a single element
+        // TODO: check if valid/expired
+
+        StrRef k = this->lookup(suffix, len); // will be 0 if not yet known string
+        if (Var* v = alldata.lookupNoFetch(k))
             ret = std::move(*v);
+        else
+        {
+            alldata = _fetchAllNoPost();
+            if (!k)
+                k = this->lookup(suffix, len); // at this point the string is pooled if it exists
+            if (Var* v = alldata.lookupNoFetch(k))
+                ret = std::move(*v);
+        }
     }
 
-    return _postproc(postsingle, std::move(ret));
+    if (postsingle.loaded())
+        ret = _postproc(postsingle, std::move(ret));
+
+    return ret;
 }
 
 Var Fetcher::fetchAll()
@@ -165,7 +171,7 @@ Var Fetcher::fetchAll()
     Var all = std::move(_fetchAllNoPost());
     if (Var::Map* m = all.map())
         for (Var::Map::MutIterator it = m->begin(); it != m->end(); ++it)
-             it.value()= std::move(_postproc(postsingle, std::move(it.value())));
+             it.value()= _postproc(postsingle, std::move(it.value()));
 
     return all;
 }
@@ -178,7 +184,7 @@ Var Fetcher::_fetchAllNoPost()
     if(!ret.isNull() && postall.loaded())
     {
         const char* oldtype = ret.typestr();
-        ret = std::move(_postproc(postall, std::move(ret)));
+        ret = _postproc(postall, std::move(ret));
         if(ret.type() != Var::TYPE_MAP)
             printf("Fetcher::fetchAll: Was %s before postproc, is now %s", oldtype, ret.typestr());
     }
@@ -193,6 +199,7 @@ Var Fetcher::_fetchAllNoPost()
 
 Var Fetcher::_postproc(const view::View& vw, Var&& var)
 {
+    assert(vw.loaded());
     Var tmp = std::move(var);
     Var res = vw.produceResult(*this, VarCRef(this, &tmp), _config);
     tmp.clear(*this);
