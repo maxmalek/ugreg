@@ -126,9 +126,9 @@ bool Fetcher::_doStartupCheck(VarCRef config) const
             return false;
         }
 
+        printf("Fetcher init (startup-check): Check passed\n");
     }
 
-    printf("Fetcher init (startup-check): Check passed\n");
     return true;
 }
 
@@ -175,10 +175,10 @@ Var Fetcher::_fetchAllNoPost()
     alldata.clear(*this);
     Var ret = _fetch(fetchall, NULL, 0);
 
-    if(postall.loaded())
+    if(!ret.isNull() && postall.loaded())
     {
         const char* oldtype = ret.typestr();
-        Var ret = _postproc(postall, std::move(ret));
+        ret = std::move(_postproc(postall, std::move(ret)));
         if(ret.type() != Var::TYPE_MAP)
             printf("Fetcher::fetchAll: Was %s before postproc, is now %s", oldtype, ret.typestr());
     }
@@ -193,8 +193,9 @@ Var Fetcher::_fetchAllNoPost()
 
 Var Fetcher::_postproc(const view::View& vw, Var&& var)
 {
-    Var res = vw.produceResult(*this, VarCRef(this, &var), _config);
-    var.clear(*this);
+    Var tmp = std::move(var);
+    Var res = vw.produceResult(*this, VarCRef(this, &tmp), _config);
+    tmp.clear(*this);
     return res;
 }
 
