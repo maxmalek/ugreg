@@ -921,8 +921,11 @@ _VarMap::~_VarMap()
 void _VarMap::destroy(TreeMem& mem)
 {
     clear(mem);
-    if(_extra)
+    if (_extra)
+    {
         _DeleteExtra(mem, _extra);
+        _extra = NULL;
+    }
     this->~_VarMap();
     mem.Free(this, sizeof(*this));
 }
