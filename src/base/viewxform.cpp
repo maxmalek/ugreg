@@ -55,7 +55,7 @@ void transformUnpack(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
 
 void transformToInt(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
 {
-    const size_t n = oldframe.store.size();
+    const size_t n = oldframe.refs.size();
     newframe.store.reserve(n);
 
     for (size_t i = 0; i < n; ++i)
