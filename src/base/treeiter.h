@@ -8,9 +8,8 @@
 /*
 struct WriterFunctor : public ConstTreeIterFunctor
 {
-    // Var was encountered. Return true to recurse (eventually End*() will be called).
-    // Return false not to recurse (End*() will not be called)
-    bool operator()(VarCRef v) {}
+    // Var was encountered. If it's a container, eventually End*() will be called.
+    void operator()(VarCRef v) {}
 
     void EndArray(VarCRef v) {}       // finished iterating over array
     void EndObject(VarCRef v) {}      // finished iterating over map
@@ -48,11 +47,7 @@ void treeIter_T(Functor& func, const typename Functor::VarWrapType src)
 
     assert(src.v);
 
-    // HACK: early return below breaks if src is an empty map with an attached fetcher
-    const_cast<Var*>(src.v)->fetchAll();
-
-    // Early-out if it's a single element, but make sure begin() of maps is called so that a fetch can take place if necessary
-    if (!func(src))
+    if (!func(src) || !src.isContainer())
         return;
 
     // This would be simpler and easier to just write out recursively,
@@ -68,7 +63,6 @@ void treeIter_T(Functor& func, const typename Functor::VarWrapType src)
             case Var::TYPE_ARRAY: it.array = 0; break;
             case Var::TYPE_MAP: it.map = x.u.m->begin(); break;
             default: assert(false); // State should never get constructed for non-containers
-                                    // If this triggers: Did you return true from the functor for a non-container?
             }
         }
         ~State() {}
@@ -105,7 +99,7 @@ void treeIter_T(Functor& func, const typename Functor::VarWrapType src)
                 {
                     Ref vv = a[s.it.array];
                     ++s.it.array;
-                    if (func(Wrap(src.mem, &vv)))
+                    if (func(Wrap(src.mem, &vv)) && vv.isContainer())
                     {
                         stk.push_back(std::move(s)); // resume it later
                         s = std::move(State(vv));
@@ -125,7 +119,7 @@ void treeIter_T(Functor& func, const typename Functor::VarWrapType src)
                     func.Key(k.s, k.len);
                     Ref vv = s.it.map.value();
                     ++s.it.map;
-                    if (func(Wrap(*src.mem, &vv)))
+                    if (func(Wrap(*src.mem, &vv)) && vv.isContainer())
                     {
                         stk.push_back(std::move(s)); // resume it later
                         s = std::move(State(vv));

@@ -55,7 +55,7 @@ struct CollectExpiredVars : public MutTreeIterFunctor
                 return false; // don't recurse into expired things
             }
         }
-        return v.v->isContainer();
+        return true; // recurse normally
     }
 
     void EndArray(VarRef v) {}

@@ -15,9 +15,8 @@ namespace json_out { // private namespace
 // returns false if object was emitted and is finished, true if it's a container
 // and objects inside must be looked at
 template<typename Wr>
-bool emit(Wr& writer, VarCRef v)
+void emit(Wr& writer, VarCRef v)
 {
-    bool recurse = false;
     const Var& vv = *v.v;
     switch(v.type())
     {
@@ -35,22 +34,15 @@ bool emit(Wr& writer, VarCRef v)
 
         case Var::TYPE_MAP:
             writer.StartObject();
-            recurse = !vv.u.m->empty();
-            if(!recurse)
-                writer.EndObject();
             break;
 
         case Var::TYPE_ARRAY:
             writer.StartArray();
-            recurse = !!vv._size();
-            if(!recurse)
-                writer.EndArray();
             break;
 
         default:
             assert(false);
     }
-    return recurse;
 }
 
 template<typename Wr>
@@ -60,7 +52,8 @@ struct WriterFunctor : public ConstTreeIterFunctor
     WriterFunctor(Wr& wr) : wr(wr) {}
     inline bool operator()(VarCRef v)
     {
-        return json_out::emit(wr, v);
+        json_out::emit(wr, v);
+        return true;
     }
 
     inline void EndArray(VarCRef) { wr.EndArray(); }

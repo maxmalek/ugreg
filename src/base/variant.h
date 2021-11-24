@@ -89,9 +89,9 @@ public:
         TYPE_PTR, // Not actually json but we use this type to store a userdata/void*
         TYPE_RANGE, // Another custom extension
         // containers -- always last
-        TYPE_STRING,
-        TYPE_ARRAY,
-        TYPE_MAP,
+        TYPE_STRING, // isContainer() returns false for this -- technically a string is an atom (scalar value)
+        TYPE_ARRAY, // real container
+        TYPE_MAP,   // real container
         // keep in sync with c_typeNames in the .cpp file!
     };
 
@@ -411,6 +411,7 @@ public:
     Var::Type type() const { return v->type(); }
     const char* typestr() const { return v->typestr(); }
     bool isNull() const { return v->isNull(); }
+    bool isContainer() const { return v->isContainer(); }
     const s64* asInt() const { return v->asInt(); }
     const u64* asUint() const { return v->asUint(); }
     PoolStr asString() const { return v->asString(*mem); } // (does not convert to string)
@@ -491,6 +492,7 @@ public:
     const char* typestr() const { return v->typestr(); }
     size_t size() const { return v->size(); }
     bool isNull() const { return v->isNull(); }
+    bool isContainer() const { return v->isContainer(); }
     const s64* asInt() const { return v->asInt(); }
     const u64* asUint() const { return v->asUint(); }
     PoolStr asString() const { return v->asString(*mem); } // (does not convert to string)

@@ -46,17 +46,13 @@ struct ViewProducerVisitor : public MutTreeIterFunctor
     VM& vm;
     const VarCRef base;
 
-    ViewProducerVisitor(VM& vm, VarCRef base) : vm(vm), base(base) {}
+    ViewProducerVisitor(VM& vm, VarCRef base_) : vm(vm), base(base_) {}
 
     // Var was encountered. Return true to recurse (eventually End*() will be called).
     // Return false not to recurse (End*() will not be called)
     bool operator()(VarRef v)
     {
         assert(v.mem == &vm.mem);
-        
-        if(v.v->isContainer())
-            return true; // recurse
-
         if(v.type() == Var::TYPE_PTR)
         {
             // TYPE_PTR is used to store an entry point, and is not actually a ptr here
@@ -66,7 +62,7 @@ struct ViewProducerVisitor : public MutTreeIterFunctor
             vm.run(base, start);
             *v.v = std::move(ExportResult(vm));
         }
-        return false; // nothing to recurse
+        return true;
     }
 
     static Var ExportResult(const VM& vm)
@@ -141,9 +137,6 @@ struct ViewTemplateCompilerVisitor : public MutTreeIterFunctor
     // Return false not to recurse (End*() will not be called)
     bool operator()(VarRef v)
     {
-        if(v.v->isContainer())
-            return true; // recurse
-
         assert(v.type() != Var::TYPE_PTR);
 
         if(const char *code = v.asCString())
@@ -161,8 +154,7 @@ struct ViewTemplateCompilerVisitor : public MutTreeIterFunctor
                 fail = true;
             }
         }
-
-        return false; // nothing to recurse
+        return true;
     }
 
     void EndArray(VarRef v) {}       // finished iterating over array

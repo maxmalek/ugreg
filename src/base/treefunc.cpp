@@ -18,10 +18,7 @@ struct ExpiryFunctor : public ConstTreeIterFunctor
         : minexpiry(0)
     {}
 
-    // Var was encountered. Return true to recurse (eventually End*() will be called).
-    // Return false not to recurse (End*() will not be called)
-    bool operator()(VarCRef v) const { return v.v->isContainer(); }
-
+    bool operator()(VarCRef v) const { return true; }
     void EndArray(VarCRef v) {}
     void EndObject(VarCRef v)
     {
