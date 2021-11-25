@@ -112,13 +112,13 @@ void transformAsArray(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
     Var* a = arr.makeArray(mem, N);
     if (N)
     {
-        const Var* mybegin = &oldframe.store.front();
-        const Var* myend = &oldframe.store.back();
+        const VarEntry *mybegin = &oldframe.refs.front();
+        const VarEntry *myend = &oldframe.refs.back();
         for (size_t i = 0; i < N; ++i)
         {
             // We're making an array, so any keys get lost
             VarCRef r = oldframe.refs[i].ref;
-            if (r.mem == &mem && mybegin <= r.v && r.v <= myend) // if we own the memory, we can just move the thing
+            if (r.mem == &mem && mybegin->ref <= r.v && r.v <= myend->ref) // if we own the memory, we can just move the thing
                 a[i] = std::move(*const_cast<Var*>(r.v));
             else // but if it's in some other memory space, we must clone it
                 a[i] = std::move(r.v->clone(mem, *r.mem));
