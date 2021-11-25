@@ -133,8 +133,8 @@ void transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
     Var mp;
     const size_t N = oldframe.refs.size();
     Var::Map* m = mp.makeMap(mem, N);
-    const Var* mybegin = &oldframe.store.front();
-    const Var* myend = &oldframe.store.back();
+    const VarEntry* mybegin = &oldframe.refs.front();
+    const VarEntry* myend = &oldframe.refs.back();
     for (size_t i = 0; i < N; ++i)
     {
         // If the element didn't originally come from a map, drop it.
@@ -145,7 +145,7 @@ void transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
 
         VarCRef r = oldframe.refs[i].ref;
         StrRef k = oldframe.refs[i].key;
-        if (r.mem == &mem && mybegin <= r.v && r.v < myend) // if we own the memory, we can just move the thing
+        if (r.mem == &mem && mybegin->ref <= r.v && r.v < myend->ref) // if we own the memory, we can just move the thing
             m->put(mem, k, std::move(*const_cast<Var*>(r.v)));
         else // but if it's in some other memory space, we must clone it
         {
