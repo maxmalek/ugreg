@@ -61,6 +61,7 @@ enum CmdType
     CM_SELECTSTACK,// no param
     CM_CONCAT,     // param = how many stack frames to concat
     CM_PUSHROOT,   // no param
+    CM_CALLFN,     // param = # of args passed to function
 
     // ALWAYS LAST
     CM_DONE        // terminate execution at this point.

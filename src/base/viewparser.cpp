@@ -89,6 +89,8 @@ public:
     bool _parseUnquotedText();
     bool _parseLookupRoot();
     bool _parseLookupNext();
+    bool _parseFnCall();
+    size_t _parseExprList(); // returns number of exprs, 0 on error
     bool _parseKey();
     bool _parseNum(Var& v);
     bool _parseTextUntil(Var& v, char close);
@@ -121,7 +123,7 @@ public:
     bool _eat(char c);
     bool _parseBinOp(Cmd& op);
 
-    void _emit(CmdType cm, unsigned param, unsigned param2 = 0);
+    size_t _emit(CmdType cm, unsigned param, unsigned param2 = 0); // returns index of the emitted instruction
     unsigned _addLiteral(Var&& lit); // return index into literals table
     unsigned _emitPushVarRef(Var&& v);
     unsigned _emitPushLiteral(Var&& v);
@@ -217,7 +219,10 @@ size_t Parser::parse(const char *s)
     ParserTop top(*this);
 
     size_t start = exec.cmds.size();
-    if(!start) // since we return 0 only on error, add at least 1 dummy opcode
+    // since we return 0 only on error, add at least 1 dummy opcode
+    // this has the nice side effect that we can use index 0 as invalid,
+    // and when it's used anyway/errorneously, it'll just return without doing anything.
+    if(!start)
     {
         _emit(CM_DONE, 0);
         ++start;
@@ -514,6 +519,35 @@ bool Parser::_parseLookupRoot()
 bool Parser::_parseLookupNext()
 {
     return _parseKey() || _parseSelector();
+}
+
+bool Parser::_parseFnCall()
+{
+    ParserTop top(*this);
+    Var id;
+    if (_skipSpace() && _parseIdent(id) && _skipSpace() && _eat('(') && _skipSpace())
+    {
+        size_t idx = _emit(CM_CALLFN, 0); // param1 is just a dummy for now
+        if (size_t n = _parseExprList())
+            exec.cmds[idx].param = n; // fix the dummy value
+    }
+    return _skipSpace() && _eat(')') && _skipSpace() && top.accept();
+}
+
+size_t Parser::_parseExprList()
+{
+    ParserTop top(*this);
+    size_t n = 0;
+    if (_skipSpace() && _parseExpr())
+    {
+        ++n;
+        while (_skipSpace() && _eat(',') && _skipSpace())
+            if (_parseExpr())
+                ++n;
+            else
+                return 0;
+    }
+    return n;
 }
 
 // /key
@@ -848,10 +882,12 @@ bool Parser::_parseBinOp(Cmd& cm)
     return false;
 }
 
-void Parser::_emit(CmdType cm, unsigned param, unsigned param2)
+size_t Parser::_emit(CmdType cm, unsigned param, unsigned param2)
 {
     Cmd c { cm, param, param2 };
+    size_t idx = exec.cmds.size();
     exec.cmds.push_back(c);
+    return idx;
 }
 
 unsigned Parser::_addLiteral(Var&& lit)
