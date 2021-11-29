@@ -114,6 +114,7 @@ public:
     bool _parseEval();
     bool _parseSimpleEval();
     bool _parseExtendedEval();
+    bool _parseTransform();
     bool _parseIdent(Var& id); // write identifier name to id (as string)
     bool _parseIdentOrStr(Var& id);
 

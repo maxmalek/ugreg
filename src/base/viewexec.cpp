@@ -734,6 +734,7 @@ static const char *s_opcodeNames[] =
     "SELECTSTACK",
     "CONCAT",
     "PUSHROOT",
+    "CALLFN",
     "DONE"
 };
 static_assert(Countof(s_opcodeNames) == CM_DONE+1, "opcode enum vs name table mismatch");

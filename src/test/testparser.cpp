@@ -46,6 +46,7 @@ static const TestEntry tests[] =
     { "{$x[val=42]}", true },
     { "string $with var", true },
     { "just ;$a string, no var", true },
+    { "{func($a)}", true},
 
     //{ "{/hello[$x]}", true },   // TODO: support this? (use all in $x as key)
     // ^ not sure if we should. that would introduce a data-based lookup.
