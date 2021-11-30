@@ -49,7 +49,6 @@ enum CmdType
 {
     CM_LOOKUP,     // param = index into literals table (to look up name of key). replace top with top[key].
     CM_GETVAR,     // param = index into literals table (to look up variable name). push value of variable.
-    CM_TRANSFORM,  // param = function ID. transform top in place.
     CM_FILTER,     // param = (OpType << 1) | invert. pop A, keep elements in top only when op(top, A) is true
     CM_LITERAL,    // param = index intro literals table. push literal on top of the stack
     CM_DUP,        // copy stack frame contents at stack[stack.size() - param - 1] on top as new frame
@@ -58,7 +57,6 @@ enum CmdType
                    // param2 = index of the literal to check against in the literals table
     CM_KEYSEL,     // param = (KeySelOp | (index << 2)); index into literals table
     CM_SELECT,     // param = index into literals table
-    CM_SELECTSTACK,// no param
     CM_CONCAT,     // param = how many stack frames to concat
     CM_PUSHROOT,   // no param
     CM_CALLFN,     // param = # of args passed to function
@@ -74,10 +72,6 @@ enum KeySelOp
     KEYSEL_DROP, // drop keys in list
     KEYSEL_KEY   // if array, convert to map. lookup subvalue from each entry, use that subvalue as new key for entry
 };
-
-// >= 0 when successful. < 0 when there is no transform with that name
-int GetTransformID(const char* s);
-const char *GetTransformName(int id);
 
 struct Cmd
 {
@@ -154,8 +148,8 @@ private:
     void cmd_Filter(unsigned param);
     void cmd_Keysel(unsigned param);
     void cmd_Select(unsigned param);
-    void cmd_SelectStack();
     void cmd_Concat(unsigned count);
+    void cmd_CallFn(unsigned lit, unsigned params);
 };
 
 } // end namespace view

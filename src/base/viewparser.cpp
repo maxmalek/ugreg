@@ -82,53 +82,66 @@ public:
     void rewind(const ParserState& ps);
     size_t parse(const char *s); // returns index where execution of the parsed block starts, or 0 on error
 
-    bool _parseSubExpr(const char* s); // recursive call into self
-    bool _parseExpr();
-    bool _parseQuery();
-    bool _parseQueryBody();
     bool _parseUnquotedText();
+    bool _parseEvalRoot();
+
+    // --- main language---
+    bool _parseExpr();
+    bool _parseEval();
+    bool _parseSubExpr(const char* s); // recursive call into self
+    // --- variables and identifiers ---
+    bool _parseAndEmitVarRef();
+    bool _parseVarRef(Var& id);
+    bool _parseIdent(Var& id); // write identifier name to id (as string)
+    bool _parseIdentOrStr(Var& id);
+    // --- function call and transform ---
+    bool _parseFnCall(unsigned extraargs = 0);
+    unsigned _parseExprList(); // returns number of exprs, 0 on error
+    // --- modifiers ---
+    bool _parseModList();
+    bool _parseMod();
+    bool _parseAndEmitTransform();
+    bool _parseAndEmitLookup();
+    // --- query / tree lookup ---
+    bool _parseQuery();
+    /*bool _parseQueryBody();
     bool _parseLookupRoot();
     bool _parseLookupNext();
-    bool _parseFnCall();
-    size_t _parseExprList(); // returns number of exprs, 0 on error
-    bool _parseKey();
-    bool _parseNum(Var& v);
-    bool _parseTextUntil(Var& v, char close);
-    bool _parseTextUntilAnyOf(Var& v, const char* close);
-    bool _parseTextUntilAnyOf(Var& v, const char *close, size_t n);
-    bool _parseStr(Var& v);
-    bool _parseNull();
-    bool _parseBool(Var& v);
-    size_t _parseVerbatim(const char *in); // returns length of match if matched, otherwise 0
-    bool _parseLiteral(Var& v);
-    bool _parseAndEmitLiteral();
-    bool _parseDecimal(u64& i);
-    bool _parseSize(size_t& i);
-    bool _addMantissa(double& f, u64 i);
+    bool _parseKey();*/
+    // --- selection and filtering ---
     bool _parseSelector();
     bool _parseSelection();
     bool _parseKeyCmp();
     bool _parseKeySel();
     bool _parseKeySelOp(KeySelOp& op);
     bool _parseKeySelEntry(Var::Map& m, bool allowRename);
-    bool _parseEval();
-    bool _parseSimpleEval();
-    bool _parseExtendedEval();
-    bool _parseTransform();
-    bool _parseIdent(Var& id); // write identifier name to id (as string)
-    bool _parseIdentOrStr(Var& id);
-
+    bool _parseBinOp(Cmd& op);
+    // --- terminals (values, literals, etc) ---
+    bool _parseAndEmitLiteral();
+    bool _parseLiteral(Var& v);
+    bool _parseNum(Var& v);
+    bool _parseStr(Var& v);
+    bool _parseNull();
+    bool _parseBool(Var& v);
+    bool _parseDecimal(u64& i);
+    bool _parseSize(size_t& i);
+    size_t _parseVerbatim(const char* in); // returns length of match if matched, otherwise 0
     bool _parseRange(Var& r);
     bool _parseRangeEntry(std::vector<Var::Range>& rs);
+    // --- utility ---
+    bool _addMantissa(double& f, u64 i);
+    bool _parseTextUntil(Var& v, char close);
+    bool _parseTextUntilAnyOf(Var& v, const char* close);
+    bool _parseTextUntilAnyOf(Var& v, const char* close, size_t n);
     bool _skipSpace(bool require = false);
     bool _eat(char c);
-    bool _parseBinOp(Cmd& op);
 
     size_t _emit(CmdType cm, unsigned param, unsigned param2 = 0); // returns index of the emitted instruction
     unsigned _addLiteral(Var&& lit); // return index into literals table
     unsigned _emitPushVarRef(Var&& v);
     unsigned _emitPushLiteral(Var&& v);
     unsigned _emitGetKey(Var&& v);
+    bool _emitTransform(Var&& id);
     void _emitCheckKey(Var&& key, Var&& lit, unsigned opparam);
 
     const char *ptr;
@@ -401,6 +414,16 @@ bool Parser::_parseAndEmitLiteral()
     return false;
 }
 
+bool Parser::_parseAndEmitVarRef()
+{
+    Var id;
+    bool ok = _parseVarRef(id);
+    if(ok)
+        _emitPushVarRef(std::move(id));
+    id.clear(mem);
+    return ok;
+}
+
 bool Parser::_parseDecimal(u64& i)
 {
     NumConvertResult nr = strtou64NN(&i, ptr);
@@ -418,7 +441,6 @@ bool Parser::_parseSize(size_t& i)
         ptr += nr.used;
     return ok;
 }
-
 
 bool Parser::_addMantissa(double& f, u64 i)
 {
@@ -464,7 +486,7 @@ bool Parser::_parseUnquotedText()
         if (!*ptr)
             break;
 
-        if (_parseQuery() || _parseEval())
+        if (_parseEvalRoot())
             ++parts;
         else
             return false;
@@ -481,18 +503,54 @@ bool Parser::_parseUnquotedText()
     return top.accept();
 }
 
-// anything that yields a value:
+// $var
+// $func( ... )
+// ${ expr }
+// { query }
+bool Parser::_parseEvalRoot()
+{
+    ParserTop top(*this);
+    bool ok = false;
+    if (*ptr == '$')
+    {
+        {
+            ParserTop top2(*this);
+            ok = _eat('$') && (
+                _parseFnCall() || (_eat('{') && _parseExpr() && _eat('}'))
+            ) && top2.accept();
+        }
+
+        if (!ok)
+            ok = _parseAndEmitVarRef(); // eats a $ on its own
+    }
+    else
+        ok = _parseQuery();
+
+    return ok && top.accept();
+}
+
 bool Parser::_parseExpr()
 {
-   return _parseAndEmitLiteral() || _parseEval() || _parseQuery();
+    return _parseEval() && _parseModList();
+}
+
+// any literal value
+// $ident
+// f( ... )
+// { ... }
+bool Parser::_parseEval()
+{
+    return _parseAndEmitLiteral() || _parseFnCall() || _parseAndEmitVarRef() || _parseQuery();
 }
 
 bool Parser::_parseQuery()
 {
-    ParserTop top(*this);
-    return _eat('{') && _parseQueryBody() && _eat('}') && top.accept();
+    //ParserTop top(*this);
+    //return _eat('{') && _parseQueryBody() && _eat('}') && top.accept();
+    return false; // FIXME:
 }
 
+/*
 // /path/to/thing[...]/blah
 // -> any number of keys and selectors
 bool Parser::_parseQueryBody()
@@ -521,24 +579,39 @@ bool Parser::_parseLookupNext()
 {
     return _parseKey() || _parseSelector();
 }
+*/
 
-bool Parser::_parseFnCall()
+// func(...)
+// !! no space before opening bracket and behind closing bracket
+bool Parser::_parseFnCall(unsigned extraargs)
 {
     ParserTop top(*this);
     Var id;
-    if (_skipSpace() && _parseIdent(id) && _skipSpace() && _eat('(') && _skipSpace())
+    bool ok = false;
+    if (_parseIdent(id) && _skipSpace() && _eat('(') && _skipSpace())
     {
-        size_t idx = _emit(CM_CALLFN, 0); // param1 is just a dummy for now
-        if (size_t n = _parseExprList())
-            exec.cmds[idx].param = n; // fix the dummy value
+        // push params on the stack first, then do the call
+        if (unsigned n = _parseExprList())
+        {
+            if (_skipSpace() && _eat(')'))
+            {
+                // store the literal ID instead of some function ID.
+                // this means functions are called by name, which is a tad slower than by some index,
+                // but makes adding user-defined functions later on much easier.
+                unsigned lit = _addLiteral(std::move(id));
+                _emit(CM_CALLFN, lit, n + extraargs);
+                ok = true;
+            }
+        }
     }
-    return _skipSpace() && _eat(')') && _skipSpace() && top.accept();
+    id.clear(mem);
+    return ok && top.accept();
 }
 
-size_t Parser::_parseExprList()
+unsigned Parser::_parseExprList()
 {
     ParserTop top(*this);
-    size_t n = 0;
+    unsigned n = 0;
     if (_skipSpace() && _parseExpr())
     {
         ++n;
@@ -548,11 +621,52 @@ size_t Parser::_parseExprList()
             else
                 return 0;
     }
+    top.accept();
     return n;
+}
+
+bool Parser::_parseModList()
+{
+    while (_skipSpace() && _parseMod())
+    {
+    }
+    return _skipSpace();
+}
+
+bool Parser::_parseMod()
+{
+    return _parseSelector() /*|| _parseQuery()*/ || _parseAndEmitTransform() || _parseAndEmitLookup();
+}
+
+// eval | func     // <-- this is effectively f(eval)
+// eval | f(42)    // <-- this is effectively f(eval, 42)
+bool Parser::_parseAndEmitTransform()
+{
+    ParserTop top(*this);
+
+    bool ok = false;
+    if (_eat('|') && _skipSpace())
+    {
+        ok = _parseFnCall(1);
+        if (!ok)
+        {
+            Var id;
+            ok = _parseIdentOrStr(id) && _emitTransform(std::move(id));
+        }
+    }
+    return ok && _skipSpace() && top.accept();
+}
+
+bool Parser::_parseAndEmitLookup()
+{
+    ParserTop top(*this);
+    Var id;
+    return _eat('/') && _skipSpace() && _parseIdentOrStr(id) && _emitGetKey(std::move(id)) && _skipSpace() && top.accept();
 }
 
 // /key
 // /'key with spaces or /'
+/*
 bool Parser::_parseKey()
 {
     ParserTop top(*this);
@@ -572,22 +686,17 @@ bool Parser::_parseKey()
 
     return top.accept(); // zero-length key is okay and is the empty string
 }
+*/
 
-// [expr]
+// [ ... ]
 bool Parser::_parseSelector()
 {
     ParserTop top(*this);
     return _eat('[') && _parseSelection() && _eat(']') && top.accept();
 }
 
-// $ident
-// ${...}
-bool Parser::_parseEval()
-{
-    ParserTop top(*this);
-    return _eat('$') && (_parseExtendedEval() || _parseSimpleEval()) && top.accept();
-}
 
+/*
 // $name
 // lookup ident
 bool Parser::_parseSimpleEval()
@@ -626,6 +735,12 @@ bool Parser::_parseExtendedEval()
     }
     id.clear(mem);
     return ok && _skipSpace() && _eat('}') && top.accept();
+}
+*/
+
+bool Parser::_parseVarRef(Var& id)
+{
+    return _eat('$') && _parseIdentOrStr(id);
 }
 
 bool Parser::_parseIdent(Var& id)
@@ -753,11 +868,11 @@ bool Parser::_parseSelection()
         ok = true;
         _emit(CM_SELECTSTACK, 0, 0);
     }*/
-    else if (_eat('*'))
+    /*else if (_eat('*'))
     {
         _emit(CM_TRANSFORM, GetTransformID("unpack"));
         ok = true;
-    }
+    }*/
     else
     {
         ParserTop top2(*this);
@@ -919,6 +1034,14 @@ unsigned Parser::_emitGetKey(Var&& v)
     unsigned lit = _addLiteral(std::move(v));
     _emit(CM_LOOKUP, lit);
     return lit;
+}
+
+bool Parser::_emitTransform(Var&& id)
+{
+    assert(id.type() == Var::TYPE_STRING);
+    unsigned lit = _addLiteral(std::move(id));
+    _emit(CM_CALLFN, (unsigned)lit, 1);
+    return true;
 }
 
 void Parser::_emitCheckKey(Var&& key, Var&& lit, unsigned opparam)

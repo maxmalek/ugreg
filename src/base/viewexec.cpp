@@ -397,13 +397,6 @@ void VM::cmd_Select(unsigned param)
     top = std::move(newtop);
 }
 
-void VM::cmd_SelectStack()
-{
-    StackFrame sel = _popframe();
-    StackFrame& top = _topframe();
-    assert(false); // TODO WRITE ME
-}
-
 void VM::cmd_Concat(unsigned count)
 {
     assert(count > 1);
@@ -454,6 +447,24 @@ void VM::cmd_Concat(unsigned count)
     stack.push_back(std::move(newtop));
 }
 
+void VM::cmd_CallFn(unsigned lit, unsigned params)
+{
+    const char* name = literals[lit].asCString(mem);
+
+    // FIXME: support proper calls with multiple params and get rid of cmd_Transform()
+    if (params == 1)
+    {
+        for (size_t i = 0; i < Countof(s_transforms); ++i)
+            if (!strcmp(name, s_transforms[i].name))
+            {
+                cmd_Transform((unsigned)i);
+                return;
+            }
+    }
+
+    assert(false);
+}
+
 // keep refs in top only when a subkey has operator relation to a literal
 void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
 {
@@ -492,6 +503,7 @@ void VM::cmd_PushVar(unsigned param)
     stack.push_back(std::move(newtop));
 }
 
+// FIXME: this should go
 void VM::cmd_Transform(unsigned param)
 {
     assert(param < Countof(s_transforms));
@@ -555,8 +567,8 @@ bool VM::exec(size_t ip)
                 cmd_PushVar(c.param);
                 break;
 
-            case CM_TRANSFORM:
-                cmd_Transform(c.param);
+            case CM_CALLFN:
+                cmd_CallFn(c.param, c.param2);
                 break;
 
             case CM_FILTER:
@@ -569,10 +581,6 @@ bool VM::exec(size_t ip)
 
             case CM_SELECT:
                 cmd_Select(c.param);
-                break;
-
-            case CM_SELECTSTACK:
-                cmd_SelectStack();
                 break;
 
             case CM_CONCAT:
@@ -675,21 +683,6 @@ StackFrame* VM::_getVar(StrRef key)
     return frm;
 }
 
-int GetTransformID(const char* s)
-{
-    for (size_t i = 0; i < Countof(s_transforms); ++i)
-        if (!strcmp(s, s_transforms[i].name))
-            return (int)i;
-    return -1;
-}
-
-const char* GetTransformName(int id)
-{
-    return id >= 0 && id < Countof(s_transforms)
-        ? s_transforms[id].name
-        : NULL;
-}
-
 Executable::Executable(TreeMem& mem)
     : mem(&mem)
 {
@@ -724,14 +717,12 @@ static const char *s_opcodeNames[] =
 {
     "LOOKUP",
     "GETVAR",
-    "TRANSFORM",
     "FILTER",
     "LITERAL",
     "DUP",
     "CHECKKEY",
     "KEYSEL",
     "SELECT",
-    "SELECTSTACK",
     "CONCAT",
     "PUSHROOT",
     "CALLFN",
@@ -786,9 +777,6 @@ size_t Executable::disasm(std::vector<std::string>& out) const
                 os << ' ';
                 varToStringDebug(os, VarCRef(mem, &literals[c.param]));
                 break;
-            case CM_TRANSFORM:
-                os << " " << GetTransformName(c.param) << " (func #" << c.param << ")";
-                break;
             case CM_FILTER:
             {
                 unsigned key = c.param >> 4;
@@ -819,6 +807,10 @@ size_t Executable::disasm(std::vector<std::string>& out) const
 
             case CM_CONCAT:
                 os << ' ' << c.param;
+                break;
+
+            case CM_CALLFN:
+                os << ' ' << literals[c.param].asCString(*mem) << " (params: " << c.param2 << ')';
                 break;
 
             default:

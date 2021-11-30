@@ -15,29 +15,32 @@ class Executable;
   x?...    means some optional x
   ()       denotes a group
 
-parser starts with unquoted-text
+--- parser starts with unquoted-text ---
 
 unquoted-text = (literal-text? evalroot)... literal-text?
 evalroot      = query |                                      <-- starts with {
                 varref | ('$' fncall) | ('${' expr '}')      <-- starts with $
 --- main language ---
-expr          = eval transformlist
+expr          = eval modlist
 eval          = literal | varref | fncall | query      <--- anything that yields one or more values
 --- variables and identifiers ---
-varref        = '$' idstr
+varref        = '$' (idstr | '*')
 idstr         = ident | literal-str
 ident         = [a-zA-Z0-9_]+
---- function call and transform ---
-fncall        = ident '(' paramlist ')'
-paramlist     = expr (',' expr)?
-transformlist = transform?...
-transform     = '|' ident
---- query / tree lookup ---
-query         = '{' querybody '}'
-querybody     = lookuproot lookupnext?...
-lookuproot    = subkey | selector | expr
-lookupnext    = subkey | selector
-subkey        = '/' [^\[/]+         <--- this one doesn't ignore whitespace!
+--- function call ---
+fncall        = ident '(' exprlist ')'
+exprlist      = expr (',' expr)?...
+--- modifiers ---
+modlist       = mod?...
+mod           = selector | query | transform | simplekey
+transform     = '|' (idstr | fncall)
+lookup        = '/' idstr     <--- works outside of query
+--- query / tree lookup --- // FIXME: re-add those once the rest is stabilized
+#query         = '{' querybody '}'
+#querybody     = lookuproot lookupnext?...
+#lookuproot    = subkey | selector | expr
+#lookupnext    = subkey | selector
+#subkey        = '/' [^\[/}]+         <--- this one doesn't ignore whitespace!
 --- selection and filtering ---
 selector      = '[' selection ']'
 selection     = keycmp | keysel | '*'

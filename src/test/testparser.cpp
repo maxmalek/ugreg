@@ -28,7 +28,7 @@ static const TestEntry tests[] =
     //{ "{/hello/world[this should fail = 0]}", false },  // spaces in identifier not allowed unless it's a string literal
 
     // positive tests
-    { "{/hello/world}", true },
+    /*{ "{/hello/world}", true },
     { "{[*]}", true },
     { "{/hello[*]}", true },
     { "{[name='test']}", true },
@@ -43,18 +43,19 @@ static const TestEntry tests[] =
     { "{/hello/world[nope=null]}", true },
     { "{/hello/world['this is fine'=0]}", true },
     { "{$x/subkey}", true },
-    { "{$x[val=42]}", true },
-    { "string $with var", true },
-    { "just ;$a string, no var", true },
-    { "{func($a)}", true},
+    { "{$x[val=42]}", true },*/
+    //{ "string $with var", true },
+    //{ "just ;$a string, no var", true },
+    //{ "$func(0)", true},
+    { "${func(0) / subkey /'with space' | unpack | array | test(true)}", true},
 
     //{ "{/hello[$x]}", true },   // TODO: support this? (use all in $x as key)
     // ^ not sure if we should. that would introduce a data-based lookup.
 
-    { "{/hello/world['/sub/key'=42]}", true }, // valid but misleading (CHECKKEY only)
+    /*{ "{/hello/world['/sub/key'=42]}", true }, // valid but misleading (CHECKKEY only)
     { "{/hello/world[{/sub/key}=42]}", true }, // proper sub-sub-key selection
     { "{/rooms[name=$Q]/id}", true },
-    { "{/users[room=${ids toint}]}", true },
+    { "{/users[room=${ids toint}]}", true },*/
 };
 
 // TODO: way to specify key exists, key not exists
