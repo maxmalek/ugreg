@@ -47,7 +47,14 @@ static const TestEntry tests[] =
     { "string $with var", true },
     { "just ;$a string, and $one var", true },
     { "$func(0)", true},
+    { "$func(0, x)", false},
     { "${func(0) / subkey /'with space' | unpack | array | test(true)}", true},
+    {"$toint(42)", true},
+    {"${toint(42)}", true},
+    {"${'42'|toint}", true},
+    {"${toint('42')}", true},
+    { "${$ROOT/path/to[name == $ROOT/validnames | tolower]}", true},
+    { "${$ROOT/path/to[name == f($ROOT/validnames | tolower, '42'|toint, 'str')]}", true},
 
     //{ "{/hello[$x]}", true },   // TODO: support this? (use all in $x as key)
     // ^ not sure if we should. that would introduce a data-based lookup.

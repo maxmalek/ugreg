@@ -253,9 +253,11 @@ size_t Parser::parse(const char *s)
 
 // tokenizes a string into sub-expressions and emits CM_CONCAT if applicable.
 // otherwise emits a normal literal string.
+// s must be 0-terminated
 bool Parser::_parseSubExpr(const char* s)
 {
     const char* const oldptr = ptr, * const oldmax = maxptr;
+    ptr = s;
     bool ok = _parseUnquotedText();
     ptr = oldptr;
     maxptr = oldmax;
@@ -402,16 +404,19 @@ bool Parser::_parseLiteral(Var& v)
 bool Parser::_parseAndEmitLiteral()
 {
     Var lit;
+    bool ok = false;
     if(_parseLiteral(lit))
     {
         if(lit.type() == Var::TYPE_STRING)
-            return _parseSubExpr(lit.asCString(mem));
-
-        _emitPushLiteral(std::move(lit));
-        return true;
+            ok =  _parseSubExpr(lit.asCString(mem));
+        else
+        {
+            _emitPushLiteral(std::move(lit));
+            ok = true;
+        }
     }
     lit.clear(mem);
-    return false;
+    return ok;
 }
 
 bool Parser::_parseAndEmitVarRef()
@@ -516,7 +521,14 @@ bool Parser::_parseEvalRoot()
         }
 
         if (!ok)
+        {
             ok = _parseAndEmitVarRef(); // eats a $ on its own
+            if(ok && *ptr == '(') // eh? function call?
+            {
+                ok = false;
+                errors.push_back("Opening bracket '(' after variable eval in unquoted text mode, this probably means you meant to do a function call like $func(...) but the param list failed to parse");
+            }
+        }
     }
 
     return ok && top.accept();
@@ -861,11 +873,12 @@ bool Parser::_parseSelection()
         ok = true;
         _emit(CM_SELECTSTACK, 0, 0);
     }*/
-    /*else if (_eat('*'))
+    else if (_eat('*'))
     {
-        _emit(CM_TRANSFORM, GetTransformID("unpack"));
+        Var unp(mem, "unpack");
+        _emitTransform(std::move(unp));
         ok = true;
-    }*/
+    }
     else
     {
         ParserTop top2(*this);
@@ -898,7 +911,7 @@ bool Parser::_parseKeyCmp()
         {
             //_emit(CM_DUP, 0);
             //_emitGetKey(std::move(id));
-            if (_parseEval())
+            if (_parseExpr())
             {
                 unsigned kidx = _addLiteral(std::move(id));
                 op.param |= kidx << 4;
@@ -913,6 +926,8 @@ bool Parser::_parseKeyCmp()
     return ok && _skipSpace() && top.accept();
 }
 
+// [keep a=b c=d f g]
+// [drop a b c]
 bool Parser::_parseKeySel()
 {
     ParserTop top(*this);
