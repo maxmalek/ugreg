@@ -518,8 +518,6 @@ bool Parser::_parseEvalRoot()
         if (!ok)
             ok = _parseAndEmitVarRef(); // eats a $ on its own
     }
-    else
-        ok = _parseQuery();
 
     return ok && top.accept();
 }
