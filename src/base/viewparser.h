@@ -18,8 +18,7 @@ class Executable;
 --- parser starts with unquoted-text ---
 
 unquoted-text = (literal-text? evalroot)... literal-text?
-evalroot      = query |                                      <-- starts with {
-                varref | ('$' fncall) | ('${' expr '}')      <-- starts with $
+evalroot      = varref | ('$' fncall) | ('${' expr '}')      <-- all start with $
 --- main language ---
 expr          = eval modlist
 eval          = literal | varref | fncall | query      <--- anything that yields one or more values

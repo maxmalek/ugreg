@@ -464,18 +464,14 @@ bool Parser::_addMantissa(double& f, u64 i)
     return true;
 }
 
-// There are two things that can be inside of un-quoted text:
-// 1a) Just a query: "{/path/to/thing}"
-// 1b) Queries among text, like this:
-//   "some text {/query/sub/} more text {query2} last text"
-// 2) Variable expansion:
+// Does variable expansion:
 //   "n is $n, text is ${text lowercase}"
 bool Parser::_parseUnquotedText()
 {
     ParserTop top(*this);
     Var text;
     unsigned parts = 0;
-    while(*ptr && _parseTextUntilAnyOf(text, "${}\0", 4))
+    while(*ptr && _parseTextUntilAnyOf(text, "$\0", 2))
     {
         if(text.size())
         {
@@ -506,7 +502,6 @@ bool Parser::_parseUnquotedText()
 // $var
 // $func( ... )
 // ${ expr }
-// { query }
 bool Parser::_parseEvalRoot()
 {
     ParserTop top(*this);

@@ -44,9 +44,9 @@ static const TestEntry tests[] =
     { "{/hello/world['this is fine'=0]}", true },
     { "{$x/subkey}", true },
     { "{$x[val=42]}", true },*/
-    //{ "string $with var", true },
-    //{ "just ;$a string, no var", true },
-    //{ "$func(0)", true},
+    { "string $with var", true },
+    { "just ;$a string, and $one var", true },
+    { "$func(0)", true},
     { "${func(0) / subkey /'with space' | unpack | array | test(true)}", true},
 
     //{ "{/hello[$x]}", true },   // TODO: support this? (use all in $x as key)
