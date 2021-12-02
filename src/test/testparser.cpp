@@ -21,29 +21,31 @@ struct TestEntry
 static const TestEntry tests[] =
 {
     // negative tests (should fail to parse)
-    //{ "{/hello/world[name=this_should_fail]}", false }, // expected literal or var
-    //{ "{/hello/world[this_should_fail}", false },       // missing =
-    //{ "{/hello/world['this_should_fail'}", false },     // unterminated [
-    //{ "{/hello/world['this_should_fail}", false },      // unterminated '
-    //{ "{/hello/world[this should fail = 0]}", false },  // spaces in identifier not allowed unless it's a string literal
+    //{ "${./hello/world[name=this_should_fail]}", false }, // expected literal or var
+    //{ "${./hello/world[this_should_fail}", false },       // missing =
+    //{ "${./hello/world['this_should_fail'}", false },     // unterminated [
+    //{ "${./hello/world['this_should_fail}", false },      // unterminated '
+    //{ "${./hello/world[this should fail = 0]}", false },  // spaces in identifier not allowed unless it's a string literal
 
     // positive tests
-    /*{ "{/hello/world}", true },
-    { "{[*]}", true },
-    { "{/hello[*]}", true },
-    { "{[name='test']}", true },
-    { "{[name='test']/ids[*]}", true },
-    { "{/hello/world[name='test']}", true },
-    { "{/hello/world[name = 'test']}", true },
-    { "{/hello/world[val=5]/}", true },
-    { "{/hello/world[pi=3.1415]}", true },
-    { "{/hello/world[nope=null]}", true },
-    { "{/hello/world[s ?> '>']}", true },
-    { "{/hello/world[s !?? 'secret']}", true },
-    { "{/hello/world[nope=null]}", true },
-    { "{/hello/world['this is fine'=0]}", true },
-    { "{$x/subkey}", true },
-    { "{$x[val=42]}", true },*/
+    { "${.}", true },
+    { "${./hello/world}", true },
+    { "${.[*]}", true },
+    { "${.|unpack}", true },
+    { "${./hello[*]}", true },
+    { "${.[name='test']}", true },
+    { "${.[name='test']/ids[*]}", true },
+    { "${./hello/world[name='test']}", true },
+    { "${./hello/world[name = 'test']}", true },
+    { "${./hello/world[val=5]/''}", true },
+    { "${./hello/world[pi=3.1415]}", true },
+    { "${./hello/world[nope=null]}", true },
+    { "${./hello/world[s ?> '>']}", true },
+    { "${./hello/world[s !?? 'secret']}", true },
+    { "${./hello/world[nope=null]}", true },
+    { "${./hello/world['this is fine'=0]}", true },
+    { "${$x/subkey}", true },
+    { "${$x[val=42]}", true },
     { "string $with var", true },
     { "just ;$a string, and $one var", true },
     { "$func(0)", true},

@@ -21,7 +21,8 @@ unquoted-text = (literal-text? evalroot)... literal-text?
 evalroot      = varref | ('$' fncall) | ('${' expr '}')      <-- all start with $
 --- main language ---
 expr          = eval modlist
-eval          = literal | varref | fncall | query      <--- anything that yields one or more values
+eval          = dot | literal | varref | fncall | query      <--- anything that yields one or more values
+dot           = '.'
 --- variables and identifiers ---
 varref        = '$' (idstr | '*')
 idstr         = ident | literal-str

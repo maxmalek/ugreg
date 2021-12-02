@@ -89,6 +89,7 @@ public:
     bool _parseExpr();
     bool _parseEval();
     bool _parseSubExpr(const char* s); // recursive call into self
+    bool _parseDot();
     // --- variables and identifiers ---
     bool _parseAndEmitVarRef();
     bool _parseVarRef(Var& id);
@@ -141,7 +142,7 @@ public:
     unsigned _emitPushVarRef(Var&& v);
     unsigned _emitPushLiteral(Var&& v);
     unsigned _emitGetKey(Var&& v);
-    bool _emitTransform(Var&& id);
+    unsigned _emitTransform(Var&& id);
     void _emitCheckKey(Var&& key, Var&& lit, unsigned opparam);
 
     const char *ptr;
@@ -261,6 +262,14 @@ bool Parser::_parseSubExpr(const char* s)
     bool ok = _parseUnquotedText();
     ptr = oldptr;
     maxptr = oldmax;
+    return ok;
+}
+
+bool Parser::_parseDot()
+{
+    bool ok = _eat('.') && _skipSpace();
+    if(ok)
+        _emit(CM_DUP, 0); // FIXME: dup last proper top
     return ok;
 }
 
@@ -545,7 +554,7 @@ bool Parser::_parseExpr()
 // { ... }
 bool Parser::_parseEval()
 {
-    return _parseAndEmitLiteral() || _parseFnCall() || _parseAndEmitVarRef() || _parseQuery();
+    return _parseDot() || _parseAndEmitLiteral() || _parseFnCall() || _parseAndEmitVarRef() || _parseQuery();
 }
 
 bool Parser::_parseQuery()
@@ -656,7 +665,9 @@ bool Parser::_parseAndEmitTransform()
         if (!ok)
         {
             Var id;
-            ok = _parseIdentOrStr(id) && _emitTransform(std::move(id));
+            ok = _parseIdentOrStr(id);
+            if(ok)
+                _emitTransform(std::move(id));
         }
     }
     return ok && _skipSpace() && top.accept();
@@ -666,7 +677,10 @@ bool Parser::_parseAndEmitLookup()
 {
     ParserTop top(*this);
     Var id;
-    return _eat('/') && _skipSpace() && _parseIdentOrStr(id) && _emitGetKey(std::move(id)) && _skipSpace() && top.accept();
+    bool ok = _eat('/') && _skipSpace() && _parseIdentOrStr(id);
+    if(ok)
+        _emitGetKey(std::move(id));
+    return ok && _skipSpace() && top.accept();
 }
 
 // /key
@@ -1044,12 +1058,12 @@ unsigned Parser::_emitGetKey(Var&& v)
     return lit;
 }
 
-bool Parser::_emitTransform(Var&& id)
+unsigned Parser::_emitTransform(Var&& id)
 {
     assert(id.type() == Var::TYPE_STRING);
     unsigned lit = _addLiteral(std::move(id));
     _emit(CM_CALLFN, (unsigned)lit, 1);
-    return true;
+    return lit;
 }
 
 void Parser::_emitCheckKey(Var&& key, Var&& lit, unsigned opparam)
