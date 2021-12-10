@@ -24,6 +24,7 @@ struct ServerConfig
         u32 rows, columns;
         u64 maxtime;
     } reply_cache;
+    std::string mimetype;
     // --- end fields ---
 
 

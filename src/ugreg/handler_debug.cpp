@@ -5,7 +5,7 @@
 #include "json_out.h"
 
 InfoHandler::InfoHandler(const DataTree& tree, const char* prefix)
-    : RequestHandler(prefix), _tree(tree)
+    : RequestHandler(prefix, NULL), _tree(tree)
 {
 }
 
@@ -34,7 +34,7 @@ int InfoHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
 }
 
 DebugStrpoolHandler::DebugStrpoolHandler(const DataTree& tree, const char* prefix)
-    : RequestHandler(prefix), _tree(tree)
+    : RequestHandler(prefix, NULL), _tree(tree)
 {
 }
 
@@ -74,7 +74,7 @@ int DebugStrpoolHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn
 }
 
 DebugCleanupHandler::DebugCleanupHandler(DataTree& tree, const char* prefix)
-    : RequestHandler(prefix), _tree(tree)
+    : RequestHandler(prefix, NULL), _tree(tree)
 {
 }
 

@@ -7,6 +7,7 @@
 ServerConfig::ServerConfig()
     : listen_threads(0)
     , expose_debug_apis(false)
+    , mimetype("text/json; charset=utf-8")
 {
     Listen def { "127.0.0.1", 8080, false };
     listen.push_back(def);
@@ -43,6 +44,10 @@ bool ServerConfig::apply(VarCRef root)
 
     VarCRef xdebugapi = root.lookup("expose_debug_apis");
     expose_debug_apis = xdebugapi && xdebugapi.asBool();
+
+    if(VarCRef xmimetype = root.lookup("mimetype"))
+        if(const char *mime = xmimetype.asCString())
+            mimetype = mime;
 
     if(VarCRef xthreads = root.lookup("listen_threads"))
         if(const u64 *pth = xthreads.asUint())

@@ -99,113 +99,64 @@ void WebServer::StaticShutdown()
     mg_exit_library();
 }
 
+struct HeaderHelper
+{
+    enum { MAX_SIZE = 128 };
+    char buf[MAX_SIZE];
+    size_t size;
+
+    HeaderHelper(CompressionType c, size_t sz)
+    {
+        char *p = buf;
+#define hhADD(s) { memcpy(p, s, (sizeof(s) - 1)); p += (sizeof(s) - 1); }
+#define hhCRLF { *p++ = '\r'; *p++ = '\n'; }
+        if(c)
+        {
+            hhADD("Content-Encoding: ");
+            for(const char *x = CompressionTypeName[c]; *x; )
+                *p++ = *x++;
+            hhCRLF;
+        }
+        if(sz)
+        {
+            hhADD("Content-Length: ");
+            char nb[32];
+            char* n = sizetostr_unsafe(nb, sizeof(nb), sz);
+            for (; *n; )
+                *p++ = *n++;
+            hhCRLF;
+        }
+        else
+            hhADD("Transfer-Encoding: chunked\r\n");
+        hhCRLF;
+        *p = 0;
+        size = p - &buf[0];
+        assert(size < MAX_SIZE && size == strlen(buf));
+#undef hhADD
+#undef hhCRLF
+    }
+};
+
+const RequestHandler::StreamWriteMth RequestHandler::s_writer[COMPR_ARRAYSIZE] =
+{
+    /* COMPR_NONE */     &RequestHandler::onRequest,
+    /* COMPR_DEFLATE */  &RequestHandler::onRequest_deflate,
+};
 
 int RequestHandler::Handler(mg_connection* conn, void* self)
 {
     return static_cast<const RequestHandler*>(self)->_onRequest(conn);
 }
 
-RequestHandler::RequestHandler(const char* prefix)
+RequestHandler::RequestHandler(const char* prefix, const char *mimetype)
     : myPrefix(prefix), maxcachetime(0)
 {
+    prepareHeader(mimetype);
 }
 
 RequestHandler::~RequestHandler()
 {
 }
-
-static const char s_defaultChunkedOK[] =
-"HTTP/1.1 200 OK\r\n"
-"Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
-"Expires: 0\r\n"
-"Pragma: no-cache\r\n"
-"Content-Type: text/json; charset=utf-8\r\n"
-"Transfer-Encoding: chunked\r\n"
-"Connection: close\r\n"
-"\r\n";
-
-static const char s_defaultChunkedDeflateOK[] =
-"HTTP/1.1 200 OK\r\n"
-"Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
-"Expires: 0\r\n"
-"Pragma: no-cache\r\n"
-"Content-Type: text/json; charset=utf-8\r\n"
-"Transfer-Encoding: chunked\r\n"
-"Content-Encoding: deflate\r\n"
-"Connection: close\r\n"
-"\r\n";
-
-
-static const char s_cachedOKStart[] =
-"HTTP/1.1 200 OK\r\n"
-"Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
-"Expires: 0\r\n"
-"Pragma: no-cache\r\n"
-"Content-Type: text/json; charset=utf-8\r\n"
-"Connection: close\r\n"
-"Content-Length: "; // + bytes + \r\n
-
-static const char s_cachedDeflateOKStart[] =
-"HTTP/1.1 200 OK\r\n"
-"Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
-"Expires: 0\r\n"
-"Pragma: no-cache\r\n"
-"Content-Type: text/json; charset=utf-8\r\n"
-"Connection: close\r\n"
-"Content-Encoding: deflate\r\n"
-"Content-Length: "; // + bytes + \r\n
-
-
-typedef int (RequestHandler::*StreamWriteMth)(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const;
-
-
-struct RequestStreamHandler
-{
-    const char* header;
-    size_t headerSize;
-    StreamWriteMth writer;
-};
-
-// Key: CompressionType (see request.h)
-static const RequestStreamHandler s_cachedOut[] =
-{
-    { s_cachedOKStart,        sizeof(s_cachedOKStart),        &RequestHandler::onRequest },
-    { s_cachedDeflateOKStart, sizeof(s_cachedDeflateOKStart), &RequestHandler::onRequest_deflate }
-};
-
-static const RequestStreamHandler s_directOut[] =
-{
-    { s_defaultChunkedOK,        sizeof(s_defaultChunkedOK),        &RequestHandler::onRequest },
-    { s_defaultChunkedDeflateOK, sizeof(s_defaultChunkedDeflateOK), &RequestHandler::onRequest_deflate }
-};
-
-
-// mg_send_http_ok() is a freaking performance hog.
-// in case everything is fine, just poop out an ok http header and move on.
-void RequestHandler::SendDefaultChunkedOK(mg_connection* conn)
-{
-    mg_write(conn, s_defaultChunkedOK, sizeof(s_defaultChunkedOK) - 1); // don't include the \0
-}
-
-/*
-StoredReply* RequestHandler::PrepareStoredReply(VarCRef sub, const Request& r)
-{
-    char buf[8 * 1024];
-    StoredReply* rq = new StoredReply;
-
-    // Extra scope to make sure the stream is destroyed and flushes all its data before we finalize rq
-    {
-        StoredReplyWriteStream wr(rq, buf, sizeof(buf));
-        s_requestOut[r.compression].writer(wr, sub, r);
-    }
-
-    // OPTIMIZE: this could be moved to be done in writeJson() while we walk the tree
-    rq->expiryTime = getTreeMinExpiryTime(sub);
-
-    //rq->body.shrink_to_fit(); // Don't do this here! This can wait until we're sure to not hold a lock.
-    return rq;
-}
-*/
 
 // FIXME: re-integrate expirytime!!
 
@@ -213,34 +164,6 @@ void RequestHandler::setupCache(u32 rows, u32 cols, u64 maxtime)
 {
     _cache.resize(rows, cols);
     maxcachetime = maxtime;
-}
-
-static int sendStoredRequest(mg_connection* conn, const CountedPtr<const StoredReply>& srq, const Request& r)
-{
-    const char* hdr = s_cachedOut[r.compression].header;
-    const size_t hdrsz = s_cachedOut[r.compression].headerSize;
-
-    mg_write(conn, hdr, hdrsz - 1);
-
-    const size_t len = srq->body.size();
-    char buf[64];
-
-    // equivalent to:
-    // size_t partlen = sprintf(buf, "%u\r\n\r\n", (unsigned)len);
-    // char *p = &buf[0];
-    // ...but much faster
-    char* p = sizetostr_unsafe(buf, sizeof(buf) - 3, len); // leave 3 extra byte at the end unused
-    assert(buf[sizeof(buf) - 4] == 0);
-    buf[sizeof(buf) - 4] = '\r'; // overwrite the \0 at the end of the string
-    buf[sizeof(buf) - 3] = '\n'; // overwrite the 3 leftover bytes
-    buf[sizeof(buf) - 2] = '\r';
-    buf[sizeof(buf) - 1] = '\n';
-    const size_t partlen = &buf[sizeof(buf)] - p;
-
-    mg_write(conn, p, partlen);
-
-    mg_write(conn, srq->body.data(), len);
-    return 200;
 }
 
 int RequestHandler::_onRequest(mg_connection* conn) const
@@ -266,9 +189,9 @@ int RequestHandler::_onRequest(mg_connection* conn) const
         try
         {
             {
-                ThrowingSocketWriteStream wr(conn, buf, sizeof(buf), s_directOut[k.obj.compression].header, s_directOut[k.obj.compression].headerSize - 1); // don't include \0
+                ThrowingSocketWriteStream wr(conn, buf, sizeof(buf));
                 wr.init();
-                const StreamWriteMth writer = s_directOut[k.obj.compression].writer;
+                const StreamWriteMth writer = s_writer[k.obj.compression];
                 status = (this->*writer)(wr, conn, k.obj);
             }
             if(!status) // 0 means the handler didn't error out
@@ -289,7 +212,7 @@ int RequestHandler::_onRequest(mg_connection* conn) const
 
     if(!srq)
     {
-        StoredReply *rq = new StoredReply;
+        StoredReply *rq = new StoredReply(hdrReserveSize);
 
         // Pin it so that it's deleted if we return early.
         // Also, once put, some other thread may evict the cache entry in the meantime,
@@ -300,12 +223,25 @@ int RequestHandler::_onRequest(mg_connection* conn) const
         int status;
         {
             StoredReplyWriteStream wr(rq, buf, sizeof(buf));
-            const StreamWriteMth writer = s_cachedOut[k.obj.compression].writer;
+            const StreamWriteMth writer = s_writer[k.obj.compression];
             status = (this->*writer)(wr, conn, k.obj);
         }
         if(status)
             return status;
-        rq->body.shrink_to_fit();
+        
+        HeaderHelper hh(k.obj.compression, rq->bodysize());
+        if(!rq->spliceHeader(preparedHdr.c_str(), preparedHdr.size(), hh.buf, hh.size))
+        {
+            printf("FAILED TO CACHE: compr=%u, sizes: %u, %u, %u (header would stomp data)\n",
+                k.obj.compression, (unsigned)preparedHdr.size(), (unsigned)hh.size, (unsigned)srq->fullsize());
+            // should never be here, but still finish gracefully. we just can't store the reply if we messed up the header, but sending the individual parts is ok
+            mg_write(conn, preparedHdr.c_str(), preparedHdr.size());
+            mg_write(conn, hh.buf, hh.size);
+            mg_write(conn, rq->bodydata(), rq->bodysize());
+            return 200;
+        }
+
+        rq->data.shrink_to_fit();
 
         // When a max. cache time is set, see whether the object expires on its own earlier than
         // the maxtime. Adjust accordingly.
@@ -318,12 +254,14 @@ int RequestHandler::_onRequest(mg_connection* conn) const
         }
 
         printf("NEW CACHE: compr=%u, size=%u, expiry=%" PRIu64 "\n",
-            k.obj.compression, (unsigned)srq->body.size(), srq->expiryTime);
+            k.obj.compression, (unsigned)srq->fullsize(), srq->expiryTime);
 
         _cache.put(k, srq);
     }
 
-    return sendStoredRequest(conn, srq, k.obj);
+    // when we have the complete cached request, just plonk it out entirely (the header is included)
+    mg_write(conn, srq->fulldata(), srq->fullsize());
+    return 200;
 }
 
 int RequestHandler::onRequest_deflate(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
@@ -339,4 +277,22 @@ int RequestHandler::onRequest_deflate(BufferedWriteStream& dst, mg_connection* c
 void RequestHandler::clearCache()
 {
     _cache.clear();
+}
+
+// mg_send_http_ok() is a freaking performance hog, so we prepare the most common headers early.
+// in case everything is fine, just poop out an ok http header and move on.
+void RequestHandler::prepareHeader(const char* mimetype)
+{
+    if(!mimetype || !*mimetype)
+        mimetype = "text/plain; encoding=utf8";
+
+        std::ostringstream os;
+    os << "HTTP/1.1 200 OK\r\n"
+            "Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
+            "Expires: 0\r\n"
+            "Pragma: no-cache\r\n"
+            "Content-Type: " << mimetype << "\r\n";
+    preparedHdr = os.str();
+
+    hdrReserveSize = (preparedHdr.size() + HeaderHelper::MAX_SIZE + 63) & ~63; // align body start to cache line
 }

@@ -13,11 +13,10 @@ class RequestHandler
 public:
     typedef CacheTable<Request, const StoredReply> Cache;
 
-    RequestHandler(const char *prefix);
+    RequestHandler(const char *prefix, const char *mimetype);
     virtual ~RequestHandler();
 
     static int Handler(struct mg_connection* conn, void* self);
-    static void SendDefaultChunkedOK(mg_connection* conn);
 
     const char* prefix() const { return myPrefix.c_str(); }
 
@@ -33,11 +32,21 @@ public:
 
     void clearCache();
 
+protected:
+    int sendStoredRequest(mg_connection* conn, const CountedPtr<const StoredReply>& srq, const Request& r);
+
 private:
+    typedef int (RequestHandler::* StreamWriteMth)(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const;
+    static const StreamWriteMth s_writer[COMPR_ARRAYSIZE];
+
+    void prepareHeader(const char *mimetype);
+
     const std::string myPrefix;
     mutable Cache _cache;
     u64 maxcachetime;
 
+    std::string preparedHdr;
+    size_t hdrReserveSize;
 };
 
 class WebServer

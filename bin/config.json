@@ -11,12 +11,14 @@
     ],
     // Don't enable this for a production system as it can leak sensitive data!
     "expose_debug_apis": false,
-    
+
+    "mimetype": "text/json; charset=utf-8",
+
     // Fast reply cache. Stores requests once seen and 
     "reply_cache": {
         "rows": 128,
         "columns": 8,
-        
+
         // Max. time an entry stays in the cache before it expires.
         // An entry will expire earlier if parts of its tree expire earlier.
         "maxtime": "5s",

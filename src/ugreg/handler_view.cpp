@@ -8,9 +8,10 @@
 #include "json_out.h"
 #include "debugfunc.h"
 #include "pathiter.h"
+#include "config.h"
 
 ViewHandler::ViewHandler(const view::Mgr& mgr, const DataTree& tree, const char* prefix, const ServerConfig& cfg)
-    : RequestHandler(prefix)
+    : RequestHandler(prefix, cfg.mimetype.c_str())
     , _tree(tree), _vmgr(mgr)
 {
 }
@@ -72,7 +73,7 @@ int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
 
 
 ViewDebugHandler::ViewDebugHandler(const DataTree& tree, const char* prefix, const ServerConfig& cfg)
-    : RequestHandler(prefix)
+    : RequestHandler(prefix, NULL)
     , _tree(tree)
 {
 }

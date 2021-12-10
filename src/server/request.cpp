@@ -5,12 +5,15 @@
 
 #include "civetweb/civetweb.h"
 
+
 static CompressionType parseEncoding(const char *enc)
 {
     CompressionType c = COMPR_NONE;
 
-    if(strstr(enc, "deflate"))
-        c = COMPR_DEFLATE;
+    // first elem is NULL, skip that
+    for(unsigned i = COMPR_NONE + 1; !c && i < Countof(CompressionTypeName); ++i)
+        if(strstr(enc, CompressionTypeName[i]))
+            c = (CompressionType)i;
 
     return c;
 }
@@ -81,7 +84,7 @@ StoredReplyWriteStream::StoredReplyWriteStream(StoredReply* req, char* buf, size
 size_t StoredReplyWriteStream::_Write(const void* src, size_t bytes, BufferedWriteStream* self)
 {
     StoredReplyWriteStream* me = static_cast<StoredReplyWriteStream*>(self);
-    std::vector<char>& v = me->_req->body;
+    std::vector<char>& v = me->_req->data;
 
     size_t cur = v.size();
     size_t req = cur + bytes;
@@ -92,4 +95,19 @@ size_t StoredReplyWriteStream::_Write(const void* src, size_t bytes, BufferedWri
     memcpy(&v[cur], src, bytes);
 
     return bytes;
+}
+
+bool StoredReply::spliceHeader(const char* hdr1, size_t sz1, const char* hdr2, size_t sz2)
+{
+    size_t total = sz1 + sz2;
+    // this is really bad if this happened, so we make very sure this can't stomp the buffer
+    assert(total < reservedHeaderSpace);
+    if(total >= reservedHeaderSpace)
+        return false;
+
+    size_t offs = reservedHeaderSpace - total;
+    memcpy(data.data() + offs, hdr1, sz1);
+    memcpy(data.data() + offs + sz1, hdr2, sz2);
+    hdrstart = offs;
+    return true;
 }

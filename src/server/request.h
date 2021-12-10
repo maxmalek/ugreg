@@ -13,7 +13,15 @@ struct mg_request_info;
 enum CompressionType
 {
     COMPR_NONE,
-    COMPR_DEFLATE
+    COMPR_DEFLATE,
+
+    COMPR_ARRAYSIZE
+};
+// name used in HTTP header Content-Enc oding field
+static const char* CompressionTypeName[] =
+{
+    NULL,
+    "deflate"
 };
 
 enum RequestFlags // bitmask
@@ -52,14 +60,27 @@ public:
     static u32 Hash(const Request& r);
 };
 
-// MUST be allocated with new when you use this!
+// !! MUST be allocated with new when you use this!
+// The basic idea behind this class is to encapsulate a HTTP header + body in such a way that it can be stored in a (lock-free, refcounting) cache.
+// Since the HTTP header is included but its Content-Length field is only known once the body was fully processed,
+// we reserve some space for the header up-front and splice it in once everything is done.
+// The final reply can then be written to a socket in a single call with no further work required.
 struct StoredReply : public Refcounted
 {
-    StoredReply() : expiryTime(0) {}
+    StoredReply(size_t reserveHeader) : expiryTime(0), data(reserveHeader), hdrstart(0), reservedHeaderSpace(reserveHeader) {}
     virtual ~StoredReply() {}
 
     u64 expiryTime;
-    std::vector<char> body;
+    std::vector<char> data;
+    size_t hdrstart;
+    size_t reservedHeaderSpace;
+
+    bool spliceHeader(const char* hdr1, size_t sz1, const char *hdr2, size_t sz2); // to be called max. once!
+
+    inline const char *fulldata() const { return data.data() + hdrstart; }
+    inline size_t fullsize() const { return data.size() - hdrstart; }
+    inline const char *bodydata() const { return fulldata() + reservedHeaderSpace; }
+    inline size_t bodysize() const { return data.size() - reservedHeaderSpace; }
 };
 
 // TODO: remove requirement for external buffer to reduce copying

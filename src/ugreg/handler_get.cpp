@@ -9,7 +9,7 @@
 
 
 TreeHandler::TreeHandler(DataTree& tree, const char *prefix, const ServerConfig& cfg )
-    : RequestHandler(prefix), tree(tree)
+    : RequestHandler(prefix, cfg.mimetype.c_str()), tree(tree)
 {
 }
 
