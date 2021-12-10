@@ -22,10 +22,11 @@ evalroot      = varref | ('$' fncall) | ('${' expr '}')      <-- all start with 
 --- main language ---
 expr          = eval modlist
 eval          = dot | literal | varref | fncall | query      <--- anything that yields one or more values
-dot           = '.'
+dot           = '.'          <--- refers to current top of stack
+tilde         = '~'          <--- refers to tree root
 --- variables and identifiers ---
-varref        = '$' (idstr | '*')
-idstr         = ident | literal-str
+varref        = '$' idstr
+idstr         = ident | literal-str      <--- $a and $"hello world" are both ok
 ident         = [a-zA-Z0-9_]+
 --- function call ---
 fncall        = ident '(' exprlist ')'

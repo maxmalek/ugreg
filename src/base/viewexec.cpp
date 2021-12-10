@@ -447,7 +447,7 @@ void VM::cmd_Concat(unsigned count)
     stack.push_back(std::move(newtop));
 }
 
-void VM::cmd_CallFn(unsigned lit, unsigned params)
+void VM::cmd_CallFn(unsigned params, unsigned lit)
 {
     const char* name = literals[lit].asCString(mem);
 
@@ -713,22 +713,34 @@ void Executable::clear()
 
 // ----------------------------------------------
 
-static const char *s_opcodeNames[] =
+static void sm_plus1(int& v, const Cmd&)            { ++v; }
+static void sm_minus1(int& v, const Cmd&)           { --v; }
+static void sm_popNpush1(int& v, const Cmd& cmd) { v += (-int(cmd.param) + 1); }
+static void sm_zero(int& v, const Cmd& cmd)     { v = 0; }
+
+struct OpcodeProperty
 {
-    "LOOKUP",
-    "GETVAR",
-    "FILTER",
-    "LITERAL",
-    "DUP",
-    "CHECKKEY",
-    "KEYSEL",
-    "SELECT",
-    "CONCAT",
-    "PUSHROOT",
-    "CALLFN",
-    "DONE"
+    const char* name;
+    void (*stackmod)(int& v, const Cmd& cmd); // how many stack frames are added or removed
 };
-static_assert(Countof(s_opcodeNames) == CM_DONE+1, "opcode enum vs name table mismatch");
+
+static const OpcodeProperty s_opcodeProperties[] =
+{
+    { "LOOKUP",    NULL  },
+    { "GETVAR",    sm_plus1 },
+    { "FILTER",    NULL  },
+    { "LITERAL",   sm_plus1 },
+    { "DUP",       sm_plus1 },
+    { "CHECKKEY",  NULL  },
+    { "KEYSEL",    NULL  },
+    { "SELECT",    NULL  },
+    { "CONCAT",    sm_popNpush1 },
+    { "PUSHROOT",  sm_plus1 },
+    { "CALLFN",    sm_popNpush1 },
+    { "POP",       sm_minus1 },
+    { "DONE",      sm_zero }
+};
+static_assert(Countof(s_opcodeProperties) == CM_DONE+1, "opcode enum vs properties table mismatch");
 
 static const char *s_operatorNames[] =
 {
@@ -755,24 +767,47 @@ static void oprToStr(std::ostringstream& os, unsigned opparam)
 size_t Executable::disasm(std::vector<std::string>& out) const
 {
     const size_t n = cmds.size();
-    for(size_t i = 0; i < n; ++i)
+    char buf[32];
+    int indent = 0;
+    for (size_t i = 0; i < n; ++i)
     {
         const Cmd& c = cmds[i];
         std::ostringstream os;
-        os << " [" << i << "] ";
-        os << s_opcodeNames[c.type];
+        const int oldindent = indent;
+
+        sprintf(buf, "[%4u|", (unsigned)i); // std::cout formatting sucks too much :<
+        os << buf;
+        if (auto f = s_opcodeProperties[c.type].stackmod)
+        {
+            const int prev = indent;
+            f(indent, c);
+            sprintf(buf, "%+d] ", indent - prev);
+            assert(indent >= 0);
+            os << buf;
+        }
+        else
+            os << "  ] ";
+
+        for (int j = 0; j < oldindent; ++j)
+            os << ". ";
+        os << s_opcodeProperties[c.type].name;
+
+
 
         switch(cmds[i].type)
         {
             case CM_DUP:
-            case CM_DONE:
             case CM_PUSHROOT:
-                break; // do nothing
+            case CM_POP:
+            case CM_DONE:
+                break; // nothing to do
+
             case CM_GETVAR:
                 os << ' ' << literals[c.param].asCString(*mem);
                 break;
-            case CM_LOOKUP:
+
             case CM_LITERAL:
+            case CM_LOOKUP:
             case CM_SELECT:
                 os << ' ';
                 varToStringDebug(os, VarCRef(mem, &literals[c.param]));
@@ -810,7 +845,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
                 break;
 
             case CM_CALLFN:
-                os << ' ' << literals[c.param].asCString(*mem) << " (params: " << c.param2 << ')';
+                os << ' ' << literals[c.param2].asCString(*mem) << " (params: " << c.param << ')';
                 break;
 
             default:

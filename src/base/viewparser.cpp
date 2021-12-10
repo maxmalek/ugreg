@@ -90,6 +90,7 @@ public:
     bool _parseEval();
     bool _parseSubExpr(const char* s); // recursive call into self
     bool _parseDot();
+    bool _parseTilde();
     // --- variables and identifiers ---
     bool _parseAndEmitVarRef();
     bool _parseVarRef(Var& id);
@@ -270,6 +271,14 @@ bool Parser::_parseDot()
     bool ok = _eat('.') && _skipSpace();
     if(ok)
         _emit(CM_DUP, 0); // FIXME: dup last proper top
+    return ok;
+}
+
+bool Parser::_parseTilde()
+{
+    bool ok = _eat('~') && _skipSpace();
+    if (ok)
+        _emit(CM_PUSHROOT, 0); // FIXME: dup last proper top
     return ok;
 }
 
@@ -554,7 +563,7 @@ bool Parser::_parseExpr()
 // { ... }
 bool Parser::_parseEval()
 {
-    return _parseDot() || _parseAndEmitLiteral() || _parseFnCall() || _parseAndEmitVarRef() || _parseQuery();
+    return _parseDot() || _parseTilde() || _parseAndEmitLiteral() || _parseFnCall() || _parseAndEmitVarRef() || _parseQuery();
 }
 
 bool Parser::_parseQuery()
@@ -613,7 +622,7 @@ bool Parser::_parseFnCall(unsigned extraargs)
                 // this means functions are called by name, which is a tad slower than by some index,
                 // but makes adding user-defined functions later on much easier.
                 unsigned lit = _addLiteral(std::move(id));
-                _emit(CM_CALLFN, lit, n + extraargs);
+                _emit(CM_CALLFN, n + extraargs, lit);
                 ok = true;
             }
         }
@@ -918,6 +927,7 @@ bool Parser::_parseKeyCmp()
         ParserTop top2(*this);
         if(_parseLiteral(lit))
         {
+            // fast check against single literal
             _emitCheckKey(std::move(id), std::move(lit), op.param);
             ok = top2.accept();
         }
@@ -932,6 +942,7 @@ bool Parser::_parseKeyCmp()
                 exec.cmds.push_back(op);
                 ok = top2.accept();
             }
+            _emit(CM_POP, 0);
         }
 
     }
@@ -1062,7 +1073,7 @@ unsigned Parser::_emitTransform(Var&& id)
 {
     assert(id.type() == Var::TYPE_STRING);
     unsigned lit = _addLiteral(std::move(id));
-    _emit(CM_CALLFN, (unsigned)lit, 1);
+    _emit(CM_CALLFN, 1, (unsigned)lit);
     return lit;
 }
 

@@ -59,7 +59,8 @@ enum CmdType
     CM_SELECT,     // param = index into literals table
     CM_CONCAT,     // param = how many stack frames to concat
     CM_PUSHROOT,   // no param
-    CM_CALLFN,     // param = # of args passed to function
+    CM_CALLFN,     // param = # of args passed to function, param2 = index to literals table (function name)
+    CM_POP,        // pop one stack frame
 
     // ALWAYS LAST
     CM_DONE        // terminate execution at this point.
