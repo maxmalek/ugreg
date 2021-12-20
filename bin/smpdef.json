@@ -1,0 +1,51 @@
+{"devicetypes":{
+    "smp351": {
+        "heartbeat_time": "30s",
+        "errors": {
+            "E10": "Unrecognized command",
+            "E12": "Invalid port number",
+            "E13": "Invalid parameter (number is out of range)",
+            "E14": "Not valid for this configuration",
+            "E17": "Invalid command for signal type",
+            "E18": "System timed out",
+            "E22": "Busy",
+            "E24": "Privilege violation",
+            "E25": "Device is not present",
+            "E26": "Maximum connections exceeded",
+            "E28": "Bad file name or file not found",
+        },
+        "actions": {
+            "login": [
+                "expect", "\\(c\\) Copyright [0-9\\-]+, Extron Electronics, SMP 351.*",
+                "skip", 2,
+                "expect", "Password:",
+                "send", "${./password}\n",
+                "expect", "Login Administrator\n",
+            ],
+            "heartbeat": [
+                "send", "Q",
+                "skipall",
+            ],
+            "start": [
+                "send", "xxx",
+                "expect", "xxx",
+            ],
+            "stop": [
+                "send", "xxx",
+                "expect", "xxx",
+            ],
+            "pause": [
+                "send", "xxx",
+                "expect", "xxx",
+            ],
+            "continue": [
+                "send", "xxx",
+                "expect", "xxx",
+            ],
+            "status": [
+                "send", "xxx",
+                "read", "xxx",
+            ],
+        },
+    },
+}}
