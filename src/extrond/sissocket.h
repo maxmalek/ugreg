@@ -4,6 +4,7 @@
 
 typedef uintptr_t SISSocket;
 
+SISSocket sissocket_invalid();
 bool sissocket_open(SISSocket* pHandle, const char* host, unsigned port);
 void sissocket_close(SISSocket s);
 size_t sissocket_read(SISSocket s, void* buf, size_t bufsize);
@@ -12,6 +13,7 @@ bool sissocket_write(SISSocket s, const void* buf, size_t bytes);
 
 class SISSocketSet
 {
+public:
     SISSocketSet();
     ~SISSocketSet();
     void add(SISSocket s);

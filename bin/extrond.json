@@ -1,8 +1,18 @@
-{"devices": {
+{
+"config":{
+    "listen": [
+        { "port": 8080 },
+    ],
+    "expose_debug_apis": false,
+    "mimetype": "text/json; charset=utf-8",
+    "listen_threads": 4,
+},
+"devices": {
     "localhost": {
         "type": "smp351",
         "host": "localhost",
         "port": 6666,
         "password": "12345"
-    }
-}}
+    },
+}
+}

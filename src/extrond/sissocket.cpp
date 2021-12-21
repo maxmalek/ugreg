@@ -117,6 +117,11 @@ static bool _SetNonBlocking(SOCKET s, bool nonblock)
     return true;
 }
 
+SISSocket sissocket_invalid()
+{
+    return INVALID_SOCKET;
+}
+
 bool sissocket_open(SISSocket *pHandle, const char* host, unsigned port)
 {
     sockaddr_in addr;
