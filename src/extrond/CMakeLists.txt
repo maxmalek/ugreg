@@ -6,6 +6,8 @@ set(src
     sissocket.h
     sisaction.cpp
     sisaction.h
+    sisdevice.cpp
+    sisdevice.h
 )
 
 set(libs)

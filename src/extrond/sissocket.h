@@ -4,11 +4,20 @@
 
 typedef uintptr_t SISSocket;
 
+// must all be >= 0
+enum SocketIOResult
+{
+    SOCKIO_OK = 0,
+    SOCKIO_FAILED,
+    SOCKIO_TRYLATER, // for read: nothing there; for write: send queue full, try later
+    SOCKIO_CLOSED,
+};
+
 SISSocket sissocket_invalid();
 bool sissocket_open(SISSocket* pHandle, const char* host, unsigned port);
 void sissocket_close(SISSocket s);
-size_t sissocket_read(SISSocket s, void* buf, size_t bufsize);
-bool sissocket_write(SISSocket s, const void* buf, size_t bytes);
+SocketIOResult sissocket_read(SISSocket s, void* buf, size_t *rdsize, size_t bufsize);
+SocketIOResult sissocket_write(SISSocket s, const void* buf, size_t *wrsize, size_t bytes);
 
 
 class SISSocketSet

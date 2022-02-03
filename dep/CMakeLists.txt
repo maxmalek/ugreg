@@ -35,6 +35,7 @@ set(src
     miniz.h
     upgrade_mutex.cpp
     upgrade_mutex.h
+    minicoro.h
 )
 
 add_library(alldeps ${src})

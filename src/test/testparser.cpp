@@ -131,7 +131,7 @@ void testview()
     testload(tree);
     View vw(tree);
     Var viewdata = testview(tree);
-    vw.load(VarCRef(tree, &viewdata));
+    vw.load(VarCRef(tree, &viewdata), true);
     disasm(vw.exe);
 
     view::VM vm(tree);

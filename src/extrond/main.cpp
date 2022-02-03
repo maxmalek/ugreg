@@ -33,6 +33,11 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
         );
     }
 
+    
+    VarCRef dt = cfgtree.subtreeConst("/devicetypes");
+    if(!dt || dt.type() != Var::TYPE_MAP)
+        bail("devicetypes is not map", "");
+
     if (VarCRef devices = cfgtree.subtreeConst("/devices"))
     {
         if (devices.type() != Var::TYPE_MAP)
@@ -42,24 +47,27 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
         for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
         {
             const char* name = cfgtree.getS(it.key());
-            VarCRef xhost = VarCRef(cfgtree, &it.value()).lookup("host");
-            VarCRef xtype = VarCRef(cfgtree, &it.value()).lookup("type");
-            VarCRef xport = VarCRef(cfgtree, &it.value()).lookup("port");
-            const char* host = xhost ? xhost.asCString() : NULL;
+            const VarCRef mycfg(cfgtree, &it.value());
+            
+            const VarCRef xtype = mycfg.lookup("type");
             const char* type = xtype ? xtype.asCString() : NULL;
-            unsigned port = unsigned(xport && xport.asUint() ? *xport.asUint() : 23);
-            printf("Device[%s]: '%s' = %s:%u\n", type, name, host, port);
-            if (host && *host && type && *type && name && *name && port)
-            {
-                SISClientConfig scc;
-                scc.name = name;
-                scc.host = host;
-                scc.type = type;
-                scc.port = port;
-                clients.push_back(new SISClient(scc));
-            }
+            if(!type)
+                bail("Client has no device type: ", name);
+
+            VarCRef devcfg = dt.lookup(type);
+            if(!devcfg || devcfg.type() != Var::TYPE_MAP)
+                bail("Unknown device type: ", type);
+
+            printf("- %s is device type [%s]\n", name, type);
+
+            SISClient *client = new SISClient(name);
+            if(client->configure(mycfg, devcfg))
+                clients.push_back(client);
             else
-                printf("Invalid entry, skipping\n");
+            {
+                delete client;
+                bail("Client failed to configure, fix the config for ", name);
+            }
         }
     }
 }
@@ -98,7 +106,7 @@ int main(int argc, char** argv)
                 c->updateIncoming();
             if(flags & SISSocketSet::CANDISCARD)
             {
-                c->disconnect();
+                c->wasDisconnected(); // socket is closed already
                 sock2cli.erase(s);
             }
         }
@@ -110,11 +118,15 @@ int main(int argc, char** argv)
         for(size_t i = 0; i < clients.size(); ++i)
         {
             SISClient* c = clients[i];
-            if(!c->isConnected())
+            // Don't spam-connect in error state
+            if(!c->isConnected() && c->getState() == SISClient::DISCONNECTED)
             {
                 SISSocket s = c->connect();
                 if(s != sissocket_invalid())
+                {
                     sock2cli[s] = c;
+                    socketset.add(s);
+                }
             }
             clients[i]->updateTimer(dt);
         }

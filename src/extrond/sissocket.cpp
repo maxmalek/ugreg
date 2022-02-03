@@ -1,5 +1,8 @@
 #include "sissocket.h"
 
+#include <limits.h>
+#include <assert.h>
+
 #ifdef _WIN32
 /*#  ifndef _WIN32_WINNT
 #    define _WIN32_WINNT 0x0501
@@ -164,19 +167,57 @@ void sissocket_close(SISSocket s)
 #endif
 }
 
-size_t sissocket_read(SISSocket s, void* buf, size_t bufsize)
+static SocketIOResult getIOError()
 {
-    ::recv((SOCKET)s, (char*)buf, bufsize, 0);
-    return 0;
+#ifdef _WIN32
+    int err = WSAGetLastError();
+#else
+    int err = errno;
+#endif
+    switch(err)
+    {
+        case EAGAIN: 
+        case EWOULDBLOCK:
+#ifdef WSAEWOULDBLOCK
+        case WSAEWOULDBLOCK:
+#endif
+            return SOCKIO_TRYLATER;
+    }
+    printf("Unhandled socket IO error %d\n", err);
+    perror("");
+    return SOCKIO_FAILED;
 }
 
-bool sissocket_write(SISSocket s, const void* buf, size_t bytes)
+SocketIOResult sissocket_read(SISSocket s, void* buf, size_t *rdsize, size_t bufsize)
 {
-    int flags = 0;
-#ifdef MSG_NOSIGNAL
-    flags |= MSG_NOSIGNAL;
-#endif
-    return ::send((SOCKET)s, (const char*)buf, bytes, flags);
+    assert(bufsize && bufsize <= INT_MAX);
+    *rdsize = 0;
+    if(bufsize)
+    {
+        int ret = ::recv((SOCKET)s, (char*)buf, (int)bufsize, 0);
+        if(ret <= 0)
+            return ret == 0 ? SOCKIO_CLOSED : getIOError();
+        *rdsize = (unsigned)ret;
+    }
+    return SOCKIO_OK;
+}
+
+SocketIOResult sissocket_write(SISSocket s, const void* buf, size_t *wrsize, size_t bytes)
+{
+    assert(bytes <= INT_MAX);
+    *wrsize = 0;
+    if(bytes)
+    {
+        int flags = 0;
+    #ifdef MSG_NOSIGNAL
+        flags |= MSG_NOSIGNAL;
+    #endif
+        int ret = ::send((SOCKET)s, (const char*)buf, (int)bytes, flags);
+        if(ret <= 0)
+            return ret == 0 ? SOCKIO_CLOSED : getIOError();
+        *wrsize = (unsigned)ret;
+    }
+    return SOCKIO_OK;
 }
 
 typedef std::vector<pollfd> PollVec;
@@ -205,10 +246,10 @@ void SISSocketSet::add(SISSocket s)
 
 SISSocketSet::SocketAndStatus* SISSocketSet::update(size_t* n, int timeoutMS)
 {
-    const size_t N = PV.size();
+    size_t N = PV.size();
     int ret;
 #ifdef _WIN32
-    ret = ::WSAPoll(PV.data(), N, timeoutMS);
+    ret = ::WSAPoll(PV.data(), (ULONG)N, timeoutMS);
 #else
     ret = ::poll(PV.data(), N, timeoutMS);
 #endif
@@ -219,9 +260,9 @@ SISSocketSet::SocketAndStatus* SISSocketSet::update(size_t* n, int timeoutMS)
         return NULL;
     }
 
-    for (size_t i = 0; i < N; )
+    for (size_t i = 0; i < PV.size(); )
     {
-        pollfd& p = PV[i];
+        pollfd p = PV[i];
         if (!p.revents)
             continue;
 
@@ -231,7 +272,7 @@ SISSocketSet::SocketAndStatus* SISSocketSet::update(size_t* n, int timeoutMS)
         if (p.revents & (POLLERR | POLLHUP | POLLNVAL))
         {
             sissocket_close(p.fd);
-            p = PV.back();
+            PV[i] = PV.back();
             PV.pop_back();
             ss.flags |= CANDISCARD;
         }

@@ -46,6 +46,8 @@ set(src
     viewxform.h
     fetcher.cpp
     fetcher.h
+    co.cpp
+    co.h
 )
 
 add_library(base ${src})

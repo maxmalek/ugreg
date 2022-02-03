@@ -234,7 +234,7 @@ bool Fetcher::_prepareView(view::View& vw, VarCRef config, const char* key)
 {
     if (VarCRef v = config.lookup(key))
     {
-        if (vw.load(v))
+        if (vw.load(v, true))
             printf("Loaded view for %s (%u ops)\n", key, (unsigned)vw.exe.cmds.size());
         else
         {

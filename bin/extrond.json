@@ -8,11 +8,11 @@
     "listen_threads": 4,
 },
 "devices": {
-    "localhost": {
+    /*"localhost": {
         "type": "smp351",
         "host": "localhost",
         "port": 6666,
         "password": "12345"
-    },
+    },*/
 }
 }

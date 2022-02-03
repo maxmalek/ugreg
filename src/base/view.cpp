@@ -184,16 +184,16 @@ bool View::_loadTemplate(VarCRef in)
     return !vis.fail;
 }
 
-bool View::load(VarCRef v)
+bool View::load(VarCRef v, bool extended)
 {
     VarCRef result;
 
     switch(v.type())
     {
         case Var::TYPE_MAP:
+        if(extended)
         {
             const Var::Map *m = v.v->map();
-            VarCRef result;
 
             for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             {
@@ -211,10 +211,12 @@ bool View::load(VarCRef v)
                         printf("Failed to compile key '%s'\n", key);
                         return false;
                     }
+                    // FIXME: do something with idx
                 }
             }
+            break;
         }
-        break;
+        [[fallthrough]];
 
         default:
             result = v;

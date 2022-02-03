@@ -36,7 +36,7 @@ bool Mgr::addViewDef(const char *key, VarCRef v)
 {
     // That may take a while, don't lock just yet until we're sure this is loaded fine
     View vv(*this);
-    if(!vv.load(v))
+    if(!vv.load(v, true))
         return false;
 
     // --- LOCK WRITE ---

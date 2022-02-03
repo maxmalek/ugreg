@@ -17,7 +17,10 @@ public:
     View(const View&) = delete;
     ~View();
 
-    bool load(VarCRef v); // load JSON structure describing the view, or a single string if no variables/temporaries are needed, or an array of strings
+    // Load JSON structure describing a view. All strings that are not keys are parsed and replaced with VM calls.
+    // extended=false: load object as template. Filled-in object will be returned in produceResult().
+    // extended=true: If it's a map, load "result" key as result, and everything else as variables. Otherwise load normally.
+    bool load(VarCRef v, bool extended); 
     bool loaded() const { return !exe.cmds.empty(); }
 
     // Runs a temporary VM. The returned result is created using dst
