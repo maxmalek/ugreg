@@ -405,15 +405,12 @@ void VM::cmd_Concat(unsigned count)
     for(unsigned i = 0; i < count; ++i)
     {
         size_t elems = stack[top - i].refs.size();
-        if(elems != 1) // scalars don't count
+        if(!n)
+            n = elems;
+        else if(n != elems && n != 1)
         {
-            if(!n)
-                n = elems;
-            else if(n != elems)
-            {
-                n = 0; // FIXME: should be a runtime error
-                assert(false && "number of elements in concat mismatched");
-            }
+            n = 0; // FIXME: should be a runtime error
+            assert(false && "number of elements in concat mismatched");
         }
     }
     if(!n)
