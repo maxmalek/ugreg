@@ -12,6 +12,8 @@ set(src
     zstream.h
     serverutil.cpp
     serverutil.h
+    responseformat.cpp
+    responseformat.h
 )
 
 add_library(server ${src})
