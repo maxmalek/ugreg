@@ -30,6 +30,7 @@ void DeflateWriteStream::finish()
         do
             status = packloop(MZ_FINISH);
         while (status > 0 && status != MZ_STREAM_END); // make sure everything is flushed
+        _sm.Flush();
         _dst = NULL; // make sure the BufferedWriteStream dtor doesn't flush
     }
 }
