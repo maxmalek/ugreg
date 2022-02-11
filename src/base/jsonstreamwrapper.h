@@ -121,6 +121,8 @@ public:
     inline bool isError() const { return _err; }
     void init();
 
+    void Write(const char *buf, size_t n);
+
 
     // ----- Direct memory-to-memory API --------
     struct BufInfo

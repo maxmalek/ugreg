@@ -1,3 +1,8 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
+
 #include "sissocket.h"
 
 #include <limits.h>
@@ -125,37 +130,63 @@ SISSocket sissocket_invalid()
     return INVALID_SOCKET;
 }
 
-bool sissocket_open(SISSocket *pHandle, const char* host, unsigned port)
+SocketIOResult sissocket_open(SISSocket *pHandle, const char* host, unsigned port)
 {
     sockaddr_in addr;
     if (!_Resolve(host, port, &addr))
     {
         traceprint("RESOLV ERROR: %s\n", _GetErrorStr(_GetError()).c_str());
-        return false;
+        return SOCKIO_FAILED;
     }
 
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-
     if (!SOCKETVALID(s))
     {
         traceprint("SOCKET ERROR: %s\n", _GetErrorStr(_GetError()).c_str());
-        return false;
+        return SOCKIO_FAILED;
     }
 
-    if (::connect(s, (sockaddr*)&addr, sizeof(sockaddr)))
-    {
-        traceprint("CONNECT ERROR: %s\n", _GetErrorStr(_GetError()).c_str());
-        return false;
-    }
+    SocketIOResult ret = SOCKIO_FAILED;
 
     if (!_SetNonBlocking(s, true))
     {
         traceprint("_SetNonBlocking failed: %s\n", _GetErrorStr(_GetError()).c_str());
-        return false;
+        ret = SOCKIO_FAILED;
+    }
+    else
+    {
+        if (!::connect(s, (sockaddr*)&addr, sizeof(sockaddr)))
+            ret = SOCKIO_OK;
+        else
+        {
+            int err = _GetError();
+            switch(err)
+            {
+            case EINPROGRESS:
+#ifdef WSAEINPROGRESS
+            case WSAEINPROGRESS:
+#endif
+#ifdef WSAEWOULDBLOCK
+            case WSAEWOULDBLOCK: // windows uses this for some reason
+#endif
+                traceprint("SOCKET[%p]: Connection to '%s:%u' in progress...\n", (void*)s, host, port);
+                ret = SOCKIO_TRYLATER;
+                break;
+            default:
+                traceprint("CONNECT ERROR %d: %s\n", err, _GetErrorStr(err).c_str());
+                ret = SOCKIO_CLOSED;
+            }
+        }
+    }
+    
+    if(!(ret == SOCKIO_OK || ret == SOCKIO_TRYLATER))
+    {
+        sissocket_close(s);
+        s = INVALID_SOCKET;
     }
 
     *pHandle = s;
-    return true;
+    return ret;
 }
 
 void sissocket_close(SISSocket s)
@@ -169,11 +200,7 @@ void sissocket_close(SISSocket s)
 
 static SocketIOResult getIOError()
 {
-#ifdef _WIN32
-    int err = WSAGetLastError();
-#else
-    int err = errno;
-#endif
+    int err = _GetError();
     switch(err)
     {
         case EAGAIN: 
@@ -239,7 +266,7 @@ void SISSocketSet::add(SISSocket s)
 {
     pollfd p;
     p.fd = s;
-    p.events = POLLIN | POLLOUT;
+    p.events = POLLIN | POLLOUT; // TODO: set pollout flag only when we actually have data to send that were unable to be sent earlier
     p.revents = 0;
     PV.push_back(p);
 }
@@ -249,26 +276,67 @@ SISSocketSet::SocketAndStatus* SISSocketSet::update(size_t* n, int timeoutMS)
     size_t N = PV.size();
     int ret;
 #ifdef _WIN32
+    ::WSASetLastError(0);
     ret = ::WSAPoll(PV.data(), (ULONG)N, timeoutMS);
 #else
     ret = ::poll(PV.data(), N, timeoutMS);
 #endif
     _ready.clear();
-    if (!ret)
+    if (ret <= 0)
     {
+#ifdef _WIN32
+        if(ret < 0)
+        {
+            int err = ::WSAGetLastError();
+            printf("WSAGetLastError() = %d, N = %u\n", err, unsigned(N));
+            if(!N)
+                ::Sleep(timeoutMS); // FIXME: don't want to do this here
+        }
+#endif
         *n = 0;
         return NULL;
     }
 
     for (size_t i = 0; i < PV.size(); )
     {
-        pollfd p = PV[i];
+        pollfd& p = PV[i];
         if (!p.revents)
+        {
+            ++i;
             continue;
+        }
 
         SocketAndStatus ss;
         ss.socket = p.fd;
         ss.flags = 0;
+
+        // partially open socket where we're still waiting for writability
+        if(p.events & POLLOUT)
+        {
+            p.events &= ~POLLOUT;
+            int soerr;
+            int soerrsize = sizeof(soerr);
+            if(::getsockopt(p.fd, SOL_SOCKET, SO_ERROR, (char*)&soerr, &soerrsize))
+            {
+                int err = _GetError();
+                traceprint("SOCKET[%p]: getsockopt() failed! Error %d: %s\n",
+                    (void*)p.fd, err, _GetErrorStr(err).c_str());
+                p.revents |= POLLERR; // hang up
+            }
+            else if (soerr)
+            {
+                traceprint("SOCKET[%p]: Delayed connect to failed! Error %d: %s\n",
+                    (void*)p.fd, soerr, _GetErrorStr(soerr).c_str());
+                p.revents |= POLLERR; // hang up
+            }
+            else
+            {
+                // connected!
+                traceprint("SOCKET[%p]: Delayed connect successful!\n", (void*)p.fd);
+                ss.flags |= JUSTCONNECTED;
+            }
+        }
+
         if (p.revents & (POLLERR | POLLHUP | POLLNVAL))
         {
             sissocket_close(p.fd);

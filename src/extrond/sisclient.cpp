@@ -1,13 +1,26 @@
 #include "sisclient.h"
 #include <assert.h>
 #include "minicoro.h"
+#include "util.h"
+
+static const char* const s_StateNames[] =
+{
+    "ERROR",
+    "DISCONNECTED",
+    "CONNECTING",
+    "CONNECTED",
+    "AUTHING",
+    "AUTHED",
+    "IDLE",
+    "INPROCESS"
+};
+static_assert(Countof(s_StateNames) == SISClient::_STATE_MAX, "size mismatch");
+
 
 SISClientConfig::SISClientConfig()
-    : port(23), heartbeatInterval(30000)
+    : port(23)
 {
 }
-
-
 
 SISClient::SISClient(const char *name)
     : socket(sissocket_invalid()), heartbeatTime(0), timeInState(0), state(DISCONNECTED)
@@ -16,7 +29,7 @@ SISClient::SISClient(const char *name)
     cfg.name = name;
 }
 
-bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
+bool SISClient::configure(VarCRef mycfg, const SISDeviceTemplate& dev)
 {
     const VarCRef xhost = mycfg.lookup("host");
     const VarCRef xport = mycfg.lookup("port");
@@ -30,54 +43,65 @@ bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
 
     cfg.host = host;
 
-    return true;
+    return cfg.device.init(dev, mycfg);
 }
 
 SISSocket SISClient::connect()
 {
+    disconnect();
     printf("Connecting to %s (%s:%u) ...\n", cfg.name.c_str(), cfg.host.c_str(), cfg.port);
-    SISSocket s = sissocket_invalid();
-    assert(socket == s);
-    if(sissocket_open(&s, cfg.host.c_str(), cfg.port))
+    _clearBuffer();
+    SocketIOResult res = sissocket_open(&socket, cfg.host.c_str(), cfg.port);
+    if(res == SOCKIO_OK)
     {
-        printf("Connected to %s (%s:%u), using config '%s', socket = %p\n",
-            cfg.name.c_str(), cfg.host.c_str(), cfg.port, cfg.type.c_str(), (void*)s);
-        socket = s;
+        printf("Connected to %s (%s:%u), socket = %p\n",
+            cfg.name.c_str(), cfg.host.c_str(), cfg.port, (void*)socket);
         setState(CONNECTED);
     }
+    else if(res == SOCKIO_TRYLATER)
+        setState(CONNECTING);
     else
         setState(ERROR);
-    return s;
+    return socket;
 }
 
-SISSocket SISClient::disconnect()
+void SISClient::disconnect()
+{
+    setState(DISCONNECTED);
+}
+
+void SISClient::_disconnect()
 {
     printf("Disconnect %s (%s:%u), socket = %p\n",
         cfg.name.c_str(), cfg.host.c_str(), cfg.port, (void*)socket);
-    assert(socket != sissocket_invalid());
-    sissocket_close(socket);
-    setState(DISCONNECTED);
-    return invalidate();
+    SISSocket inv = sissocket_invalid();
+    if(socket != inv)
+    {
+        sissocket_close(socket);
+        socket = inv;
+    }
+}
+
+void SISClient::_clearBuffer()
+{
+    inbuf.clear();
+    inbufOffs = 0;
 }
 
 void SISClient::wasDisconnected()
 {
     printf("Disconnected from %s (%s:%u) by remote end, socket was %p\n",
         cfg.name.c_str(), cfg.host.c_str(), cfg.port, (void*)socket);
-    setState(DISCONNECTED);
-    invalidate();
+    if(state > DISCONNECTED)
+        setState(DISCONNECTED);
+    else
+        _disconnect();
 }
 
-SISSocket SISClient::invalidate()
+u64 SISClient::updateTimer(u64 now, u64 dt)
 {
-    SISSocket old = socket;
-    socket = sissocket_invalid();
-    return old;
-}
-
-void SISClient::updateTimer(u64 dt)
-{
-    if(socket != sissocket_invalid())
+    u64 next = tasks.update(now);
+    if(state == IDLE)
     {
         if(heartbeatTime > dt)
             heartbeatTime -= dt;
@@ -88,6 +112,8 @@ void SISClient::updateTimer(u64 dt)
 
     if(state == ERROR && timeInState > 3000) // give it some time
         setState(DISCONNECTED);
+
+    return next;
 }
 
 bool SISClient::isConnected() const
@@ -124,42 +150,64 @@ void SISClient::updateIncoming()
     }
 }
 
+void SISClient::delayedConnected()
+{
+    if(state == CONNECTING)
+        setState(CONNECTED);
+    else
+        setState(ERROR);
+}
 
-void SISClient::setState(State st)
+
+SISClient::State SISClient::setState(State st)
 {
     const State prev = state;
+    if(prev == st)
+        return prev;
+    printf("SISClient[%s]: State %s -> %s, timeInState = %u\n",
+        cfg.name.c_str(), s_StateNames[state], s_StateNames[st], (unsigned)timeInState);
     state = st;
     timeInState = 0;
 
     switch(st)
     {
         case ERROR:
+        case DISCONNECTED:
+            _clearBuffer();
             if(isConnected())
-                disconnect();
-            else
-                invalidate();
+                _disconnect(); // don't change state, linger in error state for a bit
         break;
 
         case CONNECTED:
+            _clearBuffer();
             if(isConnected())
                 authenticate();
             else
                 setState(ERROR);
+        break;
+
+        case AUTHED:
+            setState(IDLE);
+            break;
+
+        case IDLE:
+            heartbeatTime = cfg.device.getHeartbeatTime();
+            break;
     }
+    return prev;
 }
 
 void SISClient::heartbeat()
 {
     if(state == IDLE)
     {
-        // TODO: invoke VM
-        // TODO: reset timer
+        tasks.scheduleIn(co_task_heartbeat, this, 0);
     }
-    heartbeatTime = cfg.heartbeatInterval;
 }
 
 void SISClient::authenticate()
 {
+    assert(state == CONNECTED);
     tasks.scheduleIn(co_task_auth, this, 0);
 }
 
@@ -186,13 +234,36 @@ int SISClient::sendsome(const char* buf, size_t size)
     return -(int)res;
 }
 
+bool SISClient::co_runAction(const char* name, State nextstate)
+{
+    const SISAction* act = cfg.device.getAction(name);
+    if (!act)
+    {
+        printf("SISClient[%s]: Action '%s' does not exist\n", cfg.name.c_str(), name);
+        return false;
+    }
+    printf("SISClient[%s]: Action '%s' starting...\n", cfg.name.c_str(), name);
+    setState(nextstate);
+    int result = act->exec(*this);
+    printf("SISClient[%s]: Action '%s' %s with return %d\n", cfg.name.c_str(), name, result < 0 ? "failed" : "completed", result);
+    return result  >= 0;
+}
+
 void SISClient::co_task_auth(void* me, size_t delay)
 {
+    SISClient* self = (SISClient*)me;
+    if(self->co_runAction("login", AUTHING))
+        self->setState(AUTHED);
+    else
+        self->setState(ERROR);
+}
+
+void SISClient::co_task_heartbeat(void* me, size_t delay)
+{
     SISClient *self = (SISClient*)me;
-
-    char buf[64];
-
-
+    self->co_runAction("heartbeat", INPROCESS);
+    if(self->state == INPROCESS)
+        self->setState(IDLE);
 }
 
 void SISClient::advanceInput(size_t n)
@@ -235,5 +306,16 @@ int SISClient::readInput(char* dst, size_t bytes)
 
     assert(res > 0); // make sure the resulting error code is negative
     return -(int)res;*/
+}
+
+
+const char* SISClient::getStateStr() const
+{
+    return s_StateNames[getState()];
+}
+
+std::string SISClient::askStatus() const
+{
+    return "NYI";
 }
 

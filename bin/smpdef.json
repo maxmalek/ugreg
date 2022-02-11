@@ -17,11 +17,14 @@
         "actions": {
             "login": [
                 ["need", 32],
-                ["match", "\\(c\\) Copyright [0-9\\-]+, Extron Electronics, SMP 351.*"],
-                ["skip", 2],
+                ["match", "\\s*\\(c\\) Copyright [0-9\\-]+, Extron Electronics, SMP 35[12][^\\n]*\\n[^\\n]*\\s+"],
+                ["need", 9],
+                ["wait", "100ms"],
+                ["match", "\\s*"],
                 ["expect", "Password:"],
                 ["send", "${./password}\n"],
-                ["expect", "Login Administrator\n"],
+                ["need", 5],
+                ["match", "\\s*Login Administrator\\s*"],
             ],
             "heartbeat": [
                 ["send", "Q"],
@@ -51,7 +54,9 @@
             "status": [
                 ["skipall"],
                 ["send", "xxx"],
-                ["read", "xxx"],
+                //["read", "xxx"],
+                ["need", 1],
+                ["skipall"],
             ],
         },
     },

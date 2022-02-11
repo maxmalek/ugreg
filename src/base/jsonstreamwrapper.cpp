@@ -1,6 +1,8 @@
 #include "jsonstreamwrapper.h"
 #include <stdio.h>
 #include <assert.h>
+#include <utility>
+#include <string.h>
 
 BufferedReadStream::BufferedReadStream(InitFunc initf, ReadFunc rf, char* buf, size_t bufsz)
     : _cur(0), _buf(buf), _last(0), _dst(0), _bufsz(bufsz), _lastread(0), _count(0)
@@ -78,6 +80,20 @@ void BufferedWriteStream::init()
         _dst = _buf;
         if(_initf)
             _initf(this);
+    }
+}
+
+void BufferedWriteStream::Write(const char* buf, size_t n)
+{
+    while(n)
+    {
+        const size_t space = _last - _dst;
+        const size_t copy = std::min(space, n);
+        n -= copy;
+        memcpy(_dst, buf, copy);
+        _dst += copy;
+        if(_dst == _last)
+            Flush();
     }
 }
 

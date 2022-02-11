@@ -3,10 +3,23 @@
 #include "viewparser.h"
 #include "sisaction.h"
 #include "json_out.h"
+#include "util.h"
+
+SISDeviceTemplate::SISDeviceTemplate(TreeMem& mem)
+    : vw(mem)
+{
+}
 
 bool SISDeviceTemplate::init(VarCRef devtype)
 {
-    return vw.load(devtype, false);
+    bool ok = vw.load(devtype, false);
+#ifdef _DEBUG
+    std::vector<std::string> dis;
+    vw.exe.disasm(dis);
+    for(size_t i = 0; i < dis.size(); ++i)
+        puts(dis[i].c_str());
+#endif
+    return ok;
 }
 
 SISDevice::SISDevice()
@@ -14,15 +27,22 @@ SISDevice::SISDevice()
 {
 }
 
-bool SISDevice::init(const SISDeviceTemplate& dev, VarCRef devcfg)
+bool SISDevice::init(const SISDeviceTemplate& dev, VarCRef unitcfg)
 {
-    Var v = dev.vw.produceResult(*this, devcfg, VarCRef()); // no vars
+    Var v = dev.vw.produceResult(*this, unitcfg, VarCRef()); // no vars
     if(v.type() == Var::TYPE_NULL)
         return false;
 
     const VarCRef ref(this, &v);
     bool ok = _import(ref);
-    if(!ok)
+    if(ok)
+    {
+#ifdef _DEBUG
+        std::string js = dumpjson(ref, true);
+        printf("Device init ok, this is the JSON:\n%s\n", js.c_str());
+#endif
+    }
+    else
     {
         std::string err = dumpjson(ref, true);
         printf("SISDevice::init(): Bad config. This is the failed JSON:\n%s\n", err.c_str());
@@ -32,10 +52,24 @@ bool SISDevice::init(const SISDeviceTemplate& dev, VarCRef devcfg)
     return ok;
 }
 
+
+const SISAction* SISDevice::getAction(const char* name) const
+{
+    auto it = actions.find(name);
+    return it != actions.end() ? &it->second : NULL;
+}
+
 bool SISDevice::_import(VarCRef ref)
 {
-    VarCRef xhb = ref.lookup("heartbeat_time");
-    heartbeatTime = xhb && xhb.asUint() ? *xhb.asUint() : 0;
+    if(VarCRef xhb = ref.lookup("heartbeat_time"))
+    {
+        const char *shb = xhb.asCString();
+        if(!strToDurationMS_Safe(&heartbeatTime, shb))
+        {
+            printf("Failed to parse heartbeat_time\n");
+            return false;
+        }
+    }
 
     VarCRef xact = ref.lookup("actions");
     if(!xact || xact.type() != Var::TYPE_MAP)
@@ -47,7 +81,10 @@ bool SISDevice::_import(VarCRef ref)
         const char *k = getS(it.key());
         SISAction& sa = actions[k];
         if(!sa.parse(VarCRef(this, &it.value())))
+        {
+            actions.erase(k);
             return false;
+        }
     }
 
     return true;

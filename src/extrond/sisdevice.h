@@ -11,6 +11,8 @@
 class SISDeviceTemplate
 {
 public:
+    SISDeviceTemplate(TreeMem& mem);
+
     // Just load and interpolate strings
     bool init(VarCRef devtype);
 
@@ -23,12 +25,14 @@ class SISDevice : public DataTree
 {
 public:
     SISDevice();
-    bool init(const SISDeviceTemplate& dev, VarCRef devcfg);
+    bool init(const SISDeviceTemplate& dev, VarCRef unitcfg);
 
     //std::map<std::string, std::string> errors;
-    std::map<std::string, SISAction> actions;
-    u64 heartbeatTime;
+    u64 getHeartbeatTime() const { return heartbeatTime; }
+    const SISAction *getAction(const char *name) const;
 
 private:
+    std::map<std::string, SISAction> actions;
+    u64 heartbeatTime;
     bool _import(VarCRef ref);
 };

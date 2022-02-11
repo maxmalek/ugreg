@@ -14,7 +14,7 @@ enum SocketIOResult
 };
 
 SISSocket sissocket_invalid();
-bool sissocket_open(SISSocket* pHandle, const char* host, unsigned port);
+SocketIOResult sissocket_open(SISSocket* pHandle, const char* host, unsigned port);
 void sissocket_close(SISSocket s);
 SocketIOResult sissocket_read(SISSocket s, void* buf, size_t *rdsize, size_t bufsize);
 SocketIOResult sissocket_write(SISSocket s, const void* buf, size_t *wrsize, size_t bytes);
@@ -32,6 +32,7 @@ public:
         CANREAD = 1,
         CANWRITE = 2,
         CANDISCARD = 4,
+        JUSTCONNECTED = 8,
     };
 
     struct SocketAndStatus

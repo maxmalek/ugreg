@@ -28,7 +28,7 @@ Coro co_new(CoFunc func, void* args)
 {
     CoPass pass { func, args };
 
-    mco_desc desc = mco_desc_init((void(*)(mco_coro*))func, 0);
+    mco_desc desc = mco_desc_init(_cothunk, 0);
     desc.user_data = &pass;
     mco_coro* co = 0;
     CHECK(mco_create(&co, &desc));
@@ -94,11 +94,11 @@ void CoroRunner::scheduleAt(CoFunc f, void* args, u64 when)
 
 u64 CoroRunner::update(u64 now)
 {
-    u64 next = 0;
-    for (size_t i = 0; i < tasks.size(); )
+    u64 next = u64(-1);
+    for (size_t i = 0; i < tasks.size();)
     {
         if(now < tasks[i].when)
-            next = std::min(next, tasks[i].when - now);
+            next = std::min(next, tasks[i++].when - now);
         else
         {
             u64 late = now - tasks[i].when;

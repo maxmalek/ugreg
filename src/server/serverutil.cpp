@@ -1,3 +1,7 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include "serverutil.h"
 #include <atomic>
 #include <signal.h>
@@ -25,6 +29,7 @@ void handlesigs(void (*f)(int))
     signal(SIGINT, f);
 }
 
+[[noreturn]]
 void bail(const char* a, const char* b)
 {
     fprintf(stderr, "FATAL: %s%s\n", a, b);

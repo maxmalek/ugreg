@@ -8,6 +8,8 @@ set(src
     sisaction.h
     sisdevice.cpp
     sisdevice.h
+    handler_status.cpp
+    handler_status.h
 )
 
 set(libs)

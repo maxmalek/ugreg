@@ -8,6 +8,7 @@
 #include "webserver.h"
 #include "config.h"
 #include "json_out.h"
+#include "handler_status.h"
 
 std::atomic<bool> s_quit;
 
@@ -33,10 +34,20 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
         );
     }
 
-    
+    std::map<std::string, SISDeviceTemplate*> devicetemplates;
     VarCRef dt = cfgtree.subtreeConst("/devicetypes");
     if(!dt || dt.type() != Var::TYPE_MAP)
         bail("devicetypes is not map", "");
+    const Var::Map *dtm = dt.v->map();
+    for(Var::Map::Iterator it = dtm->begin(); it != dtm->end(); ++it)
+    {
+        const char *dtn = cfgtree.getS(it.key());
+        printf("New device type [%s]...\n", dtn);
+        SISDeviceTemplate *sdt = new SISDeviceTemplate(cfgtree);
+        if(!sdt->init(VarCRef(cfgtree, &it.value())))
+            bail("Failed to init device type [%s], exiting\n", dtn);
+        devicetemplates[dtn] = sdt;
+    }
 
     if (VarCRef devices = cfgtree.subtreeConst("/devices"))
     {
@@ -54,14 +65,14 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
             if(!type)
                 bail("Client has no device type: ", name);
 
-            VarCRef devcfg = dt.lookup(type);
-            if(!devcfg || devcfg.type() != Var::TYPE_MAP)
+            auto dti = devicetemplates.find(type);
+            if(dti == devicetemplates.end())
                 bail("Unknown device type: ", type);
 
             printf("- %s is device type [%s]\n", name, type);
 
             SISClient *client = new SISClient(name);
-            if(client->configure(mycfg, devcfg))
+            if(client->configure(mycfg, *dti->second))
                 clients.push_back(client);
             else
             {
@@ -70,6 +81,9 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
             }
         }
     }
+
+    for(auto it : devicetemplates)
+        delete it.second;
 }
 
 typedef std::map<SISSocket, SISClient*> ClientMap;
@@ -88,38 +102,50 @@ int main(int argc, char** argv)
     if (!srv.start(cfg))
         bail("Failed to start server!", "");
 
+    StatusHandler status(clients, "/status");
+    srv.registerHandler(status);
+
     puts("Ready!");
 
     u64 lasttime = timeNowMS();
+    u64 timeUntilNext = 1000;
     while (!s_quit)
     {
         size_t changed = 0;
-        SISSocketSet::SocketAndStatus *ss = socketset.update(&changed, 1000);
+        timeUntilNext = std::max<u64>(timeUntilNext, 1000);
+        SISSocketSet::SocketAndStatus *ss = socketset.update(&changed, (int)timeUntilNext);
         for(size_t i = 0; i < changed; ++i)
         {
             unsigned flags = ss[i].flags;
             SISSocket s = ss[i].socket;
-            SISClient *c = sock2cli[s];
-            assert(c);
+            ClientMap::iterator ci = sock2cli.find(s);
+            SISClient *c = ci != sock2cli.end() ? ci->second : NULL;
 
-            if(flags & SISSocketSet::CANREAD)
-                c->updateIncoming();
-            if(flags & SISSocketSet::CANDISCARD)
+            if(c)
             {
-                c->wasDisconnected(); // socket is closed already
-                sock2cli.erase(s);
+                if(flags & SISSocketSet::JUSTCONNECTED)
+                    c->delayedConnected();
+                if(flags & SISSocketSet::CANREAD)
+                    c->updateIncoming();
+                if(flags & SISSocketSet::CANDISCARD)
+                    c->wasDisconnected(); // socket is closed already
             }
+            
+            // can happen that this flag is set but the socket is not in sock2cli
+            if (c && (flags & SISSocketSet::CANDISCARD))
+                sock2cli.erase(s);
         }
 
         u64 now = timeNowMS();
         u64 dt = now - lasttime;
         lasttime = now;
-
+        timeUntilNext = 1000;
         for(size_t i = 0; i < clients.size(); ++i)
         {
             SISClient* c = clients[i];
+
             // Don't spam-connect in error state
-            if(!c->isConnected() && c->getState() == SISClient::DISCONNECTED)
+            if(c->getState() == SISClient::DISCONNECTED)
             {
                 SISSocket s = c->connect();
                 if(s != sissocket_invalid())
@@ -128,8 +154,11 @@ int main(int argc, char** argv)
                     socketset.add(s);
                 }
             }
-            clients[i]->updateTimer(dt);
+
+            u64 next = clients[i]->updateTimer(now, dt);
+            timeUntilNext = std::min(timeUntilNext, next);
         }
+        printf("timeUntilNext = %u, now = %zu\n", (unsigned)timeUntilNext, now);
     }
 
     srv.stop();

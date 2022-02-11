@@ -35,20 +35,29 @@ static int comm_expect(const SISComm& comm, SISClient& client)
     char buf[BufferSize];
     const char *beg = comm.paramStr.c_str();
     size_t remain = comm.paramStr.length();
-    for(;;)
+    size_t done = 0;
+    while(remain)
     {
         int rd = client.readInput(buf, std::min(sizeof(buf), remain));
         if(rd < 0)
             return rd;
         else if(!rd)
+        {
             co_yield1(IOWaitDelay);
+            continue;
+        }
 
-        if(strncmp(buf, beg, remain))
+        if(strncmp(buf, beg, rd))
+        {
+            printf("expect [%s] failed, got (%u bytes):\n%.*s\n", beg, rd, rd, buf); // isn't 0-terminated, so print with exact lenght
             return -1; // mismatch
+        }
 
         beg += rd;
+        done += rd;
         remain -= rd;
     }
+    return (int)done;
 }
 
 static int comm_match(const SISComm& comm, SISClient& client)
@@ -57,13 +66,23 @@ static int comm_match(const SISComm& comm, SISClient& client)
     // match as far as possible
     const char * const buf = client.getInputPtr();
 
+    const unsigned len = unsigned(client.availInput());
     std::cmatch cm;
     // buf isn't a 0-terminated string -> need to use explicit slice
     if(!std::regex_search(buf, buf + client.availInput(), cm, comm.re, std::regex_constants::match_continuous))
+    {
+        printf("match [%s] failed, got (%u bytes):\n%.*s\n", comm.paramStr.c_str(), len, len, buf); // isn't 0-terminated, so print with exact lenght
         return -1;
+    }
 
     size_t matched = cm[0].length();
+    printf("matched [%s]:\n%.*s\n", comm.paramStr.c_str(), unsigned(matched), buf); // isn't 0-terminated, so print with exact lenght
+
     client.advanceInput(matched);
+
+    if(size_t remain = client.availInput())
+        printf("unmatched follows:\n%.*s\n", unsigned(remain), client.getInputPtr());
+
     return (int)matched;
 }
 
@@ -129,8 +148,14 @@ static int comm_send(const SISComm& comm, SISClient& client)
     }
 }
 
+static int comm_fail(const SISComm& comm, SISClient& client)
+{
+    return -1;
+}
+
 static const SISCommDef actiondefs[] =
 {
+    { "fail",    comm_fail,    Var::TYPE_NULL,   AS_IS,        0  }, // always fail
     { "expect",  comm_expect,  Var::TYPE_STRING, AS_IS,        1  }, // await string, success on exact match. wait if needed.
     { "match",   comm_match,   Var::TYPE_STRING, AS_REGEX,     1  }, // await string, success if it passes a regex. matches the current input buffer, never waits.
     { "skip",    comm_skip,    Var::TYPE_UINT,   AS_IS,        1  }, // skip exactly N bytes of input, wait if needed
@@ -141,7 +166,7 @@ static const SISCommDef actiondefs[] =
 };
 
 SISComm::SISComm()
-    : tableIndex(0), paramNum(0), re(NULL)
+    : tableIndex(0), paramNum(0)
 {
 }
 
@@ -158,11 +183,11 @@ bool SISComm::parse(VarCRef a)
     if(vcmd.type() != Var::TYPE_STRING)
         return false;
 
-    const char *param = vcmd.asCString();
+    const char *cmd = vcmd.asCString();
 
     for(size_t i = 0; i < Countof(actiondefs); ++i)
     {
-        if(!strcmp(param, actiondefs[i].name))
+        if(!strcmp(cmd, actiondefs[i].name))
         {
             def = &actiondefs[i];
             tableIndex = i;
@@ -171,7 +196,10 @@ bool SISComm::parse(VarCRef a)
     }
 
     if(!def)
+    {
+        printf("Unknown command: %s\n", cmd);
         return false;
+    }
 
     // TODO: fix this up once >2 params becomes a thing
     if(def->params)
@@ -195,6 +223,7 @@ bool SISComm::parse(VarCRef a)
             }
             else if(def->what == AS_REGEX)
             {
+                paramStr = vparam.asCString();
                 try
                 {
                     std::regex r(vparam.asCString(), std::regex_constants::nosubs | std::regex_constants::optimize | std::regex_constants::ECMAScript);
@@ -210,7 +239,10 @@ bool SISComm::parse(VarCRef a)
                 paramStr = vparam.asCString();
         }
         else
+        {
+            printf("Invalid param type for cmd [%s], type = %s\n", cmd, vparam.typestr());
             return false;
+        }
     }
 
     return true;
@@ -252,7 +284,10 @@ int SISAction::exec(SISClient& client) const
     {
         int res = comms[i].exec(client);
         if(res < 0)
+        {
+            printf("Action '%s' failed, index = %u \n", actiondefs[comms[i].tableIndex].name, unsigned(i));
             return res;
+        }
         consumed += res;
     }
     return consumed;
