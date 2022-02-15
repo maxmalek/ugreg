@@ -112,7 +112,6 @@ int main(int argc, char** argv)
     while (!s_quit)
     {
         size_t changed = 0;
-        timeUntilNext = std::max<u64>(timeUntilNext, 1000);
         SISSocketSet::SocketAndStatus *ss = socketset.update(&changed, (int)timeUntilNext);
         for(size_t i = 0; i < changed; ++i)
         {
@@ -158,7 +157,7 @@ int main(int argc, char** argv)
             u64 next = clients[i]->updateTimer(now, dt);
             timeUntilNext = std::min(timeUntilNext, next);
         }
-        printf("timeUntilNext = %u, now = %zu\n", (unsigned)timeUntilNext, now);
+        //printf("timeUntilNext = %u, now = %zu\n", (unsigned)timeUntilNext, now);
     }
 
     srv.stop();

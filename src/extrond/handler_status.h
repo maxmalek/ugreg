@@ -5,6 +5,7 @@
 
 struct ServerConfig;
 class SISClient;
+class ResponseFormatter;
 
 // HTTP request handler for a tree. Must stay alive at least as long as the associated tree.
 // Locks the tree for reading when accessed.
@@ -20,7 +21,6 @@ public:
 
 private:
     const ClientList& clients;
-    void emitClientList(std::ostringstream& os) const;
-    void emitOneClient(std::ostringstream& os, const SISClient *cl) const;
+    void prepareClientList(ResponseFormatter& fmt) const;
 
 };

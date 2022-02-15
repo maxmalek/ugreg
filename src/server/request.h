@@ -33,6 +33,18 @@ inline static RequestFlags operator|(RequestFlags a, RequestFlags b) { return Re
 inline static RequestFlags& operator|=(RequestFlags& a, RequestFlags b) { return (a = RequestFlags(unsigned(a) | unsigned(b))); }
 
 
+enum RequestFormat
+{
+    RQFMT_DEFAULT = 0,
+    RQFMT_JSON,
+};
+
+static const char* RequestFormatName[] =
+{
+    "default",
+    "json"
+};
+
 // One request contains everything needed to generate the response.
 // The request is also used as a key for the response cache, so make sure
 // that operator== does a proper equality check of ALL members that may modify
@@ -43,18 +55,19 @@ public:
     Request()
         : compression(COMPR_NONE), flags(RQF_NONE) {}
 
-    Request(const char* q, CompressionType compression, RequestFlags flags)
-        : query(q), compression(compression), flags(flags) {}
+    Request(const char* q, CompressionType compression, RequestFlags flags, RequestFormat f)
+        : query(q), compression(compression), flags(flags), fmt(f) {}
 
     bool parse(const mg_request_info *info, size_t skipFromQuery);
 
     std::string query;
     CompressionType compression;
     RequestFlags flags;
+    RequestFormat fmt;
 
     bool operator==(const Request& o) const
     {
-        return query == o.query && compression == o.compression && flags == o.flags;
+        return query == o.query && compression == o.compression && flags == o.flags && fmt == o.fmt;
     }
 
     static u32 Hash(const Request& r);

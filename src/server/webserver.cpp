@@ -189,13 +189,23 @@ int RequestHandler::_onRequest(mg_connection* conn) const
         try
         {
             {
-                ThrowingSocketWriteStream wr(conn, buf, sizeof(buf));
+                // prepend headers before the actual (possibly compressed) payload
+                HeaderHelper hh(k.obj.compression, 0);
+                std::vector<char> hdrbuf(preparedHdr.size() + hh.size);
+                memcpy(&hdrbuf[0], preparedHdr.c_str(), preparedHdr.size());
+                memcpy(&hdrbuf[preparedHdr.size()], hh.buf, hh.size);
+
+                ThrowingSocketWriteStream wr(conn, buf, sizeof(buf), hdrbuf.data(), hdrbuf.size());
                 wr.init();
                 const StreamWriteMth writer = s_writer[k.obj.compression];
+
                 status = (this->*writer)(wr, conn, k.obj);
             }
             if(!status) // 0 means the handler didn't error out
+            {
                 mg_send_chunk(conn, "", 0); // terminating chunk
+                status = 200; // all good
+            }
         }
         catch (ThrowingSocketWriteStream::WriteFail ex)
         {
@@ -226,7 +236,7 @@ int RequestHandler::_onRequest(mg_connection* conn) const
             const StreamWriteMth writer = s_writer[k.obj.compression];
             status = (this->*writer)(wr, conn, k.obj);
         }
-        if(status)
+        if(status) // expected to return 0 if all good and not custom handled
             return status;
         
         HeaderHelper hh(k.obj.compression, rq->bodysize());

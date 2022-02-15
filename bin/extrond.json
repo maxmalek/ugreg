@@ -1,7 +1,8 @@
 {
 "config":{
     "listen": [
-        { "port": 8080 },
+        //{ "port": 80 },
+        { "host": "0.0.0.0", "port": 8080 },
     ],
     "expose_debug_apis": false,
     "mimetype": "text/json; charset=utf-8",
@@ -11,7 +12,7 @@
     /*"localhost": {
         "type": "smp351",
         "host": "localhost",
-        "port": 6666,
+        "port": 7777,
         "password": "12345"
     },*/
 }

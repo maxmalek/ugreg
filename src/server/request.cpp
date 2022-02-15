@@ -32,8 +32,18 @@ static bool parseAndApplyVars(Request& r, const char *vars)
     for (int i = 0; i < num; ++i)
     {
         if (!strcmp(hd[i].name, "pretty"))
+        {
             if (atoi(hd[i].value))
                 r.flags |= RQF_PRETTY;
+        }
+        else if(!strcmp(hd[i].name, "fmt"))
+        {
+            for(size_t i = 0; i < Countof(RequestFormatName); ++i)
+                if(RequestFormatName[i] && !strcmp(RequestFormatName[i], hd[i].value))
+                    r.fmt = (RequestFormat)i;
+        }
+        else if(!strcmp(hd[i].name, "json"))
+            r.fmt = RQFMT_JSON;
     }
     return true;
 }
@@ -71,7 +81,7 @@ bool Request::parse(const mg_request_info* info, size_t skipFromQuery)
 u32 Request::Hash(const Request& r)
 {
     u32 hash = strhash(r.query.c_str());
-    hash ^= (r.compression << 2) ^ r.flags;
+    hash ^= (r.compression << 2) ^ r.flags ^ (r.fmt << 7);
     return hash;
 }
 

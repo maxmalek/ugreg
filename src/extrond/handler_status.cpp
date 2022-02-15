@@ -7,12 +7,13 @@
 #include "treefunc.h"
 #include "config.h"
 #include "sisclient.h"
+#include "responseformat.h"
 
 #define BR "<br />\n"
 
 
 StatusHandler::StatusHandler(const ClientList& clients, const char *prefix)
-    : RequestHandler(prefix, "text/html; charset=utf-8"), clients(clients)
+    : RequestHandler(prefix, "application/json"), clients(clients)
 {
 }
 
@@ -25,37 +26,28 @@ static void writeToStream(BufferedWriteStream & ws, VarCRef sub, const Request &
     writeJson(ws, sub, !!(r.flags & RQF_PRETTY));
 }
 
-void StatusHandler::emitClientList(std::ostringstream& os) const
+void StatusHandler::prepareClientList(ResponseFormatter& fmt) const
 {
+    fmt.addHeader("name", "Name");
+    fmt.addHeader("host", "Host");
+    fmt.addHeader("port", "Port");
+    fmt.addHeader("cstate", "Connection state");
+    fmt.addHeader("cstateTime", "Connection state");
+    fmt.addHeader("status", "Device status");
+
     const size_t N = clients.size();
-    os << N << " clients configured:" BR;
-    os << "<table border=\"1\">\n";
-    os << "<tr>";
-    os << "<th>Name</td>";
-    os << "<th>Host</th>";
-    os << "<th>Telnet port</th>";
-    os << "<th>Connection state</th>";
-    os << "<th>Time in state</th>";
-    os << "<th>Device state</th>";
-    os << "<tr/>";
     for(size_t i = 0; i < N; ++i)
     {
-        os << "<tr>";
-        emitOneClient(os, clients[i]);
-        os << "</tr>\n";
+        VarRef t = fmt.next();
+        const SISClient *cl = clients[i];
+        const SISClientConfig& c = cl->getConfig();
+        t["name"] = c.name.c_str();
+        t["host"] = c.host.c_str();
+        t["port"] = (u64)c.port;
+        t["cstate"] = cl->getStateStr();
+        t["cstateTime"] = cl->getTimeInState();
+        t["status"] = cl->askStatus().c_str();
     }
-    os << "</table>";
-}
-
-void StatusHandler::emitOneClient(std::ostringstream& os, const SISClient *cl) const
-{
-    const SISClientConfig& c = cl->getConfig();
-    os << "<td>" << c.name << "</td>";
-    os << "<td><a href=\"http://" << c.host << "\">" << c.host << "</td>";
-    os << "<td>" << c.port << "</td>";
-    os << "<td>" << cl->getStateStr() << "</td>";
-    os << "<td>" << cl->getTimeInState() << "</td>";
-    os << "<td>" << cl->askStatus() << "</td>";
 }
 
 // This is called from many threads at once.
@@ -71,17 +63,24 @@ int StatusHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, cons
     }*/
     //writeToStream(dst, sub, rq);
 
+    ResponseFormatter fmt;
+    prepareClientList(fmt);
+
+    if(rq.fmt == RQFMT_JSON)
+    {
+        fmt.emitJSON(dst, !!(rq.flags & RQF_PRETTY));
+        return 0;
+    }
+
     std::ostringstream os;
     os << "<html><body>";
-    emitClientList(os);
+    os << "(This page is also available as <a href=\"?json\">JSON</a>)<br />\n";
+    os << clients.size() << " clients configured:" BR;
+    fmt.emitHTML(os);
     os << "</body></html>";
     std::string tmp = os.str();
     const size_t N = tmp.length();
-    /*dst.Write(tmp.c_str(), tmp.length());
-    dst.Flush();*/
-    //mg_send_chunk(conn, tmp.c_str(), (unsigned)tmp.length());
-    //mg_send_chunk(conn, "", 0);
-    mg_send_http_ok(conn, "text/html", tmp.length());
+    mg_send_http_ok(conn, "text/html; charset=utf-8", tmp.length());
     mg_write(conn, tmp.c_str(), tmp.length());
 
     return 200;

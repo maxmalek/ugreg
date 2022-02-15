@@ -110,6 +110,7 @@ u64 CoroRunner::update(u64 now)
             }
             else
             {
+                co_delete(tasks[i].c);
                 tasks[i] = tasks.back();
                 tasks.pop_back();
             }
