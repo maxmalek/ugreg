@@ -41,5 +41,7 @@ set(src
 add_library(alldeps ${src})
 
 if(UNIX)
-    target_link_libraries(alldeps pthread)
+    target_link_libraries(alldeps pthread dl)
 endif()
+
+add_subdirectory(lua)
