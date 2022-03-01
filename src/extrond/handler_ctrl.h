@@ -7,18 +7,16 @@ struct ServerConfig;
 class SISClient;
 class ResponseFormatter;
 
-class StatusHandler : public RequestHandler
+class CtrlHandler : public RequestHandler
 {
 public:
     typedef std::vector<SISClient*> ClientList;
 
-    StatusHandler(const ClientList &clients, const char *prefix);
-    virtual ~StatusHandler();
+    CtrlHandler(const ClientList &clients, const char *prefix);
+    virtual ~CtrlHandler();
 
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 
 private:
     const ClientList& clients;
-    void prepareClientList(ResponseFormatter& fmt) const;
-
 };

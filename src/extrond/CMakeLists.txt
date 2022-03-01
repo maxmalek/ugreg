@@ -4,12 +4,14 @@ set(src
     sisclient.h
     sissocket.cpp
     sissocket.h
-    sisaction.cpp
-    sisaction.h
     sisdevice.cpp
     sisdevice.h
     handler_status.cpp
     handler_status.h
+    sisluafunc.cpp
+    sisluafunc.h
+    handler_ctrl.cpp
+    handler_ctrl.h
 )
 
 set(libs)
@@ -19,4 +21,4 @@ if(WIN32)
 endif()
 
 add_executable(extrond ${src})
-target_link_libraries(extrond server ${libs})
+target_link_libraries(extrond server lua ${libs})

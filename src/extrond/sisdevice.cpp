@@ -1,7 +1,6 @@
 #include "sisdevice.h"
 #include "viewexec.h"
 #include "viewparser.h"
-#include "sisaction.h"
 #include "json_out.h"
 #include "util.h"
 
@@ -53,11 +52,13 @@ bool SISDevice::init(const SISDeviceTemplate& dev, VarCRef unitcfg)
 }
 
 
+/*
 const SISAction* SISDevice::getAction(const char* name) const
 {
     auto it = actions.find(name);
     return it != actions.end() ? &it->second : NULL;
 }
+*/
 
 bool SISDevice::_import(VarCRef ref)
 {
@@ -66,11 +67,33 @@ bool SISDevice::_import(VarCRef ref)
         const char *shb = xhb.asCString();
         if(!strToDurationMS_Safe(&heartbeatTime, shb))
         {
-            printf("Failed to parse heartbeat_time\n");
+            printf("SISDevice: Failed to parse heartbeat_time\n");
             return false;
         }
     }
 
+    if (VarCRef xioy = ref.lookup("io_yield_time"))
+    {
+        const char* sioy = xioy.asCString();
+        if (!strToDurationMS_Safe(&ioYieldTime, sioy))
+        {
+            printf("SISDevice: Failed to parse io_yield_time\n");
+            return false;
+        }
+    }
+
+    if(VarCRef xsc = ref.lookup("script"))
+    {
+        const char *ssc = xsc.asCString();
+        if(!ssc)
+        {
+            printf("SISDevice: Property 'script' is not a string\n");
+            return false;
+        }
+        script = ssc;
+    }
+
+    /*
     VarCRef xact = ref.lookup("actions");
     if(!xact || xact.type() != Var::TYPE_MAP)
         return false;
@@ -86,6 +109,6 @@ bool SISDevice::_import(VarCRef ref)
             return false;
         }
     }
-
+    */
     return true;
 }

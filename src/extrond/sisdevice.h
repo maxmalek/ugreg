@@ -3,7 +3,6 @@
 #include "types.h"
 #include <map>
 #include <string>
-#include "sisaction.h"
 #include "view.h"
 #include "datatree.h"
 
@@ -29,10 +28,12 @@ public:
 
     //std::map<std::string, std::string> errors;
     u64 getHeartbeatTime() const { return heartbeatTime; }
-    const SISAction *getAction(const char *name) const;
+    u64 getIOYieldTime() const { return ioYieldTime; }
+    const char *getScript() const { return script.c_str(); }
 
 private:
-    std::map<std::string, SISAction> actions;
     u64 heartbeatTime;
+    u64 ioYieldTime;
+    std::string script;
     bool _import(VarCRef ref);
 };

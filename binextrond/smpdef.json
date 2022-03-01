@@ -1,6 +1,9 @@
 {"devicetypes":{
     "smp351": {
         "heartbeat_time": "30s",
+        "io_yield_time": "20ms",
+        "script": "smp351.lua"
+        /*
         "errors": {
             "E10": "Unrecognized command",
             "E12": "Invalid port number",
@@ -13,6 +16,15 @@
             "E25": "Device is not present",
             "E26": "Maximum connections exceeded",
             "E28": "Bad file name or file not found",
+        },
+        "views": {
+            "status": {
+                "xlat": [ "stop", "start", "pause" ],
+                "result": "${$xlat[$st|toint]}",
+            },
+            "info": {
+                "result": "$res\n$rec\n",
+            },
         },
         "actions": {
             "login": [
@@ -31,34 +43,34 @@
                 ["need", 1],
                 ["skipall"],
             ],
-            "start": [
-                ["skipall"],
-                ["send", "xxx"],
-                ["expect", "xxx"],
-            ],
             "stop": [
                 ["skipall"],
-                ["send", "xxx"],
-                ["expect", "xxx"],
+                ["send", "\x1bY0RCDR\r"],
+                ["expect", "RcdrY0\r\n"],
+            ],
+            "start": [
+                ["skipall"],
+                ["send", "\x1bY1RCDR\r"],
+                ["expect", "RcdrY1\r\n"],
             ],
             "pause": [
                 ["skipall"],
-                ["send", "xxx"],
-                ["expect", "xxx"],
-            ],
-            "continue": [
-                ["skipall"],
-                ["send", "xxx"],
-                ["expect", "xxx"],
+                ["send", "\x1bY2RCDR\r"],
+                ["expect", "RcdrY2\r\n"],
             ],
             "status": [
                 ["skipall"],
-                ["send", "xxx"],
-                //["read", "xxx"],
-                ["need", 1],
+                ["send", "\x1bYRCDR\n"], ["readline", "st"],
+                ["view", "status"],
+            ],
+            "info": [
                 ["skipall"],
+                ["send", "I"], ["readline", "rec"],
+                ["send", "33I"], ["readline", "res"],
+                ["view", "info"],
             ],
         },
+        */
     },
     "smp351-web": {
     },

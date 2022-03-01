@@ -9,6 +9,7 @@
 #include "config.h"
 #include "json_out.h"
 #include "handler_status.h"
+#include "handler_ctrl.h"
 
 std::atomic<bool> s_quit;
 
@@ -104,6 +105,9 @@ int main(int argc, char** argv)
 
     StatusHandler status(clients, "/status");
     srv.registerHandler(status);
+
+    CtrlHandler ctrl(clients, "/ctrl");
+    srv.registerHandler(ctrl);
 
     puts("Ready!");
 

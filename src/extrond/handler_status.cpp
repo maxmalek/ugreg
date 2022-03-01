@@ -32,14 +32,14 @@ void StatusHandler::prepareClientList(ResponseFormatter& fmt) const
     fmt.addHeader("host", "Host");
     fmt.addHeader("port", "Port");
     fmt.addHeader("cstate", "Connection state");
-    fmt.addHeader("cstateTime", "Connection state");
+    fmt.addHeader("cstateTime", "Time in state");
     fmt.addHeader("status", "Device status");
 
     const size_t N = clients.size();
     for(size_t i = 0; i < N; ++i)
     {
         VarRef t = fmt.next();
-        const SISClient *cl = clients[i];
+        SISClient *cl = clients[i];
         const SISClientConfig& c = cl->getConfig();
         t["name"] = c.name.c_str();
         t["host"] = c.host.c_str();
@@ -54,15 +54,6 @@ void StatusHandler::prepareClientList(ResponseFormatter& fmt) const
 // Avoid anything that changes the tree, and ensure proper read-locking!
 int StatusHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
-    const char *who = rq.query.c_str();
-
-    /*if(!sub)
-    {
-        mg_send_http_error(conn, 404, "");
-        return 404;
-    }*/
-    //writeToStream(dst, sub, rq);
-
     ResponseFormatter fmt;
     prepareClientList(fmt);
 
