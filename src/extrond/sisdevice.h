@@ -14,7 +14,6 @@ public:
     SISDevice();
     bool init(VarCRef devcfg);
 
-    //std::map<std::string, std::string> errors;
     u64 getHeartbeatTime() const { return heartbeatTime; }
     u64 getIOYieldTime() const { return ioYieldTime; }
     const char *getScript() const { return script.c_str(); }

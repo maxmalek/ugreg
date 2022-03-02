@@ -319,6 +319,7 @@ void SISClient::heartbeat()
 void SISClient::authenticate()
 {
     assert(state == CONNECTED);
+    // prefixed with "_" so that it's not callable via queryAsync() -- that would break things
     scheduleAction("_login", VarCRef(), AUTHING, AUTHED, ERROR, 0);
 }
 
@@ -398,7 +399,7 @@ std::future<SISClient::ActionResult> SISClient::scheduleAction(const char* name,
 
 // Lua is supposed to return (text, status, contentType) with the latter two optional
 // but for ease of use we'll accept the latter two in any order, whether present or not
-// and also the first an be just a number in case of error
+// and also the first can be just a number in case of error
 // so the following are all ok:
 // return 404
 // return text, 200
