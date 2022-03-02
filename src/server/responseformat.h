@@ -16,6 +16,8 @@ public:
     VarRef header();
     VarRef next();
 
+    VarRef array();
+
     void addHeader(const char *field, const char *text);
     void emitJSON(BufferedWriteStream& out, bool pretty);
     void emitHTML(std::ostringstream& os);

@@ -31,6 +31,11 @@ VarRef ResponseFormatter::next()
     return VarRef(this, a + need - 1);
 }
 
+VarRef ResponseFormatter::array()
+{
+    return this->root();
+}
+
 void ResponseFormatter::addHeader(const char* field, const char* text)
 {
     StrRef f = this->putNoRefcount(field, strlen(field));

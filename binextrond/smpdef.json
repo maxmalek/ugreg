@@ -1,7 +1,7 @@
 {"devicetypes":{
     "smp351": {
         "heartbeat_time": "30s",
-        "io_yield_time": "1ms",
+        "io_yield_time": "20ms",
         "script": "smp351.lua",
     },
 }}

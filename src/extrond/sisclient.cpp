@@ -26,8 +26,8 @@ SISClientConfig::SISClientConfig()
 }
 
 SISClient::SISClient(const char *name)
-    : socket(sissocket_invalid()), heartbeatTime(0), timeInState(0), state(DISCONNECTED), nextState(UNDEF)
-    , inbufOffs(0), lock(mtx, std::defer_lock), L(NULL), LA(NULL), activeL(NULL), activeLRef(LUA_NOREF)
+    : socket(sissocket_invalid()), timeInState(0), state(DISCONNECTED), nextState(UNDEF)
+    , inbufOffs(0), L(NULL), LA(NULL)
 {
     cfg.name = name;
 }
@@ -36,6 +36,7 @@ SISClient::~SISClient()
 {
     if(L)
     {
+        _abortScheduled();
         lua_close(L);
         luaalloc_delete(LA);
     }
@@ -87,10 +88,7 @@ bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
             {
                 const char *name = lua_tostring(L, -2);
                 if(name && *name && *name != '_')
-                {
-                    printf("Lua func: %s\n", name);
                     luafuncs.insert(name);
-                }
             }
             lua_pop(L, 1);
             // [_G][k]
@@ -143,6 +141,22 @@ void SISClient::_disconnect()
     }
 }
 
+void SISClient::_abortScheduled()
+{
+    assert(L);
+    ActionResult fail;
+    fail.error = true;
+    fail.text = "Scheduled action cancelled because client entered error state";
+    fail.status = 500;
+
+    for(Job& j : jobs)
+    {
+        j.result.set_value(fail);
+        j.unref(L);
+    }
+    jobs.clear();
+}
+
 void SISClient::_clearBuffer()
 {
     inbuf.clear();
@@ -161,26 +175,17 @@ void SISClient::wasDisconnected()
 
 u64 SISClient::updateTimer(u64 now, u64 dt)
 {
-    // Lock it, but don't bother if someone else if working on this client already
+    // Lock it, but don't bother if someone else is working on this client right now
     std::unique_lock<decltype(mtx)> g(mtx, std::try_to_lock);
     if(!g.owns_lock())
         return cfg.device.getIOYieldTime();
 
-    u64 next = 0; //tasks.update(now);
-
-    ActionResult res;
-    next = updateCoro(res, 0);
-    if(res.nret)
-        printf("Lua result ignored: [%u] %s\n", res.status, res.text.c_str());
-
-    if(state == IDLE)
-    {
-        if(heartbeatTime > dt)
-            heartbeatTime -= dt;
-        else
-            heartbeat();
-    }
     timeInState += dt;
+
+    u64 next = updateCoro();
+
+    if(state == IDLE && timeInState > cfg.device.getHeartbeatTime())
+        heartbeat();
 
     if(state == ERROR && timeInState > 3000) // give it some time
         setState(DISCONNECTED);
@@ -244,8 +249,7 @@ SISClient::State SISClient::setState(State st)
     switch(st)
     {
         case ERROR:
-            if(lock)
-                lock.unlock();
+            _abortScheduled();
             [[fallthrough]];
 
         case DISCONNECTED:
@@ -263,7 +267,6 @@ SISClient::State SISClient::setState(State st)
         break;
 
         case AUTHING:
-            lock.lock();
             break;
 
         case AUTHED:
@@ -271,37 +274,26 @@ SISClient::State SISClient::setState(State st)
             break;
 
         case IDLE:
-            heartbeatTime = cfg.device.getHeartbeatTime();
-            lock.unlock();
             break;
 
         case INPROCESS:
-            lock.lock();
             break;
     }
     return prev;
 }
 
+
+
 void SISClient::heartbeat()
 {
     if(state == IDLE)
-        runAction("heartbeat", VarCRef(), INPROCESS, IDLE);
+        scheduleAction("heartbeat", VarCRef(), INPROCESS, IDLE, IDLE);
 }
 
 void SISClient::authenticate()
 {
     assert(state == CONNECTED);
-    if (!runAction("_login", VarCRef(), AUTHING, AUTHED))
-        setState(ERROR);
-}
-
-bool SISClient::runAction(const char* name, VarCRef vars, State activestate, State afterwards)
-{
-    ActionResult res;
-    const bool ret = runAction(res, name, vars, activestate, afterwards);
-    if (res.nret)
-        printf("Lua result ignored: [%u] %s\n", res.status, res.text.c_str());
-    return ret;
+    scheduleAction("_login", VarCRef(), AUTHING, AUTHED, ERROR);
 }
 
 bool SISClient::sendall(const char* buf, size_t size)
@@ -327,11 +319,18 @@ int SISClient::sendsome(const char* buf, size_t size)
     return -(int)res;
 }
 
-bool SISClient::runAction(ActionResult& result, const char* name, VarCRef vars, State activestate, State afterwards)
+static SISClient::ActionResult funcNotExist(const std::string name)
+{
+    SISClient::ActionResult res;
+    res.error = true;
+    res.status = 500;
+    res.text = "Action '" + name + "' failed. Unknown function?";
+    return res;
+}
+
+std::future<SISClient::ActionResult> SISClient::scheduleAction(const char* name, VarCRef vars, State activestate, State donestate, State failstate)
 {
     std::lock_guard<decltype(mtx)> g(mtx);
-
-    assert(!activeL);
 
     // []
     int f = lua_getglobal(L, name);
@@ -339,14 +338,12 @@ bool SISClient::runAction(ActionResult& result, const char* name, VarCRef vars, 
     {
         printf("SISClient: runAction [%s] is not a function\n", name);
         lua_pop(L, 1);
-        return false;
+        return std::async(funcNotExist, name);
     }
     // [f]
-    lua_State *Lco = lua_newthread(L);
+    lua_State * const Lco = lua_newthread(L);
     // [f][Lco]
-    activeL = Lco;
-    // [f][Lco]
-    activeLRef = luaL_ref(L, LUA_REGISTRYINDEX);
+    const int ref = luaL_ref(L, LUA_REGISTRYINDEX);
     // [f]
     lua_xmove(L, Lco, 1);
     // L:   []
@@ -359,11 +356,15 @@ bool SISClient::runAction(ActionResult& result, const char* name, VarCRef vars, 
     }
     // Lco: [f][vars?]
 
+    Job& j = jobs.emplace_back();
+    j.beginState = activestate;
+    j.endState = donestate;
+    j.failState = failstate;
+    j.Lco = Lco;
+    j.coref = ref;
+
     printf("SISClient[%s]: Action '%s' coro is ready\n", cfg.name.c_str(), name);
-    setState(activestate);
-    nextState = afterwards;
-    updateCoro(result, params); // may or may not finish running the coroutine
-    return true;
+    return j.result.get_future();
 }
 
 // Lua is supposed to return (text, status, contentType) with the latter two optional
@@ -406,51 +407,60 @@ static void importLuaResult(SISClient::ActionResult& res, lua_State *L, int nres
     res.nret = nres;
 }
 
-u64 SISClient::updateCoro(ActionResult& result, int nargs)
+u64 SISClient::updateCoro()
 {
-    u64 next = cfg.device.getIOYieldTime(); // FIXME: use some other time?
-    if (activeL)
+    std::lock_guard<decltype(mtx)> g(mtx);
+
+    while(!jobs.empty())
     {
+        bool error = false;
+        bool done = false;
+        Job& j = jobs.front();
+        if(!j.started)
+        {
+            j.started = true;
+            setState(j.beginState);
+        }
+
         int nres = 0;
-        int e = lua_resume(activeL, NULL, nargs, &nres);
+        const int e = lua_resume(j.Lco, NULL, 0, &nres);
         switch (e)
         {
-        case LUA_YIELD:
-            next = cfg.device.getIOYieldTime();
-            if (nres)
-                lua_pop(activeL, nres);
-            break;
+            case LUA_YIELD:
+                if (nres)
+                    lua_pop(j.Lco, nres);
+                return cfg.device.getIOYieldTime();
 
-        default:
-        {
-            result.error = true;
-            result.status = 500;
-            const char* errstr = lua_tostring(activeL, -1);
-            printf("ERROR: Lua coroutine failed (err = %d): %s\n", e, errstr);
-            if(errstr)
-                result.text = errstr;
+            default:
+                error = true;
+            [[fallthrough]];
+            case LUA_OK:
+                done = true;
         }
-        [[fallthrough]];
-        case LUA_OK:
-            result.done = true;
-            importLuaResult(result, activeL, nres);
+
+        if(done)
+        {
+            ActionResult result;
+            result.error = error;
+            result.status = error ? 500 : 200;
+            if(error)
+            {
+                const char* errstr = lua_tostring(j.Lco, -1);
+                printf("ERROR: Lua coroutine failed (err = %d): %s\n", e, errstr);
+                if(errstr)
+                    result.text = errstr;
+            }
+            else
+                importLuaResult(result, j.Lco, nres);
+
+            j.unref(L); // now Lua will GC the coro eventually
+            j.result.set_value(std::move(result));
+            const State next = error ? j.failState : j.endState;
+            jobs.pop_front();
+            setState(next);
         }
     }
-
-    if(result.done)
-    {
-        luaL_unref(L, LUA_REGISTRYINDEX, activeLRef);
-        activeLRef = LUA_NOREF;
-        activeL = NULL;
-        const State st = nextState;
-        if (st != UNDEF)
-        {
-            nextState = UNDEF;
-            setState(st);
-        }
-    }
-
-    return next;
+    return 0;
 }
 
 void SISClient::advanceInput(size_t n)
@@ -491,33 +501,31 @@ const char* SISClient::getStateStr() const
     return s_StateNames[getState()];
 }
 
-std::string SISClient::askStatus()
+std::future<SISClient::ActionResult> SISClient::queryAsync(const char* action, VarCRef vars)
 {
-    return state < IDLE ? "" : query("status", VarCRef()).text;
+    // make sure the action to call is actually an exported user function, and not just a default lua global
+    if(luafuncs.find(action) == luafuncs.end())
+        return std::async(funcNotExist, action);
+
+    return this->scheduleAction(action, vars, INPROCESS, IDLE, IDLE);
 }
 
-SISClient::ActionResult SISClient::query(const char* action, VarCRef vars)
+SISClient::Job::Job()
+    : Lco(NULL), coref(LUA_NOREF), beginState(UNDEF), endState(UNDEF), failState(UNDEF), started(false)
 {
-    std::lock_guard<decltype(mtx)> g(mtx);
+}
 
-    ActionResult res;
+SISClient::Job::~Job()
+{
+    assert(!Lco);
+}
 
-    // make sure the action to call is actually an exported user function, and not just a default lua global
-    if(luafuncs.find(action) != luafuncs.end()
-        && this->runAction(res, action, vars, INPROCESS, IDLE))
+void SISClient::Job::unref(lua_State* L)
+{
+    if(Lco)
     {
-        while(!res.done)
-        {
-            u64 t = updateCoro(res, 0);
-            sleepMS(std::max<u64>(t, 10));
-        }
+        luaL_unref(L, LUA_REGISTRYINDEX, coref);
+        Lco = NULL;
+        coref = LUA_NOREF;
     }
-    else
-    {
-        res.error = true;
-        res.status = 404;
-        res.text = "Unknown action: ";
-        res.text += action;
-    }
-    return res;
 }

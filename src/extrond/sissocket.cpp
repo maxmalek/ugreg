@@ -276,6 +276,13 @@ SISSocketSet::SocketAndStatus* SISSocketSet::update(size_t* n, int timeoutMS)
     size_t N = PV.size();
     int ret;
 #ifdef _WIN32
+    if(!N) // windows doesn't like WSAPoll() on an empty set, so if there's nothing to wait on just sleep manually
+    {
+        if(timeoutMS)
+            ::Sleep(timeoutMS);
+        *n = 0;
+        return NULL;
+    }
     ::WSASetLastError(0);
     ret = ::WSAPoll(PV.data(), (ULONG)N, timeoutMS);
 #else
@@ -289,8 +296,6 @@ SISSocketSet::SocketAndStatus* SISSocketSet::update(size_t* n, int timeoutMS)
         {
             int err = ::WSAGetLastError();
             printf("WSAGetLastError() = %d, N = %u\n", err, unsigned(N));
-            if(!N)
-                ::Sleep(timeoutMS); // FIXME: don't want to do this here
         }
 #endif
         *n = 0;

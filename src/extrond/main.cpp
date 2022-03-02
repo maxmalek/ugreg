@@ -10,8 +10,11 @@
 #include "json_out.h"
 #include "handler_status.h"
 #include "handler_ctrl.h"
+#include "util.h"
 
-std::atomic<bool> s_quit;
+static std::atomic<bool> s_quit;
+
+static u64 idleWaitTime = 100;
 
 static void sigquit(int)
 {
@@ -27,8 +30,16 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
     if (!doargs(cfgtree, argc, argv))
         bail("Failed to handle cmdline. Exiting.", "");
 
-    
-    if (!cfg.apply(cfgtree.subtree("/config")))
+    VarCRef config = cfgtree.subtree("/config");
+    if (cfg.apply(config))
+    {
+        VarCRef xiwt = config.lookup("idle_wait_time");
+        if(xiwt)
+            if(!strToDurationMS_Safe(&idleWaitTime, xiwt.asCString()))
+                bail("idle_wait_time given but not a string or failed to parse as duration", "");
+        printf("idle_wait_time = %u ms\n", (unsigned)idleWaitTime);
+    }
+    else
     {
         bail("Invalid config after processing options. Fix your config file(s).\nCurrent config:\n",
             dumpjson(cfgtree.root(), true).c_str()
@@ -98,7 +109,7 @@ int main(int argc, char** argv)
     puts("Ready!");
 
     u64 lasttime = timeNowMS();
-    u64 timeUntilNext = 1000;
+    u64 timeUntilNext = 0;
     while (!s_quit)
     {
         size_t changed = 0;
@@ -128,7 +139,7 @@ int main(int argc, char** argv)
         u64 now = timeNowMS();
         u64 dt = now - lasttime;
         lasttime = now;
-        timeUntilNext = 1000;
+        timeUntilNext = idleWaitTime;
         for(size_t i = 0; i < clients.size(); ++i)
         {
             SISClient* c = clients[i];
@@ -145,7 +156,8 @@ int main(int argc, char** argv)
             }
 
             u64 next = clients[i]->updateTimer(now, dt);
-            timeUntilNext = std::min(timeUntilNext, next);
+            if(next)
+                timeUntilNext = std::min(timeUntilNext, next);
         }
         //printf("timeUntilNext = %u, now = %zu\n", (unsigned)timeUntilNext, now);
     }

@@ -7,6 +7,7 @@
     "expose_debug_apis": false,
     "mimetype": "text/json; charset=utf-8",
     "listen_threads": 4,
+    "idle_wait_time": "100ms",
 },
 "devices": {
     /*"localhost": {

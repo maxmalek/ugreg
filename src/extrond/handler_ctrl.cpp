@@ -113,12 +113,12 @@ int CtrlHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
         if(params.root().v->size() || (vq && importQueryStrVars(params.root(), vq))) // only try to pass vars to Lua when we actually get some vars in the query string
             vp = params.root().v;
 
-        SISClient::ActionResult res = cl->query(action, VarCRef(params, vp));
+        SISClient::ActionResult res = cl->queryAsync(action, VarCRef(params, vp)).get();
         if(res.error)
         {
             if(!res.status)
                 res.status = 500;
-            mg_send_http_error(conn, res.status ? res.status : 500, "%s", res.text.c_str());
+            mg_send_http_error(conn, res.status, "%s", res.text.c_str());
             return res.status;
         }
 

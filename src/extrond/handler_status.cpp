@@ -34,6 +34,9 @@ void StatusHandler::prepareClientList(ResponseFormatter& fmt) const
     fmt.addHeader("link", "Link");
 
     const size_t N = clients.size();
+    std::vector<SISClient::FutureResult> tmp(N);
+
+    // get all the static data first
     for(size_t i = 0; i < N; ++i)
     {
         VarRef t = fmt.next();
@@ -44,11 +47,20 @@ void StatusHandler::prepareClientList(ResponseFormatter& fmt) const
         t["port"] = (u64)c.port;
         t["cstate"] = cl->getStateStr();
         t["cstateTime"] = cl->getTimeInState();
-        t["status"] = cl->askStatus().c_str();
 
         std::ostringstream os;
         os << "<a href=\"/ctrl/" << c.name << "\">Go</a>";
         t["link"] = os.str().c_str();
+
+        // this will cause internal updates, do this last
+        tmp[i] = std::move(clients[i]->queryAsync("status", VarCRef()));
+    }
+
+    // sync; wait for all the futures to become available
+    for(size_t i = 0; i < N; ++i)
+    {
+        VarRef t = fmt.array().at(i);
+        t["status"] = tmp[i].get().text.c_str();
     }
 }
 

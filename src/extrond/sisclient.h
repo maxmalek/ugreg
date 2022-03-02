@@ -3,6 +3,8 @@
 #include <string>
 #include <mutex>
 #include <set>
+#include <future>
+#include <list>
 #include "types.h"
 #include "sissocket.h" 
 #include "co.h"
@@ -64,31 +66,46 @@ public:
     const char *getStateStr() const;
     u64 getTimeInState() const { return timeInState; }
     const SISClientConfig& getConfig() const { return cfg; }
-    std::string askStatus(); // recording, paused, etc
 
     struct ActionResult
     {
-        inline ActionResult() : status(0), nret(0), done(false), error(false) {}
+        inline ActionResult() : status(0), nret(0), error(false) {}
         std::string text;
         std::string contentType;
         unsigned status;
         unsigned nret;
-        bool done, error;
+        bool error;
     };
 
-    ActionResult query(const char *action, VarCRef vars);
+    // scheduled or running job
+    struct Job
+    {
+        Job();
+        ~Job();
+        void unref(lua_State *L); // call this before dtor
+        lua_State *Lco;
+        int coref;
+        std::promise<ActionResult> result;
+        State beginState;
+        State endState;
+        State failState;
+        bool started;
+    };
+
+    typedef std::future<ActionResult> FutureResult;
+
+    FutureResult queryAsync(const char *action, VarCRef vars);
 
 private:
+    void _abortScheduled();
     void _clearBuffer();
     void _disconnect();
     void heartbeat();
     void authenticate();
-    bool runAction(const char *name, VarCRef vars, State activestate, State afterwards);
-    bool runAction(ActionResult& res, const char* name, VarCRef vars, State activestate, State afterwards);
-    u64 updateCoro(ActionResult& result, int nargs);
+    FutureResult scheduleAction(const char *name, VarCRef vars, State activestate, State donestate, State failstate);
+    u64 updateCoro();
 
     SISSocket socket;
-    u64 heartbeatTime;
     u64 timeInState;
     SISClientConfig cfg;
     State state, nextState;
@@ -96,10 +113,9 @@ private:
     std::vector<char> inbuf;
     size_t inbufOffs;
     std::recursive_mutex mtx;
-    std::unique_lock<decltype(mtx)> lock;
     lua_State *L;
     LuaAlloc *LA;
-    lua_State *activeL; // currently running Lua coroutine
-    int activeLRef;
+    std::list<Job> jobs; // always work on the head
+
     std::set<std::string> luafuncs; // available Lua global funcs exported by the script
 };
