@@ -9,6 +9,26 @@ SISDevice::SISDevice()
 {
 }
 
+static bool readtime(u64& t, VarCRef mapref, const char *key, bool missing)
+{
+    if (VarCRef x = mapref.lookup(key))
+    {
+        if (!strToDurationMS_Safe(&t, x.asCString()))
+        {
+            printf("SISDevice: Failed to parse %s\n", key);
+            return false;
+        }
+    }
+    else
+    {
+        if(!missing)
+            printf("SISDevice: Key '%s' not present (need a duration)\n", key);
+        return missing;
+    }
+
+    return true;
+}
+
 bool SISDevice::init(VarCRef devcfg)
 {
     bool ok = _import(devcfg);
@@ -22,25 +42,9 @@ bool SISDevice::init(VarCRef devcfg)
 
 bool SISDevice::_import(VarCRef ref)
 {
-    if(VarCRef xhb = ref.lookup("heartbeat_time"))
-    {
-        const char *shb = xhb.asCString();
-        if(!strToDurationMS_Safe(&heartbeatTime, shb))
-        {
-            printf("SISDevice: Failed to parse heartbeat_time\n");
-            return false;
-        }
-    }
-
-    if (VarCRef xioy = ref.lookup("io_yield_time"))
-    {
-        const char* sioy = xioy.asCString();
-        if (!strToDurationMS_Safe(&ioYieldTime, sioy))
-        {
-            printf("SISDevice: Failed to parse io_yield_time\n");
-            return false;
-        }
-    }
+    bool ok = true;
+    ok = readtime(heartbeatTime, ref, "heartbeat_time", true) && ok;
+    ok = readtime(ioYieldTime, ref, "io_yield_time", true) && ok;
 
     if(VarCRef xsc = ref.lookup("script"))
     {
@@ -51,6 +55,11 @@ bool SISDevice::_import(VarCRef ref)
             return false;
         }
         script = ssc;
+    }
+    else
+    {
+        printf("SISDevice: Need 'script', can't do anything without it\n");
+        return false;
     }
 
     return true;

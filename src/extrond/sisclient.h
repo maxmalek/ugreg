@@ -84,17 +84,22 @@ public:
         ~Job();
         void unref(lua_State *L); // call this before dtor
         lua_State *Lco;
-        int coref;
-        std::promise<ActionResult> result;
+        int Lcoref;
+        int Lparams;
         State beginState;
         State endState;
         State failState;
         bool started;
+        u64 expiryTime; // wallclock time
+        std::string actionName;
+        std::promise<ActionResult> result;
     };
 
     typedef std::future<ActionResult> FutureResult;
 
-    FutureResult queryAsync(const char *action, VarCRef vars);
+    FutureResult queryAsync(const char *action, VarCRef vars, u64 expireIn);
+
+    void setTimeout(u64 timeout) { stateMaxTime = timeout ? timeInState + timeout : 0; }
 
 private:
     void _abortScheduled();
@@ -102,11 +107,12 @@ private:
     void _disconnect();
     void heartbeat();
     void authenticate();
-    FutureResult scheduleAction(const char *name, VarCRef vars, State activestate, State donestate, State failstate);
-    u64 updateCoro();
+    FutureResult scheduleAction(const char *name, VarCRef vars, State activestate, State donestate, State failstate, u64 expireIn);
+    u64 updateCoro(); // must be called with mtx held
 
     SISSocket socket;
     u64 timeInState;
+    u64 stateMaxTime; // fail current 
     SISClientConfig cfg;
     State state, nextState;
     //CoroRunner tasks;

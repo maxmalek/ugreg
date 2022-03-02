@@ -60,26 +60,23 @@ local function readNonEmptyLine(...)
 end
 
 function _login()
-    local line = readNonEmptyLine()
-    PP(line)
-    if not line:match "%(c%) Copyright [%d%-]+, Extron Electronics, SMP 35[12]" then
+    timeout "5s"
+    local greet = readNonEmptyLine()
+    if not greet:match "^%(c%) Copyright [%d%-]+, Extron Electronics, SMP 35[12]" then
         error("Unexpected device identification upon login")
     end
-    line = readNonEmptyLine() -- date line, can skip that
-    PP(LINE)
-    line = readline(true) -- one empty line
-    PP(LINE)
+    local date = readNonEmptyLine() -- date line, can skip that
+    need(1) -- at least 1 more byte
+    local empty = readline(true) -- one empty line
     need(9)
-    line = readn(9)
-    PP(line)
-    if not line:match "Password:" then
+    local pw = readn(9) -- this line is unterminated
+    if not pw:match "Password:" then
         error("Expected password prompt, got: " .. line)
     end
     send(CONFIG.password .. "\n")
     need(5)
-    line = readNonEmptyLine()
-    PP(line)
-    if not line:match "Login Administrator" then
+    local login = readNonEmptyLine()
+    if not login:match "Login Administrator" then
         error("Not logged in as admin, got: " .. line)
     end
 end
@@ -110,6 +107,7 @@ end
 
 local _status = { "stopped", "recording", "paused" }
 function status()
+    timeout "1s"
     skipall()
     send "\x1bYRCDR\r35I"
     local st = readline() -- "<ESC>YRCDR\r"

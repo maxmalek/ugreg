@@ -53,7 +53,7 @@ void StatusHandler::prepareClientList(ResponseFormatter& fmt) const
         t["link"] = os.str().c_str();
 
         // this will cause internal updates, do this last
-        tmp[i] = std::move(clients[i]->queryAsync("status", VarCRef()));
+        tmp[i] = std::move(clients[i]->queryAsync("status", VarCRef(), 2000));
     }
 
     // sync; wait for all the futures to become available

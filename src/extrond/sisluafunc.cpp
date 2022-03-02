@@ -2,6 +2,7 @@
 #include <sstream>
 #include "sisclient.h"
 #include "treemem.h"
+#include "util.h"
 
 enum
 {
@@ -237,11 +238,13 @@ static int readline(lua_State *L, SISClient& client, bool allownil)
         else if(allownil)
             return 0;
     }
+    else if (allownil)
+        return 0;
     return lua_yieldk(L, 0, 0, readlineK);
 }
 static int readlineK(lua_State* L, int status, lua_KContext ctx)
 {
-    return readline(L, client(L), getBool(L, 2));
+    return readline(L, client(L), getBool(L, 1));
 }
 static int api_readline(lua_State* L)
 {
@@ -295,6 +298,24 @@ static int api_peek(lua_State *L)
     return peek(L, client(L));
 }
 
+static int api_timeout(lua_State *L)
+{
+    u64 ms = 0;
+    const int ty = lua_type(L, 1);
+    if(ty == LUA_TNUMBER)
+    {
+        lua_Integer i = lua_tointeger(L, 1);
+        if(i < 0)
+            luaL_error(L, "ms must be >= 0");
+        ms = i;
+    }
+    else if(!strToDurationMS_Safe(&ms, lua_tostring(L, 1)))
+        luaL_argerror(L, 1, "expected time in ms or duration as string");
+
+    client(L).setTimeout(ms);
+    return 0;
+}
+
 static const luaL_Reg reg[] =
 {
     { "expect",    api_expect },
@@ -305,6 +326,7 @@ static const luaL_Reg reg[] =
     { "readline",  api_readline },
     { "readn",     api_readn },
     { "peek",      api_peek },
+    { "timeout",   api_timeout },
     { NULL,        NULL }
 };
 

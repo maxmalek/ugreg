@@ -113,7 +113,8 @@ int CtrlHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
         if(params.root().v->size() || (vq && importQueryStrVars(params.root(), vq))) // only try to pass vars to Lua when we actually get some vars in the query string
             vp = params.root().v;
 
-        SISClient::ActionResult res = cl->queryAsync(action, VarCRef(params, vp)).get();
+        // TODO make expiry configurable?
+        SISClient::ActionResult res = cl->queryAsync(action, VarCRef(params, vp), 3000).get();
         if(res.error)
         {
             if(!res.status)

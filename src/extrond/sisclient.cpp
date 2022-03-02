@@ -182,6 +182,31 @@ u64 SISClient::updateTimer(u64 now, u64 dt)
 
     timeInState += dt;
 
+    if(jobs.size() > 1)
+    {
+        std::list<Job>::iterator it = jobs.begin();
+        const Job& first = *it;
+        ++it; // skip currently active job
+        for ( ; it != jobs.end(); )
+        {
+            Job& j = *it;
+            if(j.expiryTime && now > j.expiryTime)
+            {
+                printf("SISClient[%s]: ERROR: Action '%s' expired without ever starting; blocked by '%s'\n",
+                    cfg.name.c_str(), j.actionName.c_str(), first.actionName.c_str());
+                j.unref(L);
+                ActionResult result;
+                result.error = true;
+                result.status = 408; // Request Timeout
+                result.text = "ERROR: Expired while waiting for '" + first.actionName + "'";
+                j.result.set_value(std::move(result));
+                it = jobs.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
     u64 next = updateCoro();
 
     if(state == IDLE && timeInState > cfg.device.getHeartbeatTime())
@@ -245,6 +270,7 @@ SISClient::State SISClient::setState(State st)
         cfg.name.c_str(), s_StateNames[state], s_StateNames[st], (unsigned)timeInState);
     state = st;
     timeInState = 0;
+    stateMaxTime = 0;
 
     switch(st)
     {
@@ -287,13 +313,13 @@ SISClient::State SISClient::setState(State st)
 void SISClient::heartbeat()
 {
     if(state == IDLE)
-        scheduleAction("heartbeat", VarCRef(), INPROCESS, IDLE, IDLE);
+        scheduleAction("heartbeat", VarCRef(), INPROCESS, IDLE, IDLE, 0);
 }
 
 void SISClient::authenticate()
 {
     assert(state == CONNECTED);
-    scheduleAction("_login", VarCRef(), AUTHING, AUTHED, ERROR);
+    scheduleAction("_login", VarCRef(), AUTHING, AUTHED, ERROR, 0);
 }
 
 bool SISClient::sendall(const char* buf, size_t size)
@@ -328,7 +354,7 @@ static SISClient::ActionResult funcNotExist(const std::string name)
     return res;
 }
 
-std::future<SISClient::ActionResult> SISClient::scheduleAction(const char* name, VarCRef vars, State activestate, State donestate, State failstate)
+std::future<SISClient::ActionResult> SISClient::scheduleAction(const char* name, VarCRef vars, State activestate, State donestate, State failstate, u64 expireIn)
 {
     std::lock_guard<decltype(mtx)> g(mtx);
 
@@ -336,7 +362,7 @@ std::future<SISClient::ActionResult> SISClient::scheduleAction(const char* name,
     int f = lua_getglobal(L, name);
     if(f != LUA_TFUNCTION)
     {
-        printf("SISClient: runAction [%s] is not a function\n", name);
+        printf("SISClient[%s]: ERROR: runAction [%s] is not a function\n", cfg.name.c_str(), name);
         lua_pop(L, 1);
         return std::async(funcNotExist, name);
     }
@@ -357,11 +383,14 @@ std::future<SISClient::ActionResult> SISClient::scheduleAction(const char* name,
     // Lco: [f][vars?]
 
     Job& j = jobs.emplace_back();
+    j.Lparams = params;
     j.beginState = activestate;
     j.endState = donestate;
     j.failState = failstate;
     j.Lco = Lco;
-    j.coref = ref;
+    j.Lcoref = ref;
+    j.actionName = name;
+    j.expiryTime = expireIn ? timeNowMS() + expireIn : 0;
 
     printf("SISClient[%s]: Action '%s' coro is ready\n", cfg.name.c_str(), name);
     return j.result.get_future();
@@ -409,9 +438,9 @@ static void importLuaResult(SISClient::ActionResult& res, lua_State *L, int nres
 
 u64 SISClient::updateCoro()
 {
-    std::lock_guard<decltype(mtx)> g(mtx);
-
-    while(!jobs.empty())
+    u64 t = 0;
+    bool gtfo = false;
+    while(!jobs.empty() && !gtfo)
     {
         bool error = false;
         bool done = false;
@@ -423,13 +452,16 @@ u64 SISClient::updateCoro()
         }
 
         int nres = 0;
-        const int e = lua_resume(j.Lco, NULL, 0, &nres);
+        const int e = lua_resume(j.Lco, NULL, j.Lparams, &nres);
+        j.Lparams = 0;
         switch (e)
         {
             case LUA_YIELD:
                 if (nres)
                     lua_pop(j.Lco, nres);
-                return cfg.device.getIOYieldTime();
+                t = cfg.device.getIOYieldTime();
+                gtfo = true;
+            break;
 
             default:
                 error = true;
@@ -446,7 +478,7 @@ u64 SISClient::updateCoro()
             if(error)
             {
                 const char* errstr = lua_tostring(j.Lco, -1);
-                printf("ERROR: Lua coroutine failed (err = %d): %s\n", e, errstr);
+                printf("SISClient[%s]: ERROR: Lua coroutine failed (err = %d): %s\n", cfg.name.c_str(), e, errstr);
                 if(errstr)
                     result.text = errstr;
             }
@@ -459,8 +491,24 @@ u64 SISClient::updateCoro()
             jobs.pop_front();
             setState(next);
         }
+        else
+        {
+            if (stateMaxTime && timeInState > stateMaxTime)
+            {
+                printf("SISClient[%s]: ERROR: Action '%s' timeout after %zu ms in same state\n", cfg.name.c_str(), j.actionName.c_str(), stateMaxTime);
+                j.unref(L);
+                ActionResult result;
+                result.error = true;
+                result.status = 408; // Request Timeout
+                result.text = "ERROR: Timeout after " + std::to_string(stateMaxTime) + " ms in the same state";
+                j.result.set_value(std::move(result));
+                const State next = j.failState;
+                jobs.pop_front();
+                setState(next);
+            }
+        }
     }
-    return 0;
+    return t;
 }
 
 void SISClient::advanceInput(size_t n)
@@ -501,17 +549,17 @@ const char* SISClient::getStateStr() const
     return s_StateNames[getState()];
 }
 
-std::future<SISClient::ActionResult> SISClient::queryAsync(const char* action, VarCRef vars)
+std::future<SISClient::ActionResult> SISClient::queryAsync(const char* action, VarCRef vars, u64 expireIn)
 {
     // make sure the action to call is actually an exported user function, and not just a default lua global
     if(luafuncs.find(action) == luafuncs.end())
         return std::async(funcNotExist, action);
 
-    return this->scheduleAction(action, vars, INPROCESS, IDLE, IDLE);
+    return this->scheduleAction(action, vars, INPROCESS, IDLE, IDLE, expireIn);
 }
 
 SISClient::Job::Job()
-    : Lco(NULL), coref(LUA_NOREF), beginState(UNDEF), endState(UNDEF), failState(UNDEF), started(false)
+    : Lco(NULL), Lcoref(LUA_NOREF), Lparams(0), beginState(UNDEF), endState(UNDEF), failState(UNDEF), started(false), expiryTime(0)
 {
 }
 
@@ -524,8 +572,8 @@ void SISClient::Job::unref(lua_State* L)
 {
     if(Lco)
     {
-        luaL_unref(L, LUA_REGISTRYINDEX, coref);
+        luaL_unref(L, LUA_REGISTRYINDEX, Lcoref);
         Lco = NULL;
-        coref = LUA_NOREF;
+        Lcoref = LUA_NOREF;
     }
 }
