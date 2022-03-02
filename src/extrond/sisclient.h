@@ -25,7 +25,7 @@ class SISClient
 public:
     SISClient(const char *name);
     ~SISClient();
-    bool configure(VarCRef mycfg, const SISDeviceTemplate& dev);
+    bool configure(VarCRef mycfg, VarCRef devcfg);
     SISSocket connect(); // return new socket id
     void disconnect();
     u64 updateTimer(u64 now, u64 dt);
@@ -49,7 +49,7 @@ public:
         _STATE_MAX
     };
 
-    State setState(State st); /// returns prev state
+    State setState(State st); // returns prev state
     State getState() const { return state; }
 
     bool sendall(const char *buf, size_t size);

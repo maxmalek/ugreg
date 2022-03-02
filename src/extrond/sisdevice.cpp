@@ -4,50 +4,26 @@
 #include "json_out.h"
 #include "util.h"
 
-SISDeviceTemplate::SISDeviceTemplate(TreeMem& mem)
-    : vw(mem)
-{
-}
-
-bool SISDeviceTemplate::init(VarCRef devtype)
-{
-    bool ok = vw.load(devtype, false);
-#ifdef _DEBUG
-    std::vector<std::string> dis;
-    vw.exe.disasm(dis);
-    for(size_t i = 0; i < dis.size(); ++i)
-        puts(dis[i].c_str());
-#endif
-    return ok;
-}
-
 SISDevice::SISDevice()
     : heartbeatTime(0)
 {
 }
 
-bool SISDevice::init(const SISDeviceTemplate& dev, VarCRef unitcfg)
+bool SISDevice::init(VarCRef devcfg)
 {
-    Var v = dev.vw.produceResult(*this, unitcfg, VarCRef()); // no vars
-    if(v.type() == Var::TYPE_NULL)
-        return false;
-
-    const VarCRef ref(this, &v);
-    bool ok = _import(ref);
+    bool ok = _import(devcfg);
     if(ok)
     {
 #ifdef _DEBUG
-        std::string js = dumpjson(ref, true);
+        std::string js = dumpjson(devcfg, true);
         printf("Device init ok, this is the JSON:\n%s\n", js.c_str());
 #endif
     }
     else
     {
-        std::string err = dumpjson(ref, true);
+        std::string err = dumpjson(devcfg, true);
         printf("SISDevice::init(): Bad config. This is the failed JSON:\n%s\n", err.c_str());
     }
-
-    v.clear(*this);
     return ok;
 }
 

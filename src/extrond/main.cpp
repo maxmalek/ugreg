@@ -35,20 +35,9 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
         );
     }
 
-    std::map<std::string, SISDeviceTemplate*> devicetemplates;
     VarCRef dt = cfgtree.subtreeConst("/devicetypes");
     if(!dt || dt.type() != Var::TYPE_MAP)
         bail("devicetypes is not map", "");
-    const Var::Map *dtm = dt.v->map();
-    for(Var::Map::Iterator it = dtm->begin(); it != dtm->end(); ++it)
-    {
-        const char *dtn = cfgtree.getS(it.key());
-        printf("New device type [%s]...\n", dtn);
-        SISDeviceTemplate *sdt = new SISDeviceTemplate(cfgtree);
-        if(!sdt->init(VarCRef(cfgtree, &it.value())))
-            bail("Failed to init device type [%s], exiting\n", dtn);
-        devicetemplates[dtn] = sdt;
-    }
 
     if (VarCRef devices = cfgtree.subtreeConst("/devices"))
     {
@@ -66,14 +55,14 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
             if(!type)
                 bail("Client has no device type: ", name);
 
-            auto dti = devicetemplates.find(type);
-            if(dti == devicetemplates.end())
+            VarCRef devcfg = dt.lookup(type);
+            if(!devcfg || devcfg.type() != Var::TYPE_MAP)
                 bail("Unknown device type: ", type);
 
             printf("- %s is device type [%s]\n", name, type);
 
             SISClient *client = new SISClient(name);
-            if(client->configure(mycfg, *dti->second))
+            if(client->configure(mycfg, devcfg))
                 clients.push_back(client);
             else
             {
@@ -82,9 +71,6 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
             }
         }
     }
-
-    for(auto it : devicetemplates)
-        delete it.second;
 }
 
 typedef std::map<SISSocket, SISClient*> ClientMap;

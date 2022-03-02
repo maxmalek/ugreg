@@ -41,7 +41,7 @@ SISClient::~SISClient()
     }
 }
 
-bool SISClient::configure(VarCRef mycfg, const SISDeviceTemplate& dev)
+bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
 {
     const VarCRef xhost = mycfg.lookup("host");
     const VarCRef xport = mycfg.lookup("port");
@@ -55,7 +55,7 @@ bool SISClient::configure(VarCRef mycfg, const SISDeviceTemplate& dev)
 
     cfg.host = host;
 
-    if(!cfg.device.init(dev, mycfg))
+    if(!cfg.device.init(devcfg))
         return false;
 
     luafuncs.clear();

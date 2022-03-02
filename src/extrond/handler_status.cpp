@@ -9,9 +9,6 @@
 #include "sisclient.h"
 #include "responseformat.h"
 
-#define BR "<br />\n"
-
-
 StatusHandler::StatusHandler(const ClientList& clients, const char *prefix)
     : RequestHandler(prefix, "application/json"), clients(clients)
 {
@@ -34,6 +31,7 @@ void StatusHandler::prepareClientList(ResponseFormatter& fmt) const
     fmt.addHeader("cstate", "Connection state");
     fmt.addHeader("cstateTime", "Time in state");
     fmt.addHeader("status", "Device status");
+    fmt.addHeader("link", "Link");
 
     const size_t N = clients.size();
     for(size_t i = 0; i < N; ++i)
@@ -47,6 +45,10 @@ void StatusHandler::prepareClientList(ResponseFormatter& fmt) const
         t["cstate"] = cl->getStateStr();
         t["cstateTime"] = cl->getTimeInState();
         t["status"] = cl->askStatus().c_str();
+
+        std::ostringstream os;
+        os << "<a href=\"/ctrl/" << c.name << "\">Go</a>";
+        t["link"] = os.str().c_str();
     }
 }
 
@@ -54,6 +56,13 @@ void StatusHandler::prepareClientList(ResponseFormatter& fmt) const
 // Avoid anything that changes the tree, and ensure proper read-locking!
 int StatusHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
+    const char* q = rq.query.c_str();
+    if(q && strchr(q, '/'))
+    {
+        mg_send_http_redirect(conn, this->prefix(), 301);
+        return 301;
+    }
+
     ResponseFormatter fmt;
     prepareClientList(fmt);
 
@@ -66,7 +75,7 @@ int StatusHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, cons
     std::ostringstream os;
     os << "<html><body>";
     os << "(This page is also available as <a href=\"?json\">JSON</a>)<br />\n";
-    os << clients.size() << " clients configured:" BR;
+    os << clients.size() << " clients configured:<br />";
     fmt.emitHTML(os);
     os << "</body></html>";
     std::string tmp = os.str();
