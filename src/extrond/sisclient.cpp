@@ -69,28 +69,6 @@ bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
         luaL_openlibs(L);
         sisluafunc_register(L, *this);
 
-        // enumerate global funcs
-        lua_pushglobaltable(L);
-        // [_G]
-        const int t = lua_gettop(L);
-        lua_pushnil(L);  /* first key */
-        // [_G][nil]
-        while (lua_next(L, t) != 0)
-        {
-            // [_G][k][v]
-            if(lua_type(L, -2) == LUA_TSTRING && lua_isfunction(L, -1) && !lua_iscfunction(L, -1))
-            {
-                const char *name = lua_tostring(L, -2);
-                if(name && *name && *name != '_')
-                    luafuncs.insert(name);
-            }
-            lua_pop(L, 1);
-            // [_G][k]
-        }
-        // [_G]
-        lua_pop(L, 1);
-        // []
-
         luaImportVar(L, mycfg);
         // [t]
         lua_setglobal(L, "CONFIG");
@@ -103,6 +81,29 @@ bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
         }
         if(int top = lua_gettop(L)) // don't leave crap on the stack in case the body returns anything
             lua_pop(L, top);
+        // []
+
+        // enumerate global funcs
+        lua_pushglobaltable(L);
+        // [_G]
+        const int t = lua_gettop(L);
+        lua_pushnil(L);  /* first key */
+        // [_G][nil]
+        while (lua_next(L, t) != 0)
+        {
+            // [_G][k][v]
+            if (lua_type(L, -2) == LUA_TSTRING && lua_isfunction(L, -1) && !lua_iscfunction(L, -1))
+            {
+                const char* name = lua_tostring(L, -2);
+                if (name && *name && *name != '_')
+                    luafuncs.insert(name);
+            }
+            lua_pop(L, 1);
+            // [_G][k]
+        }
+        // [_G]
+        lua_pop(L, 1);
+        // []
     }
 
     return true;
