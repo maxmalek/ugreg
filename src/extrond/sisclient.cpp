@@ -409,23 +409,27 @@ static void importLuaResult(SISClient::ActionResult& res, lua_State *L, int nres
 {
     if (nres)
     {
-        if (lua_isstring(L, 1))
         {
-            size_t len;
-            const char *s = lua_tolstring(L, 1, &len);
-            res.text.assign(s, len);
+            int t = lua_type(L, 1);
+            if (t == LUA_TSTRING)
+            {
+                size_t len;
+                const char *s = lua_tolstring(L, 1, &len);
+                res.text.assign(s, len);
+            }
+            else if(t == LUA_TNUMBER)
+                res.status = (unsigned)lua_tointeger(L, 1);
         }
-        else if(lua_isnumber(L, 1))
-            res.status = (unsigned)lua_tointeger(L, 1);
 
         for(int i = 2; i < 4; ++i)
         {
-            if(!res.status && lua_isnumber(L, i))
+            int t = lua_type(L, i);
+            if(!res.status && t == LUA_TNUMBER)
             {
                 res.status = (unsigned)lua_tointeger(L, i);
                 ++i;
             }
-            if(res.contentType.empty() && lua_isstring(L, i))
+            if(res.contentType.empty() && t == LUA_TSTRING)
             {
                 size_t len;
                 const char* s = lua_tolstring(L, i, &len);
@@ -475,16 +479,20 @@ u64 SISClient::updateCoro()
         {
             ActionResult result;
             result.error = error;
-            result.status = error ? 500 : 200;
             if(error)
             {
+                result.status = 500;
                 const char* errstr = lua_tostring(j.Lco, -1);
                 printf("SISClient[%s]: ERROR: Lua coroutine failed (err = %d): %s\n", cfg.name.c_str(), e, errstr);
                 if(errstr)
                     result.text = errstr;
             }
             else
+            {
                 importLuaResult(result, j.Lco, nres);
+                if(!result.status)
+                    result.status = 200;
+            }
 
             j.unref(L); // now Lua will GC the coro eventually
             j.result.set_value(std::move(result));
