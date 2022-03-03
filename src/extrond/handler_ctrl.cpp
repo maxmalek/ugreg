@@ -145,8 +145,8 @@ int CtrlHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
             vp = params.root().v;
 
         // TODO make expiry configurable?
-        SISClient::ActionResult res = cl->queryAsync(action, VarCRef(params, vp), 3000).get();
-        if(res.error)
+        SISClient::ActionResult res = cl->queryAsync(action, VarCRef(params, vp), cl->getConfig().device.getHttpTimeout()).get();
+        if(res.error || res.status >= 400)
         {
             if(!res.status)
                 res.status = 500;

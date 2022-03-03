@@ -5,7 +5,7 @@
 #include "util.h"
 
 SISDevice::SISDevice()
-    : heartbeatTime(0), ioYieldTime(0)
+    : heartbeatTime(0), ioYieldTime(0), httpTimeout(0)
 {
 }
 
@@ -45,6 +45,7 @@ bool SISDevice::_import(VarCRef ref)
     bool ok = true;
     ok = readtime(heartbeatTime, ref, "heartbeat_time", true) && ok;
     ok = readtime(ioYieldTime, ref, "io_yield_time", true) && ok;
+    ok = readtime(httpTimeout, ref, "http_timeout", true) && ok;
 
     if(VarCRef xsc = ref.lookup("script"))
     {
