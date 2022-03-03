@@ -1,3 +1,13 @@
+-- The device configuration is accessible in the global variable CONFIG
+-- (It's not used by C++ code)
+--[[
+print("____ CONFIG ____")
+for k, v in pairs(CONFIG) do
+    print(("%s = %s"):format(tostring(k), tostring(v)))
+end
+print("----------------")
+]]
+
 local function PP(s)
     print("### " .. tostring(s) .. " ###")
 end

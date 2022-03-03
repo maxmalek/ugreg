@@ -16,10 +16,19 @@ $ curl -X POST -d 'title=My recording' -d 'relation=<series UUID>' http://<extro
 
 ===========================================
 
-Extra Reading material
-----------------------
-- https://www.lua.org/manual/5.4/manual.html
+Starting and configuring extrond:
 
+Pass at least one config file to the executable:
+
+./extrond config.json [config2.json...]
+
+All configs will be merged into an internal tree, later configs win and can override
+settings in earlier configs.
+
+This way you can have a public config with basic settings and a secret config
+that contains all the devices and passwords (eg. via ansible-vault) in the same repo.
+
+===========================================
 
 Let's assume extrond is running on 127.0.0.1 port 8080.
 
@@ -41,9 +50,9 @@ Everything under /ctrl/.
 
 http://127.0.0.1:8080/ctrl/<DeviceName>
 
-For example device = AVStudioDEVx094
+For example device = AVStudioDEVx049
 
-http://127.0.0.1:8080/ctrl/AVStudioDEVx094/ is the target of a "Go" link.
+http://127.0.0.1:8080/ctrl/AVStudioDEVx049/ is the target of a "Go" link.
 This is the "/detail" endpoint.
 
 
@@ -72,7 +81,7 @@ Then parameters passed via GET (at the end of the URL) are also added to the tab
 (GET wins over POST wins over JSON if the same name is used more than once).
 
 So you can call this:
-http://127.0.0.1:8080/ctrl/AVStudioDEVx094/echoparams?hello=world&foo=bar
+http://127.0.0.1:8080/ctrl/AVStudioDEVx049/echoparams?hello=world&foo=bar
 and echoparams(t) will be called with t = {hello = "world", foo = "bar"}.
 
 You can easily make a cheap HTML form for testing POST passing by returning HTML as text:
@@ -106,18 +115,23 @@ Then you can operate the endpoint via the HTML form, or alternatively:
 Via python:
 
 import requests
-reply = requests.post("http://127.0.0.1:8080/ctrl/AVStudioDEVx094/testform", data={"hello": "Hi from python"})
+reply = requests.post("http://127.0.0.1:8080/ctrl/AVStudioDEVx049/testform", data={"hello": "Hi from python"})
 reply.raise_for_status() # after this it's good to go
 print(reply.text)
 
 Via curl:
 
-$ curl -X POST -d 'hello=Hi form curl' http://127.0.0.1:8080/ctrl/AVStudioDEVx094/testform
+$ curl -X POST -d 'hello=Hi form curl' http://127.0.0.1:8080/ctrl/AVStudioDEVx049/testform
 
 JSON works too, when the content type is set correctly:
 
-$ curl -X POST -H "Content-Type: application/json" -d '{"hello":"JSON via curl"}' http://127.0.0.1:8080/ctrl/AVStudioDEVx094/testform
+$ curl -X POST -H "Content-Type: application/json" -d '{"hello":"JSON via curl"}' http://127.0.0.1:8080/ctrl/AVStudioDEVx049/testform
 
 Python requests encodes as JSON automatically (json= instead of data=)
 
-reply = requests.post("http://127.0.0.1:8080/ctrl/AVStudioDEVx094/testform", json={"hello": "JSON via python"})
+reply = requests.post("http://127.0.0.1:8080/ctrl/AVStudioDEVx049/testform", json={"hello": "JSON via python"})
+
+----------------------
+Extra Reading material
+----------------------
+- https://www.lua.org/manual/5.4/manual.html

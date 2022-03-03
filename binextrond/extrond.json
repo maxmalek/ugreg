@@ -1,20 +1,31 @@
 {
 "config":{
+    // Interfaces to listen on. If host is not given, listen on all network adapters on that port.
     "listen": [
-        { "port": 80 },
         { "host": "0.0.0.0", "port": 8080 },
     ],
-    "expose_debug_apis": false,
-    "mimetype": "text/json; charset=utf-8",
     "listen_threads": 4,
-    "idle_wait_time": "100ms",
+    "idle_wait_time": "100ms", // Interval to check for socket activity when there is nothing to do
+},
+"devicetypes":{
+    "smp351": {
+        "heartbeat_time": "30s", // Interval between internal calls to heartbeat() endpoint to prevent the SMP from disconnecting
+        "io_yield_time": "20ms", // Time interval beetween socket IO updates
+        "http_timeout": "3s",    // A HTTP request must be built and sent in this time, otherwise it will fail
+        "script": "smp351.lua",  // Path to Lua script to handle device communication and endpoints
+    },
 },
 "devices": {
-    /*"localhost": {
-        "type": "smp351",
+    /*
+    // Key is used as device name (must be unique obviously)
+    "localhost": {
+        // Used by extrond core
+        "type": "smp351", // Refers to one key in devicetypes
         "host": "localhost",
         "port": 7777,
-        "password": "12345"
-    },*/
+        // Any other entries are not used by C++ code but can be used in Lua
+        "password": "12345" // Admin password for telnet login
+    },
+    */
 }
 }

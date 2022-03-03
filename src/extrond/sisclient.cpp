@@ -69,12 +69,6 @@ bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
         luaL_openlibs(L);
         sisluafunc_register(L, *this);
 
-        if(luaL_dofile(L, script) != LUA_OK)
-        {
-            printf("Failed to load script '%s'\n", script);
-            return false;
-        }
-
         // enumerate global funcs
         lua_pushglobaltable(L);
         // [_G]
@@ -100,6 +94,15 @@ bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
         luaImportVar(L, mycfg);
         // [t]
         lua_setglobal(L, "CONFIG");
+        // []
+        if (luaL_dofile(L, script) != LUA_OK)
+        {
+            const char *errmsg = lua_tostring(L, 1);
+            printf("Failed to load script '%s', error:\n%s\n", script, errmsg);
+            return false;
+        }
+        if(int top = lua_gettop(L)) // don't leave crap on the stack in case the body returns anything
+            lua_pop(L, top);
     }
 
     return true;
