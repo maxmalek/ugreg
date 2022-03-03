@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "civetweb/civetweb.h"
 #include "json_out.h"
+#include "json_in.h"
 #include "jsonstreamwrapper.h"
 #include "treefunc.h"
 #include "config.h"
@@ -103,10 +104,40 @@ int CtrlHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
             action = "detail";
 
         DataTree params;
+        const mg_request_info *info = mg_get_request_info(conn);
+
+        if(info->content_length)
+        {
+            if(const char *content_type = mg_get_header(conn, "Content-Type"))
+                if(!mg_strncasecmp(content_type, "application/json", 16))
+                {
+                    size_t todo = info->content_length, pos = 0;
+                    std::vector<char> rd(todo);
+                    while(todo)
+                    {
+                        int done = mg_read(conn, &rd[pos], todo);
+                        if(done > 0)
+                        {
+                            todo -= done;
+                            pos += done;
+                        }
+                    }
+                    if(!loadJsonDestructive(params.root(), rd.data(), rd.size()))
+                    {
+                        mg_send_http_error(conn, 400, "Bad JSON");
+                        return 400;
+                    }
+                    if(params.root().type() != Var::TYPE_MAP)
+                    {
+                        mg_send_http_error(conn, 400, "Expected JSON object, not %s", params.root().typestr());
+                        return 400;
+                    }
+                }
+        }
+
         mg_form_data_handler handleForm = { field_found, field_get, NULL, &params };
         mg_handle_form_request(conn, &handleForm);
 
-        const mg_request_info *info = mg_get_request_info(conn);
         const char* vq = info->query_string;
 
         const Var *vp = NULL;

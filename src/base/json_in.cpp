@@ -136,7 +136,13 @@ struct JsonLoader
         root.clear(_mem); // in case we failed to load and there's leftover crap
     }
 
-    bool parseDestructive(BufferedReadStream& stream);
+    template<typename STREAM>
+    bool parseDestructive(STREAM& stream)
+    {
+        rapidjson::Reader rd;
+        return rd.Parse<ParseFlagsDestructive>(stream, *this);
+    }
+
     bool _emit(Var&& x);
     Frame& _pushframe(bool ismap);
     Var _popframe();
@@ -208,16 +214,10 @@ Var JsonLoader::_popframe()
     return tmp;
 }
 
-
-bool JsonLoader::parseDestructive(BufferedReadStream& stream)
+template<typename STREAM>
+static bool _loadJsonDestructive(VarRef dst, STREAM& stream)
 {
-    rapidjson::Reader rd;
-    return rd.Parse<ParseFlagsDestructive>(stream, *this);
-}
 
-bool loadJsonDestructive(VarRef dst, BufferedReadStream& stream)
-{
-    stream.init();
     JsonLoader ld(*dst.mem);
     if(!ld.parseDestructive(stream))
         return false;
@@ -225,4 +225,16 @@ bool loadJsonDestructive(VarRef dst, BufferedReadStream& stream)
     dst.v->clear(*dst.mem);
     *dst.v = std::move(ld.root);
     return true;
+}
+
+bool loadJsonDestructive(VarRef dst, BufferedReadStream& stream)
+{
+    stream.init();
+    return _loadJsonDestructive(dst, stream);
+}
+
+bool loadJsonDestructive(VarRef dst, const char* data, size_t len)
+{
+    rapidjson::MemoryStream ms(data, len);
+    return _loadJsonDestructive(dst, ms);
 }

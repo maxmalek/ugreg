@@ -59,6 +59,19 @@ local function readNonEmptyLine(...)
     return line
 end
 
+-- return text, contentType, errorCode
+-- or in case of errors:
+-- return 404 -- no text, just error
+-- return "Thingy not found!", 404 -- text + error code
+-- return text, errorCode, contentType -- also fine (first number is error, rest is text + contentType)
+function hello_text()
+    return "Hello world!", "text/plain; charset=utf-8"
+end
+
+function hello_json()
+    return '{"hello": "Hello world!"}', "application/json; charset=utf-8"
+end
+
 function _login()
     timeout "5s"
     local greet = readNonEmptyLine()
@@ -218,7 +231,17 @@ function echoparams(params)
     return table.concat(t, "\n"), "text/plain; charset=utf-8"
 end
 
-function getmeta()
+function metadata()
+    local t = {}
+    local i = 0
+    for name, id in pairs(_metainv) do
+        i = i + 1
+        t[i] = name
+    end
+    return table.concat(t, "\n"), "text/plain; charset=utf-8"
+end
+
+function readmeta()
     local n = 0
     local t, a = {}, {}
     for name, id in pairs(_metainv) do

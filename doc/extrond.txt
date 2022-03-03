@@ -1,0 +1,105 @@
+Extra Reading material
+----------------------
+- https://www.lua.org/manual/5.4/manual.html
+
+
+Let's assume extrond is running on 127.0.0.1 port 8080.
+
+Overview table:
+=================
+
+http://127.0.0.1:8080/status
+
+The "Go" link on each entry leads to the "ctrl/*/detail" endpoint of a device.
+"Device status" is whatever the "/status" endpoint of each device returns.
+
+The table is currently hardcoded in C++ so that this works also in case of script errors.
+
+
+Per-device:
+============
+
+Everything under /ctrl/.
+
+http://127.0.0.1:8080/ctrl/<DeviceName>
+
+For example device = AVStudioDEVx094
+
+http://127.0.0.1:8080/ctrl/AVStudioDEVx094/ is the target of a "Go" link.
+This is the "/detail" endpoint.
+
+
+Endpoints:
+============
+
+Endpoints are Lua functions exposed by a device script.
+See smp351.lua.
+A device script is instantiated once for each device. In case multiple devices use the same script
+multiple copies of the Lua interpreter are created, so that each instance is completely separate.
+Each interpreter stays alive while the program is running so be careful when using global variables.
+
+Private functions (local function hello() ... end) are not exported by the script.
+Global functions (without the local keyword) are exported and made available as endpoints.
+
+Global functions stating with "_" are special and only callable from C++ (hidden endpoints).
+_login is currently used like this to prevent calls to it when already logged in,
+as that would break things badly.
+
+Passing parameters:
+====================
+
+Parameters are passed as a Lua table (see echoparams() for an example).
+Parameters passed via POST are collected in the table first (if applicable).
+Then parameters passed via GET (at the end of the URL) are also added to the table
+(GET wins over POST wins over JSON if the same name is used more than once).
+
+So you can call this:
+http://127.0.0.1:8080/ctrl/AVStudioDEVx094/echoparams?hello=world&foo=bar
+and echoparams(t) will be called with t = {hello = "world", foo = "bar"}.
+
+You can easily make a cheap HTML form for testing POST passing by returning HTML as text:
+
+function testform()
+    local html = [=[
+YOUR HTML HERE
+...
+<form action="testform_go" method="post">
+<input type="text" id="hello" name="hello"><br />
+...
+<input type="submit" value="Submit">
+</form>
+]=]
+    return html, "text/html; charset=utf-8"
+end
+
+This uses the "testform_go" endpoint, let's create it:
+
+function testform_go(params)
+   if params then
+       local hi = tostring(params.hello)
+       return "You said: " .. hi
+   else
+       return "No params given", 418 -- I'm a teapot
+   end
+end
+
+Then you can operate the endpoint via the HTML form, or alternatively:
+
+Via python:
+
+import requests
+reply = requests.post("http://127.0.0.1:8080/ctrl/AVStudioDEVx094/testform", data={"hello": "Hi from python"})
+reply.raise_for_status() # after this it's good to go
+print(reply.text)
+
+Via curl:
+
+$ curl -X POST -d 'hello=Hi form curl' http://127.0.0.1:8080/ctrl/AVStudioDEVx094/testform
+
+JSON works too, when the content type is set correctly:
+
+$ curl -X POST -H "Content-Type: application/json" -d '{"hello":"JSON via curl"}' http://127.0.0.1:8080/ctrl/AVStudioDEVx094/testform
+
+Python requests encodes as JSON automatically (json= instead of data=)
+
+reply = requests.post("http://127.0.0.1:8080/ctrl/AVStudioDEVx094/testform", json={"hello": "JSON via python"})
