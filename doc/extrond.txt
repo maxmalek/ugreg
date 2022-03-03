@@ -1,3 +1,21 @@
+TL;DR
+======
+
+See http://<extrond-address>/status to list all configured devices.
+
+Send a GET or POST request to
+http://<extrond-address>/ctrl/<DeviceName>/<Endpoint>
+
+to control the associated extron SMP.
+
+You can pass metadata along to the "start" endpoint that will be assigned upon opencast ingest,
+e.g. using curl:
+
+$ curl -X POST -d 'title=My recording' -d 'relation=<series UUID>' http://<extrond-address>/ctrl/<DeviceName>/start
+
+
+===========================================
+
 Extra Reading material
 ----------------------
 - https://www.lua.org/manual/5.4/manual.html

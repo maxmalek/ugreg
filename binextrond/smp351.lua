@@ -98,24 +98,38 @@ function heartbeat()
     send "Q"
     need(1)
     skipall()
+    return "(This is done automatically in background, there is no need to call this manually)"
 end
 
 function stop()
     skipall()
     send "\x1bY0RCDR\r"
     expect "RcdrY0\r\n"
+    return "Stopped."
 end
 
-function start()
+function start(params)
+    -- set params first, THEN start the recording (must be done in this order)
+    -- this is horrible actually
+    -- because if starting the recoding fails then we've set metadata that will stick around
+    -- and possibly affect the next successful start since there's no way to clear them
+    -- -> SMP doesn't like empty string as metadata and just returns error, dumb piece of garbage
+    local extra = ""
+    if params then
+        extra = "\n" .. putmeta(params)
+    end
+
     skipall()
     send "\x1bY1RCDR\r"
     expect "RcdrY1\r\n"
+    return "Started." .. extra, "text/plain; charset=utf-8"
 end
 
 function pause()
     skipall()
     send "\x1bY2RCDR\r"
     expect "RcdrY2\r\n"
+    return "Paused."
 end
 
 local _status = { "stopped", "recording", "paused" }
@@ -196,6 +210,15 @@ function startform_go(params)
     return text, content
 end
 
+-- unchecked, will fail with too long val or val=""
+local function setmetaID(id, val)
+    local s = ("\x1bM%d*%sRCDR\r"):format(id, val)
+    local e = ("RcdrM%d*%s\r\n"):format(id, val) -- The manual lies about this, lol
+    skipall()
+    send(s)
+    expect(e)
+end
+
 local function setmeta(k, val)
     local id = _metainv[k] -- look up ID given the metadata field name
     if not id then
@@ -203,22 +226,18 @@ local function setmeta(k, val)
     end
     val = tostring(val):match"^%s*(.-)%s*$" -- strip leading/trailing whitespace
     local warn
-    if #val > 127 then
+    if #val > 127 then -- 127 chars is all the SIS protocol allows
         val = val:sub(1, 127)
         warn = "field truncated"
-     end
-    local s = ("\x1bM%d*%sRCDR\r"):format(id, val)
-    local e = ("RcdrM%d*%s\r\n"):format(id, val) -- The manual lies about this, lol
-    skipall()
-    send(s)
-    expect(e)
+    end
+    setmetaID(id, val)
     return val, warn
 end
 
 function echoparams(params)
-    local t = {}
+    local t = { "params = " .. tostring(params) .. "\n-------------" }
     if params then
-        local i = 0
+        local i = #t
         for k, v in pairs(params) do
             i = i + 1
             local extra = ""
@@ -275,13 +294,10 @@ function putmeta(params)
             t[i] = ("%s = %s%s"):format(k, val, warn and (" [" .. warn .. "]") or "")
         end
     end
-    
     return "Assigned metadata:\n" .. table.concat(t, "\n"), "text/plain; charset=utf-8"
 end
 
 function reboot(params)
-PP(params and params.password)
-PP(CONFIG.password)
     if params then
         if params.password == CONFIG.password then
             skipall()
@@ -294,4 +310,9 @@ PP(CONFIG.password)
         end
     end
     return "Pass the device password if you really mean it\n('password' parameter)", 403
+end
+
+function alarms()
+    send "39I"
+    return readline()
 end
