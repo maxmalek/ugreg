@@ -79,7 +79,7 @@ function hello_text()
 end
 
 function hello_json()
-    return '{"hello": "Hello world!"}', "application/json; charset=utf-8"
+    return json{hello = "Hello world!"}, "application/json; charset=utf-8"
 end
 
 function _login()

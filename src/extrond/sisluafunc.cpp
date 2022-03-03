@@ -3,6 +3,7 @@
 #include "sisclient.h"
 #include "treemem.h"
 #include "util.h"
+#include "json_out.h"
 
 enum
 {
@@ -316,6 +317,92 @@ static int api_timeout(lua_State *L)
     return 0;
 }
 
+
+typedef rapidjson::Writer<rapidjson::StringBuffer> Wr;
+
+static bool emitJson(Wr& w, lua_State *L, int idx, bool strict)
+{
+    idx = lua_absindex(L, idx);
+    if(idx > 64)
+        luaL_error(L, "nesting too deep");
+
+    switch(lua_type(L, idx))
+    {
+        case LUA_TSTRING: return w.String(lua_tostring(L, idx));
+        case LUA_TNUMBER:
+            if(lua_isinteger(L, idx))
+                return w.Int64(lua_tointeger(L, idx));
+            else
+                return w.Double(lua_tonumber(L, idx));
+            return true;
+        case LUA_TNIL:
+        case LUA_TNONE:
+            return w.Null();
+        case LUA_TBOOLEAN:
+            return w.Bool(lua_toboolean(L, idx));
+        case LUA_TTABLE:
+        {
+            const size_t n = lua_rawlen(L, idx);
+            if(n) // array?
+            {
+                w.StartArray();
+                for(size_t i = 0; i < n; ++i)
+                {
+                    lua_rawgeti(L, idx, i);
+                    emitJson(w, L, -1, strict);
+                }
+                return w.EndArray();
+            }
+
+            // object/map.
+            w.StartObject();
+
+            lua_pushnil(L);  /* first key */
+            // [_G][nil]
+            while (lua_next(L, idx) != 0)
+            {
+                // [_G][k][v]
+                if (lua_type(L, -2) == LUA_TSTRING) // only string keys supported in JSON
+                {
+                    size_t len;
+                    const char *k = lua_tolstring(L, -2, &len);
+                    if(!w.String(k, len, true))
+                        return false;
+                    if(!emitJson(w, L, -1, strict))
+                    {
+                        if(strict)
+                            return false;
+                        else if(!w.Null())
+                            return false;
+                    }
+                }
+                else if(strict)
+                    return false;
+                lua_pop(L, 1);
+                // [_G][k]
+            }
+            return w.EndObject();
+        }
+    }
+    return false;
+}
+
+static int api_json(lua_State *L)
+{
+    // TODO: might want to use an adapter for luaL_Buffer instead of this if this ever becomes a perf problem
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> wr(sb);
+    bool strict = getBool(L, 2);
+    if(emitJson(wr, L, 1, strict))
+    {
+        wr.Flush();
+        lua_pushlstring(L, sb.GetString(), sb.GetLength());
+        return 1;
+    }
+
+    return 0;
+}
+
 static const luaL_Reg reg[] =
 {
     { "expect",    api_expect },
@@ -327,6 +414,7 @@ static const luaL_Reg reg[] =
     { "readn",     api_readn },
     { "peek",      api_peek },
     { "timeout",   api_timeout },
+    { "json",      api_json },
     { NULL,        NULL }
 };
 
