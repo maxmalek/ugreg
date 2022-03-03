@@ -278,3 +278,20 @@ function putmeta(params)
     
     return "Assigned metadata:\n" .. table.concat(t, "\n"), "text/plain; charset=utf-8"
 end
+
+function reboot(params)
+PP(params and params.password)
+PP(CONFIG.password)
+    if params then
+        if params.password == CONFIG.password then
+            skipall()
+            send "\x1b1BOOT\r"
+            expect "Boot1\r\n"
+            return "Reboot initiated"
+        else
+            -- FIXME: want to just not reply to the client to prevent brute-forcing
+            return "Wrong password", 401
+        end
+    end
+    return "Pass the device password if you really mean it\n('password' parameter)", 403
+end
