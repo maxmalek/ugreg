@@ -27,7 +27,7 @@ static void writeToStream(BufferedWriteStream& ws, VarCRef sub, const Request& r
 
 int ViewHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
-    TreeMem work;
+    TreeMem work(StringPool::SMALL);
     view::VM vm(work);
 
     PathIter it(rq.query.c_str());
@@ -99,7 +99,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
         ++query;
 
     printf("ViewDebugHandler: %s\n", query);
-    TreeMem work;
+    TreeMem work(StringPool::SMALL);
     view::VM vm(work);
     view::Executable exe(work);
     std::string err;

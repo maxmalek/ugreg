@@ -8,7 +8,7 @@
 [[maybe_unused]]
 void tinyhashmap_api_test()
 {
-    TreeMem mem;
+    TreeMem mem(StringPool::TINY);
     typedef TinyHashMap<Var> M;
     M m;
 

@@ -7,7 +7,8 @@
 #include "fetcher.h"
 
 
-DataTree::DataTree()
+DataTree::DataTree(StringPool::PoolSize size)
+    : TreeMem(size)
 {
 }
 

@@ -6,6 +6,7 @@
 namespace view {
 
 Mgr::Mgr()
+    : TreeMem(StringPool::TINY)
 {
     _store.makeMap(*this);
 }

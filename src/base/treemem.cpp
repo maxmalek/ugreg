@@ -2,7 +2,8 @@
 #include <assert.h>
 
 
-TreeMem::TreeMem()
+TreeMem::TreeMem(StringPool::PoolSize size)
+    : StringPool(size)
 {
 }
 

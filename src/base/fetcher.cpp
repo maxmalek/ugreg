@@ -12,7 +12,8 @@
 #include "json_out.h"
 
 Fetcher::Fetcher()
-    : _useEnv(false), validity(0)
+    : TreeMem(StringPool::SMALL)
+    , _useEnv(false), validity(0)
     , fetchsingle(*this), fetchall(*this), postall(*this), postsingle(*this)
 {
 }

@@ -73,7 +73,13 @@ private:
 class StringPool
 {
 public:
-    StringPool();
+    enum PoolSize
+    {
+        DEFAULT,
+        TINY,
+        SMALL,
+    };
+    StringPool(PoolSize s);
     ~StringPool();
 
     // lookup string by ref. does not touch the refcount

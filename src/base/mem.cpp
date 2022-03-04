@@ -32,9 +32,30 @@ void BlockAllocator::Free(void* p, size_t sz)
 
 // -----------------------------------------
 
-StringPool::StringPool()
+StringPool::StringPool(PoolSize s)
 {
     strpool_config_t c = strpool_default_config;
+    int div = 0;
+    switch(s)
+    {
+        case TINY:
+            div = 8;
+            c.min_length = 8;
+            break;
+
+        case SMALL:
+            div = 4;
+            break;
+
+        case DEFAULT:
+            break;
+    }
+    if(div)
+    {
+        c.entry_capacity /= div;
+        c.block_capacity /= div;
+        c.block_size /= div;
+    }
     //c.memctx = getLuaAllocPtr();
     strpool_init(&_sp, &c);
 }

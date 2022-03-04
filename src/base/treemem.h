@@ -22,6 +22,6 @@ class TreeMem : public BlockAllocator, public StringPool
     TreeMem& operator=(const TreeMem&) = delete;
 
 public:
-    TreeMem();
+    TreeMem(StringPool::PoolSize size);
     ~TreeMem();
 };

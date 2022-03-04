@@ -13,7 +13,7 @@ class DataTree : public TreeMem
     DataTree& operator=(const DataTree&) = delete;
 
 public:
-    DataTree();
+    DataTree(StringPool::PoolSize size = StringPool::DEFAULT);
     ~DataTree();
 
     VarRef  root();

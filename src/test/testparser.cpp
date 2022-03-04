@@ -154,7 +154,7 @@ void testview()
 void testparse()
 {
     bool allok = true;
-    TreeMem mem;
+    TreeMem mem(StringPool::TINY);
     std::string errs;
     std::vector<size_t> failed;
     for (size_t i = 0; i < Countof(tests); ++i)
@@ -188,7 +188,7 @@ void testexec()
     //dump(tree.subtree("/rooms"));
 
     std::string err;
-    TreeMem exm;
+    TreeMem exm(StringPool::TINY);
     view::Executable exe(exm);
     size_t start = view::parse(exe, "/rooms[open=true]/id", err);
     if(!start)
