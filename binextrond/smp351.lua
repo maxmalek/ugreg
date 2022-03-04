@@ -83,7 +83,7 @@ function hello_json()
 end
 
 function _login()
-    timeout "5s"
+    timeout "15s"
     local greet = readNonEmptyLine()
     if not greet:match "^%(c%) Copyright [%d%-]+, Extron Electronics, SMP 35[12]" then
         error("Unexpected device identification upon login")
@@ -142,6 +142,30 @@ function pause()
     return "Paused."
 end
 
+-- FIXME: this is buggy. Seems like the SMP has a truncation bug somewhere in the dir listing
+-- since it reports always around 500 MB free.
+-- Doesn't seem like there's any other way to do this via telnet...
+--[[
+local function _diskfree()
+    -- it's faster to not enumerate root and just go to some unused subdir "x"
+    -- kinda dumb to do it like this but didn't find a better way to do this
+    send "\x1b/recordings/x/CJ\r\x1bLF\r"
+    expect "Dir recordings/x/\r\n"
+    local b
+    while true do
+        local line = readline()
+        if line == "" then
+            break
+        end
+        if not r then
+            b = line:match "^(%d+) Bytes Left$"
+            b = b and tonumber(b)
+        end
+    end
+    return b
+end
+]]
+
 local _status = { "stopped", "recording", "paused" }
 function status()
     timeout "1s"
@@ -150,7 +174,14 @@ function status()
     local st = readline() -- "<ESC>YRCDR\r"
     local dur = readline() -- "35I"
     st = _status[math.tointeger(st) + 1]
-    return st .. " (" .. dur .. ")"
+    skipall()
+    local b --= _diskfree()
+    local suffix = ""
+    if b then
+        local mb = b // (1024*1024)
+        suffix = (" [%d MB free]"):format(mb)
+    end
+    return ("%s (%s)%s"):format(st, dur, suffix)
 end
 
 function info()
@@ -326,3 +357,34 @@ function alarms()
     send "39I"
     return readline()
 end
+
+function files()
+    skipall()
+    send "\x1b/CJ\r\x1bLF\r"
+    expect "Dir /\r\n" -- Manual says "Dirl", but it's just "Dir"
+    local t = {}
+    local i = 0
+    local total = 0
+    while true do
+        local line = readline()
+        if line == "" then
+            break
+        end
+        local sz = line:match " (%d+)$"
+        total = total + ((sz and tonumber(sz)) or 0)
+        i = i + 1
+        t[i] = line
+    end
+    total = total // (1024*1024)
+    table.insert(t, ("Total size: %d MB"):format(total))
+    skipall()
+    return table.concat(t, "\n")
+end
+
+--[[
+function diskfree()
+    local b = assert(_diskfree(), "Device did not report free space")
+    local mb = b // (1024*1024)
+    return ("%d B\n%d MB\n"):format(b, mb)
+end
+]]
