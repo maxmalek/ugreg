@@ -2,6 +2,7 @@
 #include "viewparser.h"
 #include "treeiter.h"
 #include <sstream>
+#include <string.h>
 
 namespace view {
 

@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <utility>
 #include <string.h>
+#include <algorithm>
 
 BufferedReadStream::BufferedReadStream(InitFunc initf, ReadFunc rf, char* buf, size_t bufsz)
     : _cur(0), _buf(buf), _last(0), _dst(0), _bufsz(bufsz), _lastread(0), _count(0)

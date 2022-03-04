@@ -44,7 +44,7 @@ std::vector<std::string> enumerateEnvVars()
     }
     ::FreeEnvironmentStringsW(env);
 #else
-    for (const char** env = environ; *env != 0; env++)
+    for (char** env = environ; *env != 0; env++)
         ret.push_back(*env);
 #endif
 
