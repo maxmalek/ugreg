@@ -405,16 +405,18 @@ void VM::cmd_Concat(unsigned count)
     for(unsigned i = 0; i < count; ++i)
     {
         size_t elems = stack[top - i].refs.size();
+        if(!elems) // attempt to concat an empty set, the result is still an empty set
+            return;
         if(!n)
             n = elems;
-        else if(n != elems && n != 1)
+        else if(n != elems && elems != 1)
         {
-            n = 0; // FIXME: should be a runtime error
             assert(false && "number of elements in concat mismatched");
+            //n = 0; // FIXME: should be a runtime error
+            return;
+
         }
     }
-    if(!n)
-        return; // attempt to concat an empty set, the result is still an empty set
 
     StackFrame newtop;
 
@@ -440,7 +442,12 @@ void VM::cmd_Concat(unsigned count)
         newtop.addRel(mem, std::move(s), key); // FIXME: this assumes keys are always in the same order. do we want to ensure by-name matching if there is a key?
     }
     newtop.makeAbs();
-    stack.resize(stack.size() - count);
+    for(size_t i = 0; i < count; ++i)
+    {
+        StackFrame& top = stack.back();
+        top.clear(mem);
+        stack.pop_back();
+    }
     stack.push_back(std::move(newtop));
 }
 

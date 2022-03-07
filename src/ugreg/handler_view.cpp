@@ -119,7 +119,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
         exe.disasm(dis);
         for (size_t i = 1; i < dis.size(); ++i)
         {
-            writeStr(dst, dis[i].c_str());
+            dst.Write(dis[i].c_str(), dis[i].length());
             dst.Put('\n');
         }
     }
@@ -147,7 +147,6 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
         writeStr(dst, buf);
         if(out.size() > 1)
             writeStr(dst, "--- WARNING: Reduce the number of results to 1 for live data, else this will fail!\n");
-
     }
     dst.Put('\n');
 
@@ -159,7 +158,8 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
         dst.Put('>');
         dst.Put('\n');
 
-        writeStr(dst, dumpjson(e.ref, true).c_str());
+        std::string jso = dumpjson(e.ref, true);
+        dst.Write(jso.c_str(), jso.length());
         dst.Put('\n');
     }
 
