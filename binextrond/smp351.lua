@@ -104,6 +104,15 @@ function _login()
     end
 end
 
+-- check that a parameter isn't malicious
+-- don't want anyone to inject a command by terminating another command early and beginning a new sequence
+local function checkparam(x)
+    if type(x) == "string" and x:match("[%\r%\n%\x1b%\x00]") then
+        error("Parameter contains invalid sequence")
+    end
+    return x
+end
+
 function heartbeat()
     send "Q"
     need(1)
@@ -271,6 +280,7 @@ local function setmeta(k, val)
         val = val:sub(1, 127)
         warn = "field truncated"
     end
+    checkparam(val)
     setmetaID(id, val)
     return val, warn
 end
