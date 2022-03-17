@@ -35,22 +35,24 @@ void Mgr::_clear()
 
 bool Mgr::addViewDef(const char *key, VarCRef v)
 {
-    // That may take a while, don't lock just yet until we're sure this is loaded fine
-    View vv(*this);
-    if(!vv.load(v, true))
-        return false;
-
     // --- LOCK WRITE ---
     std::unique_lock lock(_mtx);
+
+    // All went well earlier, move it over
+    void* p = this->Alloc(sizeof(View));
+    View* vp = _X_PLACEMENT_NEW(p) View(*this);
 
     // Make entry & clear if already existing
     Var& dst = _store.map_unsafe()->putKey(*this, key, strlen(key));
     if (void* old = dst.asPtr())
         deleteView(static_cast<View*>(old));
 
-    // All went well earlier, move it over
-    void* p = this->Alloc(sizeof(View));
-    View* vp = _X_PLACEMENT_NEW(p) View(std::move(vv));
+    if(!vp->load(v, true))
+    {
+        deleteView(vp);
+        return false;
+    }
+
     dst.setPtr(*this, vp);
 
     return true;

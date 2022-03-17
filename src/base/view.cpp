@@ -11,12 +11,6 @@ View::View(TreeMem& mem)
 {
 }
 
-View::View(View&& o) noexcept
-    : exe(std::move(o.exe))
-    , ep(std::move(o.ep))
-{
-}
-
 View::~View()
 {
     resultTemplate.clear(*exe.mem);

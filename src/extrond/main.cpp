@@ -60,7 +60,7 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
         {
             const char* name = cfgtree.getS(it.key());
             const VarCRef mycfg(cfgtree, &it.value());
-            
+
             const VarCRef xtype = mycfg.lookup("type");
             const char* type = xtype ? xtype.asCString() : NULL;
             if(!type)
@@ -130,7 +130,7 @@ int main(int argc, char** argv)
                 if(flags & SISSocketSet::CANDISCARD)
                     c->wasDisconnected(); // socket is closed already
             }
-            
+
             // can happen that this flag is set but the socket is not in sock2cli
             if (c && (flags & SISSocketSet::CANDISCARD))
                 sock2cli.erase(s);

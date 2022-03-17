@@ -61,6 +61,7 @@ static const TestEntry tests[] =
     { "${func(1,2,$x)}", true},
     { "${func(1,2,$x|keys)}", true},
     { "${func(1,2,values($x))}", true},
+    { "${~[key 'email']", true},
 
     //{ "{/hello[$x]}", true },   // TODO: support this? (use all in $x as key)
     // ^ not sure if we should. that would introduce a data-based lookup.

@@ -103,6 +103,7 @@ int CtrlHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
         if(!(action && *action))
             action = "detail";
 
+        // TODO: move this to common shared code
         DataTree params;
         const mg_request_info *info = mg_get_request_info(conn);
 
