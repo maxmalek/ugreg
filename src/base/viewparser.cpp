@@ -269,7 +269,7 @@ bool Parser::_parseSubExpr(const char* s)
 
 bool Parser::_parseDot()
 {
-    bool ok = _eat('.') && _skipSpace();
+    bool ok = (_eat('.') || _eat('!')) && _skipSpace();
     if(ok)
         _emit(CM_DUP, 0); // FIXME: dup last proper top
     return ok;

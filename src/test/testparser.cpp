@@ -57,6 +57,10 @@ static const TestEntry tests[] =
     {"${toint('42')}", true},
     { "${~/path/to[name == ~/validnames | tolower]}", true},
     { "${~/path/to[name == f(~/validnames | tolower, '42'|toint, 'str')]}", true},
+    { "${func(1,2)}", true},
+    { "${func(1,2,$x)}", true},
+    { "${func(1,2,$x|keys)}", true},
+    { "${func(1,2,values($x))}", true},
 
     //{ "{/hello[$x]}", true },   // TODO: support this? (use all in $x as key)
     // ^ not sure if we should. that would introduce a data-based lookup.

@@ -51,18 +51,19 @@ void StackFrame::clear(TreeMem& mem)
 
 struct TransformEntry
 {
-    TransformFunc func;
+    ViewFunc func;
     const char* name;
+    size_t minParams;
 };
 
-static const TransformEntry s_transforms[] =
+static const TransformEntry s_builtinFuncs[] =
 {
-    { transformUnpack, "unpack" }, // referenced in parser
-    { transformToInt, "toint" },
-    { transformCompact, "compact" },
-    { transformAsArray, "array" },
-    { transformAsMap, "map" },
-    { transformToKeys, "keys" },
+    { transformUnpack,     "unpack",    1 }, // referenced in parser
+    { transformToInt,      "toint",     1 },
+    { transformCompact,    "compact",   1 },
+    { transformAsArray,    "array",     1 },
+    { transformAsMap,      "map",       1 },
+    { transformToKeys,     "keys",      1 }
 };
 
 VM::VM(TreeMem& mem)
@@ -137,7 +138,7 @@ bool VM::run(VarCRef v, size_t start /* = 1 */)
 }
 
 // replace all maps on top with a subkey of each
-void VM::cmd_Lookup(unsigned param)
+const char *VM::cmd_Lookup(unsigned param)
 {
     PoolStr ps = literals[param].asString(mem);
 
@@ -161,6 +162,8 @@ void VM::cmd_Lookup(unsigned param)
         }
         }
     top.refs.resize(aout - ain);
+
+    return NULL;
 }
 
 // templated adapter to get a const Var* from whatever iterator
@@ -228,7 +231,7 @@ static void filterElementsInObject(VarRefs& out, const TreeMem& mem, Iter begin,
     }
 }*/
 
-void VM::cmd_Filter(unsigned param)
+const char *VM::cmd_Filter(unsigned param)
 {
     const unsigned invert = param & 1;
     const unsigned op = (param >> 1) & 7;
@@ -254,6 +257,7 @@ void VM::cmd_Filter(unsigned param)
     }
 
     DEBUG_PRINT("... %u refs passed the filter\n", (unsigned)top.refs.size());
+    return NULL;
 }
 
 static void _TryStoreElementViaSubkeys(TreeMem& vmmem, const Var::Map* Lm, Var::Map *newmap, const TreeMem& srcmem, const Var& srcvar)
@@ -273,7 +277,7 @@ static void _TryStoreElementViaSubkeys(TreeMem& vmmem, const Var::Map* Lm, Var::
     }
 }
 
-void VM::cmd_Keysel(unsigned param)
+const char *VM::cmd_Keysel(unsigned param)
 {
     const KeySelOp op = KeySelOp(param & 3);
     const unsigned index = param >> 2u;
@@ -346,9 +350,10 @@ void VM::cmd_Keysel(unsigned param)
     newtop.makeAbs();
     top.clear(mem);
     top = std::move(newtop);
+    return NULL;
 }
 
-void VM::cmd_Select(unsigned param)
+const char *VM::cmd_Select(unsigned param)
 {
     StackFrame& top = _topframe();
     StackFrame newtop;
@@ -395,9 +400,10 @@ void VM::cmd_Select(unsigned param)
     newtop.makeAbs();
     top.clear(mem);
     top = std::move(newtop);
+    return NULL;
 }
 
-void VM::cmd_Concat(unsigned count)
+const char *VM::cmd_Concat(unsigned count)
 {
     assert(count > 1);
     size_t n = 0;
@@ -406,16 +412,11 @@ void VM::cmd_Concat(unsigned count)
     {
         size_t elems = stack[top - i].refs.size();
         if(!elems) // attempt to concat an empty set, the result is still an empty set
-            return;
+            return NULL; // not an error
         if(!n)
             n = elems;
         else if(n != elems && elems != 1)
-        {
-            assert(false && "number of elements in concat mismatched");
-            //n = 0; // FIXME: should be a runtime error
-            return;
-
-        }
+            return "number of elements in concat mismatched";
     }
 
     StackFrame newtop;
@@ -442,35 +443,34 @@ void VM::cmd_Concat(unsigned count)
         newtop.addRel(mem, std::move(s), key); // FIXME: this assumes keys are always in the same order. do we want to ensure by-name matching if there is a key?
     }
     newtop.makeAbs();
-    for(size_t i = 0; i < count; ++i)
-    {
-        StackFrame& top = stack.back();
-        top.clear(mem);
-        stack.pop_back();
-    }
+    _popframes(count);
     stack.push_back(std::move(newtop));
+    return NULL;
 }
 
-void VM::cmd_CallFn(unsigned params, unsigned lit)
+const char *VM::cmd_CallFn(unsigned params, unsigned lit)
 {
     const char* name = literals[lit].asCString(mem);
 
-    // FIXME: support proper calls with multiple params and get rid of cmd_Transform()
-    if (params == 1)
-    {
-        for (size_t i = 0; i < Countof(s_transforms); ++i)
-            if (!strcmp(name, s_transforms[i].name))
-            {
-                cmd_Transform((unsigned)i);
-                return;
-            }
-    }
+    for (size_t i = 0; i < Countof(s_builtinFuncs); ++i)
+        if (!strcmp(name, s_builtinFuncs[i].name))
+        {
+            if(params < s_builtinFuncs[i].minParams)
+                return "Not enough parameters for function call";
 
-    assert(false);
+            StackFrame newframe;
+            StackFrame *ptop = &_topframe() + 1; // one past the end
+
+            const char *err = s_builtinFuncs[i].func(mem, newframe, ptop - params, params);
+            _popframes(params);
+            stack.push_back(std::move(newframe));
+            return err;
+        }
+    return "Unknown function";
 }
 
 // keep refs in top only when a subkey has operator relation to a literal
-void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
+const char *VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
 {
     const unsigned invert = param & 1;
     const unsigned op = (param >> 1) & 7;
@@ -493,9 +493,10 @@ void VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
         filterElement(top.refs, e, cmp, &checklit, 1, keystr, invert);
         // else can't select subkey, so drop elem
     }
+    return NULL;
 }
 
-void VM::cmd_PushVar(unsigned param)
+const char *VM::cmd_PushVar(unsigned param)
 {
     // literals and vars use the same VM memory space (*this),
     // so we can just pass a StrRef along
@@ -505,19 +506,7 @@ void VM::cmd_PushVar(unsigned param)
     StackFrame newtop;
     newtop.refs = frm->refs; // copy refs only; frm will stay alive
     stack.push_back(std::move(newtop));
-}
-
-// FIXME: this should go
-void VM::cmd_Transform(unsigned param)
-{
-    assert(param < Countof(s_transforms));
-    // need to keep the old top around until the transform is done
-    StackFrame oldfrm = std::move(stack.back());
-    stack.pop_back();
-    stack.emplace_back();
-    // now there's a shiny new top, fill it
-    s_transforms[param].func(mem, stack.back(), oldfrm);
-    oldfrm.clear(mem);
+    return NULL;
 }
 
 void VM::push(VarCRef v)
@@ -538,14 +527,15 @@ bool VM::exec(size_t ip)
     for(;;)
     {
         const Cmd& c = cmds[ip++];
+        const char *err = NULL;
 
         switch(c.type)
         {
             case CM_LOOKUP:
-                cmd_Lookup(c.param);
+                err = cmd_Lookup(c.param);
                 break;
             case CM_CHECKKEY:
-                cmd_CheckKeyVsSingleLiteral(c.param, c.param2);
+                err = cmd_CheckKeyVsSingleLiteral(c.param, c.param2);
                 break;
             case CM_LITERAL:
                 push(VarCRef(mem, &literals[c.param]));
@@ -568,31 +558,37 @@ bool VM::exec(size_t ip)
 
 
             case CM_GETVAR:
-                cmd_PushVar(c.param);
+                err = cmd_PushVar(c.param);
                 break;
 
             case CM_CALLFN:
-                cmd_CallFn(c.param, c.param2);
+                err = cmd_CallFn(c.param, c.param2);
                 break;
 
             case CM_FILTER:
-                cmd_Filter(c.param);
+                err = cmd_Filter(c.param);
                 break;
 
             case CM_KEYSEL:
-                cmd_Keysel(c.param);
+                err = cmd_Keysel(c.param);
                 break;
 
             case CM_SELECT:
-                cmd_Select(c.param);
+                err = cmd_Select(c.param);
                 break;
 
             case CM_CONCAT:
-                cmd_Concat(c.param);
+                err = cmd_Concat(c.param);
                 break;
 
             case CM_DONE:
                 return true;
+        }
+
+        if(err)
+        {
+            printf("VM ERROR: %s\n", err);
+            return false;
         }
     }
 }
@@ -637,6 +633,12 @@ StackFrame VM::_popframe()
     StackFrame top = std::move(stack.back());
     stack.pop_back();
     return top;
+}
+
+void VM::_popframes(size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        _popframe().clear(mem);
 }
 
 StackFrame* VM::_evalVar(StrRef key, size_t pc)
@@ -800,11 +802,14 @@ size_t Executable::disasm(std::vector<std::string>& out) const
 
         switch(cmds[i].type)
         {
-            case CM_DUP:
             case CM_PUSHROOT:
             case CM_POP:
             case CM_DONE:
                 break; // nothing to do
+
+            case CM_DUP:
+                os << ' ' << c.param;
+                break;
 
             case CM_GETVAR:
                 os << ' ' << literals[c.param].asCString(*mem);

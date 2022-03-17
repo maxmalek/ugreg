@@ -126,6 +126,7 @@ private:
 
     StackFrame& _topframe();
     StackFrame _popframe();
+    void _popframes(size_t n);
 
     // recurse into sub-expr of that var and alloc new frame for the result
     StackFrame* _evalVar(StrRef s, size_t pc);
@@ -141,16 +142,15 @@ private:
     Var literals; // always array (constant after init)
     Commands cmds; // copied(!) from Executable
 
-    void cmd_Lookup(unsigned param);
-    void cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit);
-    void cmd_PushVar(unsigned param);
-    void cmd_Transform(unsigned param);
-    //void cmd_Compare(unsigned param);
-    void cmd_Filter(unsigned param);
-    void cmd_Keysel(unsigned param);
-    void cmd_Select(unsigned param);
-    void cmd_Concat(unsigned count);
-    void cmd_CallFn(unsigned lit, unsigned params);
+    // NULL returns is good, otherwise it's an error message
+    const char *cmd_Lookup(unsigned param);
+    const char *cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit);
+    const char *cmd_PushVar(unsigned param);
+    const char *cmd_Filter(unsigned param);
+    const char *cmd_Keysel(unsigned param);
+    const char *cmd_Select(unsigned param);
+    const char *cmd_Concat(unsigned count);
+    const char *cmd_CallFn(unsigned lit, unsigned params);
 };
 
 } // end namespace view

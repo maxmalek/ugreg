@@ -7,8 +7,9 @@
 namespace view {
 
 // unpack arrays and maps, skip anything else
-void transformUnpack(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
+const char *transformUnpack(TreeMem& mem, StackFrame& newframe, StackFrame* paramFrames, size_t nparams)
 {
+    StackFrame& oldframe = paramFrames[0];
     newframe.store = std::move(oldframe.store);
 
     const size_t n = oldframe.refs.size();
@@ -53,10 +54,13 @@ void transformUnpack(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
             break;
         }
     }
+
+    return NULL;
 }
 
-void transformToInt(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
+const char *transformToInt(TreeMem& mem, StackFrame& newframe, StackFrame* paramFrames, size_t nparams)
 {
+    StackFrame& oldframe = paramFrames[0];
     const size_t n = oldframe.refs.size();
     newframe.store.reserve(n);
 
@@ -88,10 +92,12 @@ void transformToInt(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
     }
 
     assert(newframe.refs.size() == oldframe.refs.size());
+    return NULL;
 }
 
-void transformCompact(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
+const char *transformCompact(TreeMem& mem, StackFrame& newframe, StackFrame* paramFrames, size_t nparams)
 {
+    StackFrame& oldframe = paramFrames[0];
     newframe.store = std::move(oldframe.store);
     const size_t n = oldframe.refs.size();
     newframe.refs.reserve(n);
@@ -103,10 +109,12 @@ void transformCompact(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
 
     oldframe.refs.resize(w);
     newframe.refs = std::move(oldframe.refs);
+    return NULL;
 }
 
-void transformAsArray(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
+const char *transformAsArray(TreeMem& mem, StackFrame& newframe, StackFrame* paramFrames, size_t nparams)
 {
+    StackFrame& oldframe = paramFrames[0];
     Var arr;
     const size_t N = oldframe.refs.size();
     Var* a = arr.makeArray(mem, N);
@@ -126,10 +134,12 @@ void transformAsArray(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
     }
     newframe.store.reserve(1);
     newframe.addAbs(mem, std::move(arr), 0);
+    return NULL;
 }
 
-void transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
+const char *transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame* paramFrames, size_t nparams)
 {
+    StackFrame& oldframe = paramFrames[0];
     Var mp;
     const size_t N = oldframe.refs.size();
     Var::Map* m = mp.makeMap(mem, N);
@@ -157,10 +167,12 @@ void transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
     }
     newframe.store.reserve(1);
     newframe.addAbs(mem, std::move(mp), 0);
+    return NULL;
 }
 
-void transformToKeys(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
+const char *transformToKeys(TreeMem& mem, StackFrame& newframe, StackFrame* paramFrames, size_t nparams)
 {
+    StackFrame& oldframe = paramFrames[0];
     const size_t N = oldframe.refs.size();
     Var tmp;
     for (size_t i = 0; i < N; ++i)
@@ -170,6 +182,7 @@ void transformToKeys(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe)
             newframe.addRel(mem, std::move(tmp), s);
         }
     newframe.makeAbs();
+    return NULL;
 }
 
 } // end namespace view

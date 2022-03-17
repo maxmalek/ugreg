@@ -6,18 +6,18 @@ namespace view {
 
 struct StackFrame;
 
-// A transform must fully write newframe. oldframe will be destroyed after the call,
+// A function must fully write newframe. All paramFrames will be destroyed after the call,
 // and any pointers remaining to its store would cause a segfault.
 // To keep the store, move it to newframe.
-typedef void (*TransformFunc)(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
+typedef const char * (*ViewFunc)(TreeMem& mem, StackFrame& newframe, StackFrame *paramFrames, size_t nparams);
 
 
-void transformUnpack(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
-void transformToInt(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
-void transformCompact(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
-void transformAsArray(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
-void transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
-void transformToKeys(TreeMem& mem, StackFrame& newframe, StackFrame& oldframe);
+const char *transformUnpack (TreeMem& mem, StackFrame& newframe, StackFrame *paramFrames, size_t nparams);
+const char *transformToInt  (TreeMem& mem, StackFrame& newframe, StackFrame *paramFrames, size_t nparams);
+const char *transformCompact(TreeMem& mem, StackFrame& newframe, StackFrame *paramFrames, size_t nparams);
+const char *transformAsArray(TreeMem& mem, StackFrame& newframe, StackFrame *paramFrames, size_t nparams);
+const char *transformAsMap  (TreeMem& mem, StackFrame& newframe, StackFrame *paramFrames, size_t nparams);
+const char *transformToKeys (TreeMem& mem, StackFrame& newframe, StackFrame *paramFrames, size_t nparams);
 
 
 
