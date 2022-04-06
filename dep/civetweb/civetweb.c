@@ -362,8 +362,12 @@ __cyg_profile_func_exit(void *this_fn, void *call_site)
 #endif
 #endif
 
+#ifndef CLOCK_MONOTONIC
 #define CLOCK_MONOTONIC (1)
+#endif
+#ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME (2)
+#endif
 
 #include <mach/clock.h>
 #include <mach/mach.h>
@@ -1929,6 +1933,7 @@ enum {
 	ENABLE_WEBSOCKET_PING_PONG,
 #endif
 	DECODE_URL,
+	DECODE_QUERY_STRING,
 #if defined(USE_LUA)
 	LUA_BACKGROUND_SCRIPT,
 	LUA_BACKGROUND_SCRIPT_PARAMS,
@@ -2067,6 +2072,7 @@ static const struct mg_option config_options[] = {
     {"enable_websocket_ping_pong", MG_CONFIG_TYPE_BOOLEAN, "no"},
 #endif
     {"decode_url", MG_CONFIG_TYPE_BOOLEAN, "yes"},
+    {"decode_query_string", MG_CONFIG_TYPE_BOOLEAN, "no"},
 #if defined(USE_LUA)
     {"lua_background_script", MG_CONFIG_TYPE_FILE, NULL},
     {"lua_background_script_params", MG_CONFIG_TYPE_STRING_LIST, NULL},
@@ -3201,24 +3207,6 @@ mg_get_user_connection_data(const struct mg_connection *conn)
 }
 
 
-#if defined(MG_LEGACY_INTERFACE)
-/* Deprecated: Use mg_get_server_ports instead. */
-size_t
-mg_get_ports(const struct mg_context *ctx, size_t size, int *ports, int *ssl)
-{
-	size_t i;
-	if (!ctx) {
-		return 0;
-	}
-	for (i = 0; i < size && i < ctx->num_listening_sockets; i++) {
-		ssl[i] = ctx->listening_sockets[i].is_ssl;
-		ports[i] = ntohs(USA_IN_PORT_UNSAFE(&(ctx->listening_sockets[i].lsa)));
-	}
-	return i;
-}
-#endif
-
-
 int
 mg_get_server_ports(const struct mg_context *ctx,
                     int size,
@@ -4033,6 +4021,18 @@ should_decode_url(const struct mg_connection *conn)
 	}
 
 	return (mg_strcasecmp(conn->dom_ctx->config[DECODE_URL], "yes") == 0);
+}
+
+
+static int
+should_decode_query_string(const struct mg_connection *conn)
+{
+	if (!conn || !conn->dom_ctx) {
+		return 0;
+	}
+
+	return (mg_strcasecmp(conn->dom_ctx->config[DECODE_QUERY_STRING], "yes")
+	        == 0);
 }
 
 
@@ -10600,7 +10600,7 @@ parse_http_request(char *buf, int len, struct mg_request_info *ri)
 	    NULL;
 	ri->num_headers = 0;
 
-	/* RFC says that all initial whitespaces should be ingored */
+	/* RFC says that all initial whitespaces should be ignored */
 	/* This included all leading \r and \n (isspace) */
 	/* See table: http://www.cplusplus.com/reference/cctype/ */
 	while ((len > 0) && isspace((unsigned char)*buf)) {
@@ -10637,11 +10637,6 @@ parse_http_request(char *buf, int len, struct mg_request_info *ri)
 		return -1;
 	}
 
-	/* Check for a valid http method */
-	if (!is_valid_http_method(ri->request_method)) {
-		return -1;
-	}
-
 	/* The second word is the URI */
 	ri->request_uri = buf;
 
@@ -10662,6 +10657,11 @@ parse_http_request(char *buf, int len, struct mg_request_info *ri)
 		return -1;
 	}
 	ri->http_version += 5;
+
+	/* Check for a valid http method */
+	if (!is_valid_http_method(ri->request_method)) {
+		return -1;
+	}
 
 	/* Parse all HTTP headers */
 	ri->num_headers = parse_http_headers(&buf, ri->http_headers);
@@ -14038,8 +14038,11 @@ handle_request(struct mg_connection *conn)
 	if (should_decode_url(conn)) {
 		mg_url_decode(
 		    ri->local_uri, uri_len, (char *)ri->local_uri, uri_len + 1, 0);
+	}
 
-		if (conn->request_info.query_string) {
+	/* URL decode the query-string only if explicity set in the configuration */
+	if (conn->request_info.query_string) {
+		if (should_decode_query_string(conn)) {
 			url_decode_in_place((char *)conn->request_info.query_string);
 		}
 	}
@@ -16879,11 +16882,6 @@ reset_per_request_attributes(struct mg_connection *conn)
 #if defined(USE_SERVER_STATS)
 	conn->processing_time = 0;
 #endif
-
-#if defined(MG_LEGACY_INTERFACE)
-	/* Legacy before split into local_uri and request_uri */
-	conn->request_info.uri = NULL;
-#endif
 }
 
 
@@ -17977,11 +17975,7 @@ mg_get_response(struct mg_connection *conn,
 	ret = get_response(conn, ebuf, ebuf_len, &err);
 	conn->dom_ctx->config[REQUEST_TIMEOUT] = save_timeout;
 
-#if defined(MG_LEGACY_INTERFACE)
-	/* TODO: 1) uri is deprecated;
-	 *       2) here, ri.uri is the http response code */
-	conn->request_info.uri = conn->request_info.request_uri;
-#endif
+	/* TODO: here, the URI is the http response code */
 	conn->request_info.local_uri_raw = conn->request_info.request_uri;
 	conn->request_info.local_uri = conn->request_info.local_uri_raw;
 
@@ -18028,11 +18022,7 @@ mg_download(const char *host,
 			conn->data_len = 0;
 			get_response(conn, ebuf, ebuf_len, &reqerr);
 
-#if defined(MG_LEGACY_INTERFACE)
-			/* TODO: 1) uri is deprecated;
-			 *       2) here, ri.uri is the http response code */
-			conn->request_info.uri = conn->request_info.request_uri;
-#endif
+			/* TODO: here, the URI is the http response code */
 			conn->request_info.local_uri = conn->request_info.request_uri;
 		}
 	}
@@ -18121,7 +18111,7 @@ websocket_client_thread(void *data)
 static struct mg_connection *
 mg_connect_websocket_client_impl(const struct mg_client_options *client_options,
                                  int use_ssl,
-                                 const char *error_buffer,
+                                 char *error_buffer,
                                  size_t error_buffer_size,
                                  const char *path,
                                  const char *origin,
@@ -18565,11 +18555,6 @@ process_new_connection(struct mg_connection *conn)
 			}
 			conn->request_info.local_uri =
 			    (char *)conn->request_info.local_uri_raw;
-
-#if defined(MG_LEGACY_INTERFACE)
-			/* Legacy before split into local_uri and request_uri */
-			conn->request_info.uri = conn->request_info.local_uri;
-#endif
 		}
 
 		if (ebuf[0] != '\0') {
@@ -19581,11 +19566,8 @@ legacy_init(const char **options)
 }
 
 
-#if !defined(MG_EXPERIMENTAL_INTERFACES)
-static
-#endif
-    struct mg_context *
-    mg_start2(struct mg_init_data *init, struct mg_error_data *error)
+struct mg_context *
+mg_start2(struct mg_init_data *init, struct mg_error_data *error)
 {
 	struct mg_context *ctx;
 	const char *name, *value, *default_value;
@@ -20270,7 +20252,6 @@ mg_start(const struct mg_callbacks *callbacks,
 }
 
 
-#if defined(MG_EXPERIMENTAL_INTERFACES)
 /* Add an additional domain to an already running web server. */
 int
 mg_start_domain2(struct mg_context *ctx,
@@ -20466,8 +20447,6 @@ mg_start_domain(struct mg_context *ctx, const char **options)
 {
 	return mg_start_domain2(ctx, options, NULL);
 }
-
-#endif
 
 
 /* Feature check API function */
