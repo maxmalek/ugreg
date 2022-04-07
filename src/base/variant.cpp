@@ -883,7 +883,7 @@ Var* Var::subtreeOrFetch(TreeMem& mem, const char* path, SubtreeQueryFlags qf)
 
 const Var* Var::subtreeConst(const TreeMem& mem, const char* path) const
 {
-    return const_cast<Var*>(this)->subtreeOrFetch(const_cast<TreeMem&>(mem), path, SQ_NOFETCH); // never actually uses mr.mutex
+    return const_cast<Var*>(this)->subtreeOrFetch(const_cast<TreeMem&>(mem), path, SQ_NOFETCH);
 }
 
 void _VarMap::_checkmem(const TreeMem& m) const

@@ -49,18 +49,19 @@ enum CmdType
 {
     CM_LOOKUP,     // param = index into literals table (to look up name of key). replace top with top[key].
     CM_GETVAR,     // param = index into literals table (to look up variable name). push value of variable.
-    CM_FILTER,     // param = (OpType << 1) | invert. pop A, keep elements in top only when op(top, A) is true
+    CM_FILTERKEY,  // param = (OpType << 1) | invert. pop A, keep elements in top only when op(top, A) is true
     CM_LITERAL,    // param = index intro literals table. push literal on top of the stack
     CM_DUP,        // copy stack frame contents at stack[stack.size() - param - 1] on top as new frame
     CM_CHECKKEY,   // shortcut. key can be a json pointer (if it starts with '/', or just a regular key name)
                    // param = invert | (OpType << 1) | (index << 4); index into literals table (to look up name of key)
                    // param2 = index of the literal to check against in the literals table
     CM_KEYSEL,     // param = (KeySelOp | (index << 2)); index into literals table
-    CM_SELECT,     // param = index into literals table
+    CM_SELECTLIT,     // param = index into literals table
     CM_CONCAT,     // param = how many stack frames to concat
     CM_PUSHROOT,   // no param
     CM_CALLFN,     // param = # of args passed to function, param2 = index to literals table (function name)
     CM_POP,        // pop one stack frame
+    CM_SELECTV,    // use values from stack top as keys to select new values frop top-1. pops top.
 
     // ALWAYS LAST
     CM_DONE        // terminate execution at this point.
@@ -74,11 +75,29 @@ enum KeySelOp
     KEYSEL_KEY   // if array, convert to map. lookup subvalue from each entry, use that subvalue as new key for entry
 };
 
+/* A selection operation [...] can pull its data from:
+- one or more objects on top of the stack ( $x[...] )
+- the stack top itself (as if it was an object, expr | [...] )
+So in case of a suitable selection op this is set to either object or stack.
+*/
+enum ValueSel // bitmask
+{
+    SEL_UNSPECIFIED = 0x00,
+
+    // one of both
+    SEL_SRC_OBJECT = 0x01, // fast
+    SEL_SRC_STACK  = 0x02,  // fast
+
+    // may be used with SEL_SRC_OBJECT
+    SEL_DST_REPACK = 0x04, // optional flag, slow!
+};
+
 struct Cmd
 {
     CmdType type;
     unsigned param;
     unsigned param2;
+    ValueSel sel;
 };
 
 typedef std::vector<Cmd> Commands;
@@ -142,13 +161,16 @@ private:
     Var literals; // always array (constant after init)
     Commands cmds; // copied(!) from Executable
 
+    void filterObjects(ValueSel sel, Var::CompareMode cmp, const VarEntry* values, size_t numvalues, const char* keystr, unsigned invert);
+
     // NULL returns is good, otherwise it's an error message
     const char *cmd_Lookup(unsigned param);
-    const char *cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit);
+    const char *cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit, ValueSel sel);
     const char *cmd_PushVar(unsigned param);
-    const char *cmd_Filter(unsigned param);
+    const char *cmd_FilterKey(unsigned param, ValueSel sel);
     const char *cmd_Keysel(unsigned param);
     const char *cmd_Select(unsigned param);
+    const char* cmd_Selectv(unsigned param);
     const char *cmd_Concat(unsigned count);
     const char *cmd_CallFn(unsigned lit, unsigned params);
 };

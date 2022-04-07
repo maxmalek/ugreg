@@ -166,6 +166,51 @@ const char *VM::cmd_Lookup(unsigned param)
     return NULL;
 }
 
+// FIXME: handle this in [$x] when x is a map
+static void _TryStoreElementViaSubkeys(TreeMem& vmmem, const Var::Map* Lm, Var::Map* newmap, const TreeMem& srcmem, const Var& srcvar)
+{
+    for (Var::Map::Iterator kit = Lm->begin(); kit != Lm->end(); ++kit)
+    {
+        if (const Var* sub = srcvar.subtreeConst(srcmem, kit.value().asCString(vmmem))) // this will serve as new key
+        {
+            PoolStr ps = sub->asString(srcmem);
+            if (ps.s)
+            {
+                Var& ins = newmap->putKey(vmmem, ps.s, ps.len);
+                ins.clear(vmmem); // overwrite if already present
+                ins = std::move(srcvar.clone(vmmem, srcmem));
+            }
+        }
+    }
+}
+
+#if 0
+static size_t VarEntriesToMap(VarRef dst, const VarRefs& refs)
+{
+    Var::Map *m = dst.v->makeMap(*dst.mem);
+    dst.makeMap();
+    const size_t N = refs.size();
+    for(size_t i = 0; i < N; ++i)
+    {
+        VarCRef vr = refs[i].ref;
+        /*if(vr.mem == dst.mem)
+        {
+            Var& e = m->put(*dst.mem, refs[i].key, std::move(
+        }
+        else*/
+        {
+            PoolStr ps = vr.mem->getSL(refs[i].key);
+            const Var *sub = vr.v->subtreeConst(*vr.mem, ps.s);
+            Var& e = m->putKey(*dst.mem, ps.s, ps.len);
+            e = std::move(sub->clone(*dst.mem, *vr.mem));
+        }
+    }
+}
+
+static size_t VarEntriesToMap(VarRef dst, const VarRefs& refs)
+#endif
+
+
 // templated adapter to get a const Var* from whatever iterator
 template<typename T>
 struct GetElem;
@@ -182,10 +227,18 @@ struct GetElem<Var::Map::Iterator>
     static inline const Var* get(Var::Map::Iterator it) { return &it.value(); }
     static inline const StrRef key(Var::Map::Iterator it) { return it.key(); }
 };
-
-static void filterElement(VarRefs& out, const VarEntry& e, Var::CompareMode cmp, const VarEntry* values, size_t numvalues, const char* keystr, unsigned invert)
+/*template<>
+struct GetElem<VarRefs::const_iterator>
 {
-    VarCRef sub = e.ref.lookup(keystr);
+    static inline const Var* get(const VarRefs::const_iterator& it) { return it->ref.v; }
+    static inline const StrRef key(const VarRefs::const_iterator it) { return it->key; }
+};*/
+
+// Handle e as a map.
+// Compare an element at key e.ref[keystr] to a set of values, and if one of them matches using cmp+invert, write to out.
+static void filterObjectKey(VarRefs& out, const VarEntry& e, Var::CompareMode cmp, const VarEntry* values, size_t numvalues, const char* keystr, unsigned invert)
+{
+    VarCRef sub = e.ref.lookup(keystr); // Null if not map
 
     // There are two ways to handle this.
     // We could handle things so that "key does not exist" and
@@ -215,8 +268,8 @@ static void filterElement(VarRefs& out, const VarEntry& e, Var::CompareMode cmp,
     }
 }
 
-/*template<typename Iter>
-static void filterElementsInObject(VarRefs& out, const TreeMem& mem, Iter begin, Iter end, Var::CompareMode cmp, const VarEntry *values, size_t numvalues, const char *keystr, unsigned invert)
+template<typename Iter>
+static void filterObjectsInArrayOrMapT(VarRefs& out, const TreeMem& mem, Iter begin, Iter end, Var::CompareMode cmp, const VarEntry *values, size_t numvalues, const char *keystr, unsigned invert)
 {
     typedef typename GetElem<Iter> Get;
     for(Iter it = begin; it != end; ++it)
@@ -227,11 +280,137 @@ static void filterElementsInObject(VarRefs& out, const TreeMem& mem, Iter begin,
         if (e.ref.type() != Var::TYPE_MAP)
             continue;
 
-        filterElement(out, e, cmp, values, numvalues, keystr, invert);
+        filterObjectKey(out, e, cmp, values, numvalues, keystr, invert);
     }
-}*/
+}
 
-const char *VM::cmd_Filter(unsigned param)
+// obj is an array or map that contains objects.
+// each object is checked for key keystr and the associated value must match one in values.
+static void filterObjectsInArrayOrMap(VarRefs& out, VarCRef obj, Var::CompareMode cmp, const VarEntry* values, size_t numvalues, const char* keystr, unsigned invert)
+{
+    switch(obj.type())
+    {
+        case Var::TYPE_ARRAY:
+        {
+            const Var *a = obj.v->array_unsafe();
+            const size_t N = obj.v->_size();
+            //VarRefs tmp;
+            //tmp.reserve(N);
+            filterObjectsInArrayOrMapT(out, *obj.mem, a, a + N, cmp, values, numvalues, keystr, invert);
+            //const size_t K = tmp.size();
+            //Var *pout = out.makeArray(, K);
+            //for(size_t i = 0; i < K; ++i)
+            //{
+
+            break;
+        }
+
+        case Var::TYPE_MAP:
+        {
+            const Var::Map *m = obj.v->map_unsafe();
+            filterObjectsInArrayOrMapT(out, *obj.mem, m->begin(), m->end(), cmp, values, numvalues, keystr, invert);
+            break;
+        }
+
+        default: ; // nothing to do
+    }
+}
+
+static void filterObjectsOnStack(VarRefs& out, const VarRefs& stacktop, Var::CompareMode cmp, const VarEntry* values, size_t numvalues, const char* keystr, unsigned invert)
+{
+    for (VarRefs::const_iterator it = stacktop.begin(); it != stacktop.end(); ++it)
+    {
+        const VarEntry& e = *it;
+
+        // trying to look up key in something that's not a map -> always skip
+        if (e.ref.type() != Var::TYPE_MAP)
+            continue;
+
+        filterObjectKey(out, e, cmp, values, numvalues, keystr, invert);
+    }
+}
+
+static Var convertRefsToObject(const VarRefs& refs, TreeMem& mem, Var::Type ty)
+{
+    Var out;
+    switch(ty)
+    {
+        case Var::TYPE_ARRAY:
+        {
+            const size_t N = refs.size();
+            Var *a = out.makeArray(mem, refs.size());
+            for(size_t i = 0; i < N; ++i)
+                a[i] = std::move(refs[i].ref.clone(mem));
+        }
+        break;
+
+        case Var::TYPE_MAP:
+        {
+            const size_t N = refs.size();
+            Var::Map *m = out.makeMap(mem, N);
+            for (size_t i = 0; i < N; ++i)
+            {
+                StrRef k = refs[i].key; // is a map, so this must be set
+                assert(k);
+                StrRef s = mem.translateS(*refs[i].ref.mem, k);
+                m->put(mem, s, std::move(refs[i].ref.clone(mem)));
+            }
+        }
+        break;
+
+        default:
+            assert(false);
+    }
+
+    return out;
+}
+
+void VM::filterObjects(ValueSel sel, Var::CompareMode cmp, const VarEntry* values, size_t numvalues, const char* keystr, unsigned invert)
+{
+    StackFrame& top = _topframe();
+    VarRefs oldrefs;
+    std::swap(oldrefs, top.refs); // only clear the refs; keep the store
+
+    VarRefs *pdst = &top.refs;
+    StackFrame tmp;
+    if(sel & SEL_DST_REPACK)
+        pdst = &tmp.refs;
+
+    switch (sel & (SEL_SRC_OBJECT | SEL_SRC_STACK))
+    {
+        case SEL_SRC_OBJECT:
+        {
+            const size_t N = oldrefs.size();
+            // apply to all values on top
+            for (size_t i = 0; i < N; ++i)
+            {
+                const VarEntry& e = oldrefs[i];
+                filterObjectsInArrayOrMap(*pdst, e.ref, cmp, values, numvalues, keystr, invert);
+            
+                if (sel & SEL_DST_REPACK)
+                {
+                    Var repacked = convertRefsToObject(tmp.refs, mem, e.ref.type());
+                    StrRef k = mem.translateS(*e.ref.mem, e.key);
+                    top.addRel(mem, std::move(repacked), k);
+                    tmp.refs.clear();
+                }
+            }
+            if (sel & SEL_DST_REPACK)
+                top.makeAbs();
+        }
+        break;
+
+        case SEL_SRC_STACK:
+            assert(!(sel & SEL_DST_REPACK)); // should be caught by parser
+            filterObjectsOnStack(top.refs, oldrefs, cmp, values, numvalues, keystr, invert);
+            break;
+
+        default:
+            assert(false && "forgot to set SelSource?");
+    }
+}
+
+const char *VM::cmd_FilterKey(unsigned param, ValueSel sel)
 {
     const unsigned invert = param & 1;
     const unsigned op = (param >> 1) & 7;
@@ -239,42 +418,14 @@ const char *VM::cmd_Filter(unsigned param)
     const Var::CompareMode cmp = Var::CompareMode(op);
 
     StackFrame vs = _popframe(); // check new top vs. this
-    StackFrame& top = _topframe();
-
     const char* keystr = literals[key].asCString(mem);
-    VarRefs oldrefs;
-    std::swap(oldrefs, top.refs);
-    const size_t N = oldrefs.size();
 
-    DEBUG_PRINT("Filter %u refs using %u refs\n", (unsigned)N, (unsigned)vs.refs.size());
+    DEBUG_PRINT("Filter %u refs using %u refs, key = %s\n", (unsigned)_topframe().refs.size(), (unsigned)vs.refs.size(), keystr);
 
-    // apply to all values on top
-    for (size_t i = 0; i < N; ++i)
-    {
-        const VarEntry& e = oldrefs[i];
-        filterElement(top.refs, e, cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
-        // else can't select subkey, so drop elem
-    }
+    filterObjects(sel, cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
 
-    DEBUG_PRINT("... %u refs passed the filter\n", (unsigned)top.refs.size());
+    DEBUG_PRINT("... %u refs passed the filter\n", (unsigned)_topframe().refs.size());
     return NULL;
-}
-
-static void _TryStoreElementViaSubkeys(TreeMem& vmmem, const Var::Map* Lm, Var::Map *newmap, const TreeMem& srcmem, const Var& srcvar)
-{
-    for (Var::Map::Iterator kit = Lm->begin(); kit != Lm->end(); ++kit)
-    {
-        if(const Var* sub = srcvar.subtreeConst(srcmem, kit.value().asCString(vmmem))) // this will serve as new key
-        {
-            PoolStr ps = sub->asString(srcmem);
-            if(ps.s)
-            {
-                Var& ins = newmap->putKey(vmmem, ps.s, ps.len);
-                ins.clear(vmmem); // overwrite if already present
-                ins = std::move(srcvar.clone(vmmem, srcmem));
-            }
-        }
-    }
 }
 
 const char *VM::cmd_Keysel(unsigned param)
@@ -353,6 +504,7 @@ const char *VM::cmd_Keysel(unsigned param)
     return NULL;
 }
 
+// select from hardcoded keys
 const char *VM::cmd_Select(unsigned param)
 {
     StackFrame& top = _topframe();
@@ -397,6 +549,19 @@ const char *VM::cmd_Select(unsigned param)
             break;
     }
 
+    newtop.makeAbs();
+    top.clear(mem);
+    top = std::move(newtop);
+    return NULL;
+}
+
+// select from dynamic keys
+const char* VM::cmd_Selectv(unsigned param)
+{
+    StackFrame& top = _topframe();
+    StackFrame newtop;
+
+    // FIXME
     newtop.makeAbs();
     top.clear(mem);
     top = std::move(newtop);
@@ -470,7 +635,7 @@ const char *VM::cmd_CallFn(unsigned params, unsigned lit)
 }
 
 // keep refs in top only when a subkey has operator relation to a literal
-const char *VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
+const char *VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit, ValueSel sel)
 {
     const unsigned invert = param & 1;
     const unsigned op = (param >> 1) & 7;
@@ -479,20 +644,12 @@ const char *VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit)
 
     const VarEntry checklit { VarCRef(mem, &literals[lit]), 0 };
     StackFrame& top = _topframe();
-
     const char* keystr = literals[key].asCString(mem);
-    VarRefs oldrefs;
-    std::swap(oldrefs, top.refs);
-    const size_t N = oldrefs.size();
 
-    // apply to all values on top
+    DEBUG_PRINT("Filter %u refs, key = %s, valuetype = %s\n", (unsigned)_topframe().refs.size(), keystr, literals[lit].typestr());
 
-    for(size_t i = 0; i < N; ++i)
-    {
-        VarEntry e = oldrefs[i];
-        filterElement(top.refs, e, cmp, &checklit, 1, keystr, invert);
-        // else can't select subkey, so drop elem
-    }
+    filterObjects(sel, cmp, &checklit, 1, keystr, invert);
+
     return NULL;
 }
 
@@ -535,7 +692,7 @@ bool VM::exec(size_t ip)
                 err = cmd_Lookup(c.param);
                 break;
             case CM_CHECKKEY:
-                err = cmd_CheckKeyVsSingleLiteral(c.param, c.param2);
+                err = cmd_CheckKeyVsSingleLiteral(c.param, c.param2, c.sel);
                 break;
             case CM_LITERAL:
                 push(VarCRef(mem, &literals[c.param]));
@@ -565,20 +722,24 @@ bool VM::exec(size_t ip)
                 err = cmd_CallFn(c.param, c.param2);
                 break;
 
-            case CM_FILTER:
-                err = cmd_Filter(c.param);
+            case CM_FILTERKEY:
+                err = cmd_FilterKey(c.param, c.sel);
                 break;
 
             case CM_KEYSEL:
                 err = cmd_Keysel(c.param);
                 break;
 
-            case CM_SELECT:
+            case CM_SELECTLIT:
                 err = cmd_Select(c.param);
                 break;
 
             case CM_CONCAT:
                 err = cmd_Concat(c.param);
+                break;
+
+            case CM_SELECTV:
+                err = cmd_Selectv(c.param);
                 break;
 
             case CM_DONE:
@@ -644,7 +805,6 @@ void VM::_popframes(size_t n)
 StackFrame* VM::_evalVar(StrRef key, size_t pc)
 {
     const size_t stk = stack.size();
-    push(_base);
     if (!exec(pc))
     {
         stack.resize(stk);
@@ -734,17 +894,20 @@ static const OpcodeProperty s_opcodeProperties[] =
 {
     { "LOOKUP",    NULL  },
     { "GETVAR",    sm_plus1 },
-    { "FILTER",    NULL  },
+    { "FILTERKEY", NULL  },
     { "LITERAL",   sm_plus1 },
     { "DUP",       sm_plus1 },
     { "CHECKKEY",  NULL  },
     { "KEYSEL",    NULL  },
-    { "SELECT",    NULL  },
+    { "SELECTLIT", NULL  },
     { "CONCAT",    sm_popNpush1 },
     { "PUSHROOT",  sm_plus1 },
     { "CALLFN",    sm_popNpush1 },
     { "POP",       sm_minus1 },
+    { "SELECTV",   sm_minus1 },
+    // ALWAYS LAST
     { "DONE",      sm_zero }
+
 };
 static_assert(Countof(s_opcodeProperties) == CM_DONE+1, "opcode enum vs properties table mismatch");
 
@@ -787,12 +950,15 @@ size_t Executable::disasm(std::vector<std::string>& out) const
         {
             const int prev = indent;
             f(indent, c);
-            sprintf(buf, "%+d] ", indent - prev);
+            sprintf(buf, "%+d", indent - prev);
             assert(indent >= 0);
             os << buf;
         }
         else
-            os << "  ] ";
+            os << "  ";
+        os << ";";
+        os << c.sel;
+        os << "] ";
 
         for (int j = 0; j < oldindent; ++j)
             os << ". ";
@@ -805,6 +971,7 @@ size_t Executable::disasm(std::vector<std::string>& out) const
             case CM_PUSHROOT:
             case CM_POP:
             case CM_DONE:
+            case CM_SELECTV:
                 break; // nothing to do
 
             case CM_DUP:
@@ -817,11 +984,11 @@ size_t Executable::disasm(std::vector<std::string>& out) const
 
             case CM_LITERAL:
             case CM_LOOKUP:
-            case CM_SELECT:
+            case CM_SELECTLIT:
                 os << ' ';
                 varToStringDebug(os, VarCRef(mem, &literals[c.param]));
                 break;
-            case CM_FILTER:
+            case CM_FILTERKEY:
             {
                 unsigned key = c.param >> 4;
                 os << ' ';

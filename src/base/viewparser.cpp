@@ -90,7 +90,6 @@ public:
     bool _parseExpr();
     bool _parseEval();
     bool _parseSubExpr(const char* s); // recursive call into self
-    bool _parseDot();
     bool _parseTilde();
     // --- variables and identifiers ---
     bool _parseAndEmitVarRef();
@@ -113,9 +112,9 @@ public:
     bool _parseKey();*/
     // --- selection and filtering ---
     bool _parseSelector();
-    bool _parseSelection();
-    bool _parseKeyCmp();
-    bool _parseKeySel();
+    bool _parseSelection(ValueSel sel);
+    bool _parseKeyCmp(ValueSel sel);
+    bool _parseKeySel(ValueSel sel);
     bool _parseKeySelOp(KeySelOp& op);
     bool _parseKeySelEntry(Var::Map& m, bool allowRename);
     bool _parseBinOp(Cmd& op);
@@ -139,13 +138,16 @@ public:
     bool _skipSpace(bool require = false);
     bool _eat(char c);
 
-    size_t _emit(CmdType cm, unsigned param, unsigned param2 = 0); // returns index of the emitted instruction
-    unsigned _addLiteral(Var&& lit); // return index into literals table
+    // returns index of the emitted instruction
+    size_t _emit(CmdType cm, unsigned param, unsigned param2 = 0, ValueSel sel = SEL_UNSPECIFIED);
+    size_t _emitCheckKey(Var&& key, Var&& lit, unsigned opparam, ValueSel sel);
+
+    // return index into literals table
+    unsigned _addLiteral(Var&& lit);
     unsigned _emitPushVarRef(Var&& v);
     unsigned _emitPushLiteral(Var&& v);
     unsigned _emitGetKey(Var&& v);
     unsigned _emitTransform(Var&& id);
-    void _emitCheckKey(Var&& key, Var&& lit, unsigned opparam);
 
     const char *ptr;
     const char *maxptr; // for error reporting only
@@ -264,14 +266,6 @@ bool Parser::_parseSubExpr(const char* s)
     bool ok = _parseUnquotedText();
     ptr = oldptr;
     maxptr = oldmax;
-    return ok;
-}
-
-bool Parser::_parseDot()
-{
-    bool ok = (_eat('.') || _eat('!')) && _skipSpace();
-    if(ok)
-        _emit(CM_DUP, 0); // FIXME: dup last proper top
     return ok;
 }
 
@@ -564,7 +558,7 @@ bool Parser::_parseExpr()
 // { ... }
 bool Parser::_parseEval()
 {
-    return _parseDot() || _parseTilde() || _parseAndEmitLiteral() || _parseFnCall() || _parseAndEmitVarRef() || _parseQuery();
+    return _parseTilde() || _parseAndEmitLiteral() || _parseFnCall() || _parseAndEmitVarRef() || _parseQuery();
 }
 
 bool Parser::_parseQuery()
@@ -718,10 +712,33 @@ bool Parser::_parseKey()
 */
 
 // [ ... ]
+//  | [ ... ]
+// [[ ... ]]
 bool Parser::_parseSelector()
 {
     ParserTop top(*this);
-    return _eat('[') && _parseSelection() && _eat(']') && top.accept();
+    unsigned sel = SEL_SRC_OBJECT;
+    if(_skipSpace() && _eat('|') && _skipSpace())
+        sel = SEL_SRC_STACK;
+    size_t br = size_t(_eat('[')) + _eat('[');
+    if(br == 2)
+    {
+        if(sel & SEL_SRC_STACK)
+        {
+            errors.push_back("[[ ... ]] must follow an object and can't be placed behind a pipe");
+            // ... because once unpacked, we don't know whether the content came from an array or a map
+            return false;
+        }
+        sel |= SEL_DST_REPACK;
+    }
+    if(br && _parseSelection((ValueSel)sel))
+    {
+        for(size_t i = 0; i < br; ++i)
+            if(!_eat(']'))
+                return false;
+        return top.accept();
+    }
+    return false;
 }
 
 
@@ -820,6 +837,7 @@ bool Parser::_parseRange(Var& r)
 // :5
 // 1:
 // 5
+// TODO: support variables?
 bool Parser::_parseRangeEntry(std::vector<Var::Range>& rs)
 {
     ParserTop top(*this);
@@ -870,44 +888,40 @@ bool Parser::_eat(char c)
 // anything inside [], can be:
 // *              -- unpack array or map values
 // name=literal   -- key check
-// name < 5       -- oprators for key check (spaces optional)
-// keep name newname=oldname --
-// drop name1 name2 name3
+// name < 5       -- more operators for key check (spaces optional)
+// keep name newname=oldname -- build new map from old map, optionally rename keys
+// drop name1 name2 name3  -- remove keys from existing map
 // 10:20,5    -- a range
 // only simple ops for now, no precedence, no grouping with braces
-bool Parser::_parseSelection()
+bool Parser::_parseSelection(ValueSel sel)
 {
     ParserTop top(*this);
     Var v;
     _skipSpace();
 
     bool ok = false;
-    if(_parseKeyCmp() || _parseKeySel())
+    if(_parseKeyCmp(sel) || _parseKeySel(sel)) // keysel
     {
         ok = true;
     }
-    else if(_parseRange(v))
+    else if(_parseRange(v)) // [ x:y,z ]
     {
         ok = true;
         unsigned idx = _addLiteral(std::move(v));
-        _emit(CM_SELECT, idx, 0);
+        _emit(CM_SELECTLIT, idx, 0, sel);
     }
-    /*else if(_parseEval()) // TODO: finalize exec impl
-    {
-        ok = true;
-        _emit(CM_SELECTSTACK, 0, 0);
-    }*/
-    else if (_eat('*'))
+    else if ((sel & SEL_SRC_OBJECT) && !(sel & SEL_DST_REPACK) && _eat('*')) // [*] is only for unpacking objects, |[*] would be a weird kinda no-op that doesn't make sense
     {
         Var unp(mem, "unpack");
         _emitTransform(std::move(unp));
         ok = true;
     }
-    else
+    else // [ expr ]
     {
         ParserTop top2(*this);
-        _emit(CM_DUP, 0);
-        ok = _parseExpr() && top2.accept(); // FIXME check this
+        ok = _parseExpr() && top2.accept();
+        if(ok)
+            _emit(CM_SELECTV, 0, 0, sel);
     }
 
     return ok && _skipSpace() && top.accept();
@@ -917,7 +931,7 @@ bool Parser::_parseSelection()
 // name=<literal>
 // name=$var
 // '/name with spaces'=..
-bool Parser::_parseKeyCmp()
+bool Parser::_parseKeyCmp(ValueSel sel)
 {
     ParserTop top(*this);
     Var id, lit;
@@ -929,7 +943,7 @@ bool Parser::_parseKeyCmp()
         if(_parseLiteral(lit))
         {
             // fast check against single literal
-            _emitCheckKey(std::move(id), std::move(lit), op.param);
+            _emitCheckKey(std::move(id), std::move(lit), op.param, sel);
             ok = top2.accept();
         }
         else
@@ -940,10 +954,11 @@ bool Parser::_parseKeyCmp()
             {
                 unsigned kidx = _addLiteral(std::move(id));
                 op.param |= kidx << 4;
+                op.sel = sel;
                 exec.cmds.push_back(op);
                 ok = top2.accept();
             }
-            _emit(CM_POP, 0);
+            //_emit(CM_POP, 0);
         }
 
     }
@@ -954,7 +969,7 @@ bool Parser::_parseKeyCmp()
 
 // [keep a=b c=d f g]
 // [drop a b c]
-bool Parser::_parseKeySel()
+bool Parser::_parseKeySel(ValueSel sel)
 {
     ParserTop top(*this);
 
@@ -1024,7 +1039,7 @@ bool Parser::_parseBinOp(Cmd& cm)
         const char *os = ops[i].text;
         if(size_t n = _parseVerbatim(os))
         {
-            cm.type = CM_FILTER;
+            cm.type = CM_FILTERKEY;
             cm.param = (ops[i].op << 1) | (invert ^ ops[i].invert);
             return top.accept();
         }
@@ -1032,9 +1047,9 @@ bool Parser::_parseBinOp(Cmd& cm)
     return false;
 }
 
-size_t Parser::_emit(CmdType cm, unsigned param, unsigned param2)
+size_t Parser::_emit(CmdType cm, unsigned param, unsigned param2, ValueSel sel)
 {
-    Cmd c { cm, param, param2 };
+    Cmd c { cm, param, param2, sel };
     size_t idx = exec.cmds.size();
     exec.cmds.push_back(c);
     return idx;
@@ -1078,13 +1093,13 @@ unsigned Parser::_emitTransform(Var&& id)
     return lit;
 }
 
-void Parser::_emitCheckKey(Var&& key, Var&& lit, unsigned opparam)
+size_t Parser::_emitCheckKey(Var&& key, Var&& lit, unsigned opparam, ValueSel sel)
 {
     assert(key.type() == Var::TYPE_STRING);
     assert((opparam >> 4) == 0); // if this fires we'd mix up bits with kidx below
     unsigned kidx = _addLiteral(std::move(key));
     unsigned litidx = _addLiteral(std::move(lit));
-    _emit(CM_CHECKKEY, opparam | (kidx << 4), litidx);
+    return _emit(CM_CHECKKEY, opparam | (kidx << 4), litidx, sel);
 }
 
 } // end namespace view

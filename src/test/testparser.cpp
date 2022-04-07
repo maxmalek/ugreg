@@ -28,22 +28,22 @@ static const TestEntry tests[] =
     //{ "${./hello/world[this should fail = 0]}", false },  // spaces in identifier not allowed unless it's a string literal
 
     // positive tests
-    { "${.}", true },
-    { "${./hello/world}", true },
-    { "${.[*]}", true },
-    { "${.|unpack}", true },
-    { "${./hello[*]}", true },
-    { "${.[name='test']}", true },
-    { "${.[name='test']/ids[*]}", true },
-    { "${./hello/world[name='test']}", true },
-    { "${./hello/world[name = 'test']}", true },
-    { "${./hello/world[val=5]/''}", true },
-    { "${./hello/world[pi=3.1415]}", true },
-    { "${./hello/world[nope=null]}", true },
-    { "${./hello/world[s ?> '>']}", true },
-    { "${./hello/world[s !?? 'secret']}", true },
-    { "${./hello/world[nope=null]}", true },
-    { "${./hello/world['this is fine'=0]}", true },
+    /*{ "${~}", true },
+    { "${~/hello/world}", true },
+    { "${~[*]}", true },
+    { "${~|unpack}", true },
+    { "${~/hello[*]}", true },
+    { "${~[name='test']}", true },
+    { "${~[name='test']/ids[*]}", true },
+    { "${~/hello/world[name='test']}", true },
+    { "${~/hello/world[name = 'test']}", true },
+    { "${~/hello/world[val=5]/''}", true },
+    { "${~/hello/world[pi=3.1415]}", true },
+    { "${~/hello/world[nope=null]}", true },
+    { "${~/hello/world[s ?> '>']}", true },
+    { "${~/hello/world[s !?? 'secret']}", true },
+    { "${~/hello/world[nope=null]}", true },
+    { "${~/hello/world['this is fine'=0]}", true },
     { "${$x/subkey}", true },
     { "${$x[val=42]}", true },
     { "string $with var", true },
@@ -61,9 +61,11 @@ static const TestEntry tests[] =
     { "${func(1,2,$x)}", true},
     { "${func(1,2,$x|keys)}", true},
     { "${func(1,2,values($x))}", true},
-    { "${~[key 'email']", true},
+    { "${~[key 'email']}", true},*/
 
-    //{ "{/hello[$x]}", true },   // TODO: support this? (use all in $x as key)
+    { "${~/rooms[name ?< 'J'] | [open=true]}", true },
+
+    //{ "${~/hello[$x]}", true },   // TODO: support this? (use all in $x as key)
     // ^ not sure if we should. that would introduce a data-based lookup.
 
     /*{ "{/hello/world['/sub/key'=42]}", true }, // valid but misleading (CHECKKEY only)
@@ -80,14 +82,21 @@ char json[] = R""(
 { "people": [
     { "name": "John (r1)", "room": 1 },
     { "name": "Jack (r1)", "room": 1 },
+    { "name": "Alyx (r1)", "room": 1 },
     { "name": "Pete (r2)", "room": 2 },
-    { "name": "Zuck (r3)", "room": 3 }
+    { "name": "Zuck (r3)", "room": 3 },
+    { "name": "Jill (r3)", "room": 3 },
 ],
     "rooms": [
     { "id": 1, "name": "Room #1", "open": true },
     { "id": 2, "name": "Room #2", "open": false },
     { "id": 3, "name": "Room #3", "open": true },
-]
+],
+    "test": {
+        "a": { "x": 1 },
+        "b": { "y": 2 },
+        "c": { "z": 3, "x": -1 },
+    }
 }
 )"";
 
@@ -100,11 +109,19 @@ Var testview(TreeMem& mem)
 {
 char json[] = R""(
 {
-    "lookup": {
-        "ids": "/rooms[open=true]/id",
-        "P" : "/people[room=$ids]/name"
-    },
-    "result" : "${P compact array}",
+    //"ids": "${~/rooms[open=true]/id}",
+    //"P" : "${~/people[room=$ids]/name}",
+    //"result" : "${$P|compact|array}"
+    //"result": "${~/rooms[open=true]}"
+
+
+    //"result": "${~/test[*][*] | map}"
+
+    //"result": "${~/test[x != null] }"
+
+//"result": "${~/people[room=1] | [name ?< 'J'] | array}"
+
+"result": "${~/people [[room=1]] [[name ?< 'J']]}"
 }
 )"";
 
@@ -220,9 +237,9 @@ void testexec()
 
 int main(int argc, char** argv)
 {
-    testparse();
+    //testparse();
     //testexec();
-    //testview();
+    testview();
 
 
     return 0;

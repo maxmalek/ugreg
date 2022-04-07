@@ -176,11 +176,12 @@ const char *transformToKeys(TreeMem& mem, StackFrame& newframe, StackFrame* para
     const size_t N = oldframe.refs.size();
     Var tmp;
     for (size_t i = 0; i < N; ++i)
-        if(StrRef s = oldframe.refs[i].key)
-        {
+    {
+        StrRef s = oldframe.refs[i].key;
+        if(s)
             tmp.setStrRef(mem, s);
-            newframe.addRel(mem, std::move(tmp), s);
-        }
+        newframe.addRel(mem, std::move(tmp), s);
+    }
     newframe.makeAbs();
     return NULL;
 }
