@@ -421,10 +421,10 @@ local function livestartstop(streamer, on)
         -- basic auth is a bad idea when sending over the open internet, but (1) we're in a LAN,
         -- and (2) the telnet/SIS connection is completely unencrypted and has no SSL, so sending this
         -- in plaintext doesn't even make it worse
-        Authorization = "Basic " .. base64enc(user .. ":" .. pw)
+        Authorization = "Basic " .. base64enc(user .. ":" .. pw),
         -- Browser sends application/x-www-form-urlencoded; charset=UTF-8 but this is fine too
         ["Content-Type"] = "application/json; charset=UTF-8",
-        ["Content-Length"] = tostring(#payload)
+        ["Content-Length"] = tostring(#payload),
     }
     local req = httpFormatRequest("PUT", CONFIG.host, "/api/swis/resources", h)
     s:write(req .. "\r\n" .. payload)
