@@ -76,3 +76,7 @@ inline bool mul_check_overflow(T* res, T a, T b)
     return a && tmp / a != b;
 #endif
 }
+
+size_t base64size(size_t len);
+size_t base64enc(char* dst, const unsigned char* src, size_t src_len);
+size_t base64dec(char* dst, size_t* dst_len, const unsigned char* src, size_t src_len);

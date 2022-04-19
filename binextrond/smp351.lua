@@ -8,6 +8,8 @@ end
 print("----------------")
 ]]
 
+require "extrond"
+
 local function PP(s)
     print("### " .. tostring(s) .. " ###")
 end
@@ -398,3 +400,48 @@ function diskfree()
     return ("%d B\n%d MB\n"):format(b, mb)
 end
 ]]
+
+-- unfortunately there are no SIS functions for livestreaming, so we need a bit of a kludge:
+-- The SMP device has an undocumented, internal REST API that is also callable from outside
+-- as long as we supply the proper admin login (which we know so this is easy)
+-- The web-interface itself uses this (trace outgoing REST calls in the browser if in doubt)
+local function livestartstop(streamer, on)
+    local s = opensocket(CONFIG.host, 80)
+    if not s then
+        error"Could not open socket to host"
+    end
+
+    local user = CONFIG.user or "admin"
+    local pw = assert(CONFIG.password)
+
+    -- obtained from sniffing network traffic via firefox site debugger
+    local payload = ('[{"uri":"/streamer/rtmp/%d/pub_control","value":%d}]'):format(streamer, on)
+    local h =
+    {
+        -- basic auth is a bad idea when sending over the open internet, but (1) we're in a LAN,
+        -- and (2) the telnet/SIS connection is completely unencrypted and has no SSL, so sending this
+        -- in plaintext doesn't even make it worse
+        Authorization = "Basic " .. base64enc(user .. ":" .. pw)
+        -- Browser sends application/x-www-form-urlencoded; charset=UTF-8 but this is fine too
+        ["Content-Type"] = "application/json; charset=UTF-8",
+        ["Content-Length"] = tostring(#payload)
+    }
+    local req = httpFormatRequest("PUT", CONFIG.host, "/api/swis/resources", h)
+    s:write(req .. "\r\n" .. payload)
+    local status, statustext, contentlen, headers = s:readResponse(5000)
+    if not status then
+        local remain = s:read()
+        return "conn:readResponse() failed:\n" .. statustext .. "\nData:\n" .. tostring(remain) .. "\n -- This is fine, extron ist just incompetent", 400, "text/plain; charset=utf-8"
+    end
+    return statustext, status, "text/plain; charset=utf-8"
+end
+
+function livestart()
+    livestartstop(1, 1)
+    return livestartstop(2, 1)
+end
+
+function livestop()
+    livestartstop(1, 0)
+    return livestartstop(2, 0)
+end

@@ -175,3 +175,99 @@ char* sizetostr_unsafe(char* buf, size_t bufsz, size_t num)
     while(num);
     return p+1;
 }
+
+size_t base64size(size_t len)
+{
+    return len * 8 / 6 + 4;
+}
+
+// base64 conversion from civetweb and changed int->size_t and param order
+// unfortunately it's a static func inside civetweb so had to copy it out
+size_t base64enc(char* dst, const unsigned char* src, size_t src_len)
+{
+    static const char* b64 =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t i, j;
+    unsigned a, b, c;
+
+    for (i = j = 0; i < src_len; i += 3) {
+        a = src[i];
+        b = ((i + 1) >= src_len) ? 0 : src[i + 1];
+        c = ((i + 2) >= src_len) ? 0 : src[i + 2];
+
+        dst[j++] = b64[a >> 2];
+        dst[j++] = b64[((a & 3) << 4) | (b >> 4)];
+        if (i + 1 < src_len) {
+            dst[j++] = b64[(b & 15) << 2 | (c >> 6)];
+        }
+        if (i + 2 < src_len) {
+            dst[j++] = b64[c & 63];
+        }
+    }
+    while (j % 4 != 0) {
+        dst[j++] = '=';
+    }
+    dst[j] = '\0';
+    return j;
+}
+
+static unsigned char
+b64reverse(char letter)
+{
+    if ((letter >= 'A') && (letter <= 'Z')) {
+        return letter - 'A';
+    }
+    if ((letter >= 'a') && (letter <= 'z')) {
+        return letter - 'a' + 26;
+    }
+    if ((letter >= '0') && (letter <= '9')) {
+        return letter - '0' + 52;
+    }
+    if (letter == '+') {
+        return 62;
+    }
+    if (letter == '/') {
+        return 63;
+    }
+    if (letter == '=') {
+        return 255; /* normal end */
+    }
+    return 254; /* error */
+}
+
+size_t base64dec(char* dst, size_t* dst_len, const unsigned char* src, size_t src_len)
+{
+    *dst_len = 0;
+
+    for (size_t i = 0; i < src_len; i += 4) {
+        unsigned char a = b64reverse(src[i]);
+        if (a >= 254) {
+            return i;
+        }
+
+        unsigned char b = b64reverse(((i + 1) >= src_len) ? 0 : src[i + 1]);
+        if (b >= 254) {
+            return i + 1;
+        }
+
+        unsigned char c = b64reverse(((i + 2) >= src_len) ? 0 : src[i + 2]);
+        if (c == 254) {
+            return i + 2;
+        }
+
+        unsigned char d = b64reverse(((i + 3) >= src_len) ? 0 : src[i + 3]);
+        if (d == 254) {
+            return i + 3;
+        }
+
+        dst[(*dst_len)++] = (a << 2) + (b >> 4);
+        if (c != 255) {
+            dst[(*dst_len)++] = (b << 4) + (c >> 2);
+            if (d != 255) {
+                dst[(*dst_len)++] = (c << 6) + d;
+            }
+        }
+    }
+    return 0;
+}
+

@@ -4,6 +4,7 @@
 #include "treemem.h"
 #include "util.h"
 #include "json_out.h"
+#include "civetweb/civetweb.h"
 
 enum
 {
@@ -403,6 +404,143 @@ static int api_json(lua_State *L)
     return 0;
 }
 
+static int api_opensocket(lua_State *L)
+{
+    const char *host = str(L, 1);
+    const int port = (int)lua_tointeger(L, 2);
+    bool ssl = getBool(L, 3);
+
+    char errbuf[256];
+    mg_connection *conn = mg_connect_client(host, port, ssl, errbuf, sizeof(errbuf));
+    if(!conn)
+    {
+        lua_pushnil(L);
+        lua_pushstring(L, errbuf);
+        return 2;
+    }
+
+    // make pointer-sized heavy userdata and piggyback conn
+    void *ud = lua_newuserdatauv(L, sizeof(mg_connection*), 0);
+    *(mg_connection**)ud = conn;
+
+    // assign metatable to make sure __gc is called if necessary
+    int mt = luaL_getmetatable(L, "mg_connection");
+    assert(mt == LUA_TTABLE);
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
+static mg_connection *getConn(lua_State *L, int idx = 1)
+{
+    void *ud = luaL_checkudata(L, 1, "mg_connection");
+    mg_connection *conn = *(mg_connection**)ud;
+    return conn;
+}
+
+static int api_mg_connection__gc(lua_State *L)
+{
+    mg_connection *conn = getConn(L);
+    mg_close_connection(conn);
+    return 0;
+}
+
+static int api_mg_connection_write(lua_State* L)
+{
+    mg_connection* conn = getConn(L);
+    size_t n;
+    const char *s = luaL_checklstring(L, 2, &n);
+    int sent = mg_write(conn, s, n);
+    lua_pushinteger(L, sent);
+    return 1;
+}
+
+static int api_mg_connection_readResponse(lua_State *L)
+{
+    mg_connection* conn = getConn(L);
+    lua_Integer timeout = luaL_optinteger(L, 2, -1);
+    // TODO: this should be in another thread so we don't block?
+    char err[256];
+    int resp = mg_get_response(conn, err, sizeof(err), (int)timeout);
+    if(resp < 0)
+    {
+        lua_pushnil(L);
+        lua_pushstring(L, err);
+        return 2;
+    }
+    const mg_response_info *ri = mg_get_response_info(conn);
+    lua_pushinteger(L, ri->status_code);
+    lua_pushstring(L, ri->status_text);
+    lua_pushinteger(L, ri->content_length);
+    lua_createtable(L, 0, ri->num_headers);
+    for(int i = 0; i < ri->num_headers; ++i)
+    {
+        lua_pushstring(L, ri->http_headers[i].value);
+        lua_setfield(L, -2, ri->http_headers[i].name);
+    }
+    return 4; // status, text, contentLen, {headers}
+}
+
+static int api_mg_connection_read(lua_State *L)
+{
+    mg_connection* conn = getConn(L);
+    int maxrd = (int)luaL_optinteger(L, 2, -1);
+    char buf[1024];
+    int bufrd = sizeof(buf) < maxrd ? sizeof(buf) : maxrd;
+    int rd = mg_read(conn, buf, bufrd);
+    if(rd <= 0)
+    {
+gtfo:
+        lua_pushnil(L);
+        lua_pushstring(L, rd == 0 ? "closed" : "error");
+        return 2;
+    }
+    if(rd < sizeof(buf)) // small read, just return what we have
+    {
+        lua_pushlstring(L, buf, rd);
+        return 1;
+    }
+    // large read, concat pieces to large buffer
+    maxrd -= rd;
+    luaL_Buffer b;
+    luaL_buffinit(L, &b);
+    luaL_addlstring(&b, buf, rd);
+
+    while(maxrd)
+    {
+        int tord = std::min(bufrd, maxrd);
+        rd = mg_read(conn, buf, tord);
+        if (rd <= 0)
+            goto gtfo;
+        luaL_addlstring(&b, buf, rd);
+        if(tord != rd) // drained recv socket; don't try again as that would make us wait
+            break;
+    }
+    luaL_pushresult(&b);
+    return 1;
+}
+
+static int api_base64enc(lua_State* L)
+{
+    size_t len;
+    const char *s = luaL_checklstring(L, 1, &len);
+    std::vector<char> enc(base64size(len));
+    size_t enclen = base64enc(enc.data(), (unsigned char*)s, len);
+    lua_pushlstring(L, enc.data(), enclen); // does not include the \0
+    return 1;
+}
+
+static int api_base64dec(lua_State* L)
+{
+    size_t len;
+    const char* s = luaL_checklstring(L, 1, &len);
+    std::vector<char> dec(len);
+    size_t declen = 0;
+    if(len && !base64dec(dec.data(), &declen, (unsigned char*)s, len))
+        luaL_error(L, "base64dec() failed");
+    lua_pushlstring(L, dec.data(), declen);
+    return 1;
+}
+
 static const luaL_Reg reg[] =
 {
     { "expect",    api_expect },
@@ -415,7 +553,19 @@ static const luaL_Reg reg[] =
     { "peek",      api_peek },
     { "timeout",   api_timeout },
     { "json",      api_json },
+    { "opensocket",api_opensocket },
+    { "base64enc", api_base64enc },
+    { "base64dec", api_base64dec },
     { NULL,        NULL }
+};
+
+static const luaL_Reg mg_conn_reg[] =
+{
+    { "__gc",         api_mg_connection__gc },
+    { "readResponse", api_mg_connection_readResponse },
+    { "read",         api_mg_connection_read },
+    { "write",        api_mg_connection_write },
+    { NULL,           NULL }
 };
 
 void sisluafunc_register(lua_State *L, SISClient& cl)
@@ -424,6 +574,10 @@ void sisluafunc_register(lua_State *L, SISClient& cl)
     luaL_setfuncs(L, reg, 0);
     lua_pop(L, 1);
     setclient(L, &cl);
+
+    luaL_newmetatable(L, "mg_connection");
+    luaL_setfuncs(L, mg_conn_reg, 0);
+    lua_setfield(L, -1, "__index"); // set and pop self
 }
 
 
