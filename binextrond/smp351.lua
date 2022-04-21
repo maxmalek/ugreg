@@ -8,7 +8,7 @@ end
 print("----------------")
 ]]
 
-require "extrond"
+local extrond = require "extrond"
 
 local function PP(s)
     print("### " .. tostring(s) .. " ###")
@@ -401,6 +401,15 @@ function diskfree()
 end
 ]]
 
+local function _authHdr()
+    -- basic auth is a bad idea when sending over the open internet, but (1) we're in a LAN,
+    -- and (2) the telnet/SIS connection is completely unencrypted and has no SSL, so sending this
+    -- in plaintext doesn't even make it worse
+    local user = CONFIG.user or "admin"
+    local pw = assert(CONFIG.password)
+    return "Basic " .. base64enc(user .. ":" .. pw)
+end
+
 -- unfortunately there are no SIS functions for livestreaming, so we need a bit of a kludge:
 -- The SMP device has an undocumented, internal REST API that is also callable from outside
 -- as long as we supply the proper admin login (which we know so this is easy)
@@ -408,40 +417,88 @@ end
 local function livestartstop(streamer, on)
     local s = opensocket(CONFIG.host, 80)
     if not s then
-        error"Could not open socket to host"
+        error "Could not open socket to host"
     end
-
-    local user = CONFIG.user or "admin"
-    local pw = assert(CONFIG.password)
 
     -- obtained from sniffing network traffic via firefox site debugger
     local payload = ('[{"uri":"/streamer/rtmp/%d/pub_control","value":%d}]'):format(streamer, on)
     local h =
     {
-        -- basic auth is a bad idea when sending over the open internet, but (1) we're in a LAN,
-        -- and (2) the telnet/SIS connection is completely unencrypted and has no SSL, so sending this
-        -- in plaintext doesn't even make it worse
-        Authorization = "Basic " .. base64enc(user .. ":" .. pw),
+        Authorization = _authHdr(),
         -- Browser sends application/x-www-form-urlencoded; charset=UTF-8 but this is fine too
         ["Content-Type"] = "application/json; charset=UTF-8",
         ["Content-Length"] = tostring(#payload),
     }
-    local req = httpFormatRequest("PUT", CONFIG.host, "/api/swis/resources", h)
-    s:write(req .. "\r\n" .. payload)
-    local status, statustext, contentlen, headers = s:readResponse(5000)
-    if not status then
-        local remain = s:read()
-        return "conn:readResponse() failed:\n" .. statustext .. "\nData:\n" .. tostring(remain) .. "\n -- This is fine, extron ist just incompetent", 400, "text/plain; charset=utf-8"
+    local req = extrond.httpFormatRequest("PUT", CONFIG.host, "/api/swis/resources", h)
+    s:write(req .. payload)
+    local status, statustext, contentlen, headers = s:readResponse(5000) -- gets invalid response header and reports failure
+    local data = s:read()
+    if loadjson(data) then -- ... but if it parses as some json, we're good
+        return true -- ok
     end
-    return statustext, status, "text/plain; charset=utf-8"
+
+    error("conn:readResponse() failed:\n" .. statustext .. "\nData:\n" .. tostring(remain))
 end
 
 function livestart()
     livestartstop(1, 1)
-    return livestartstop(2, 1)
+    livestartstop(2, 1)
+    return "livestream started"
 end
 
 function livestop()
     livestartstop(1, 0)
-    return livestartstop(2, 0)
+    livestartstop(2, 0)
+    return "livestream stopped"
 end
+
+local intToBool = setmetatable(
+    { [0] = false, [1] = true },
+    { __index = error }
+)
+
+function _isstreaming()
+    local s = opensocket(CONFIG.host, 80)
+    if not s then
+        error"Could not open socket to host"
+    end
+    local h =
+    {
+        Authorization = _authHdr(),
+    }
+    local req = extrond.httpFormatRequest("GET", CONFIG.host, "/api/swis/resources?uri=/streamer/rtmp/1/pub_control&uri=/streamer/rtmp/2/pub_control", h)
+    s:write(req)
+    local status, statustext, contentlen, headers = s:readResponse(5000) -- gets invalid response header and reports failure
+    -- try to parse it anyway
+    local data = s:read()
+    local j
+    if data then -- payload should be json, if it parses ok we're good
+        j = loadjson(data)
+        print(j)
+    end
+    if j then
+        local on = false
+        local t = {}
+        for _, e in pairs(j) do
+            local id = assert(e.meta.uri:match"^/streamer/rtmp/(%d+)/pub_control")
+            local v = assert(e.result)
+            id = math.tointeger(id)
+            v = intToBool[v]
+            t[id] = v
+            on = on or v
+        end
+        return on, t -- simple + detailed per-stream
+    end
+    
+    return nil, "conn:readResponse() failed:\n" .. statustext .. "\nData:\n" .. tostring(data)
+end
+
+function livestatus()
+    local on, x = _isstreaming()
+    if on == nil and x then
+        return x, 502, "text/plain; charset=utf-8"
+    end
+    return tostring((on and 1) or 0), "text/plain; charset=utf-8"
+end
+
+-- TODO: detect ingesting status

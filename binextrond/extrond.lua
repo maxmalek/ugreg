@@ -1,6 +1,7 @@
 -- Base library to provide shared functions to the device modules
+local M = {}
 
-function httpFormatRequest(method, host, resource, extra)
+function M.httpFormatRequest(method, host, resource, extra)
     local t =
     {
         method .. " " .. resource .. " HTTP/1.1",
@@ -14,7 +15,8 @@ function httpFormatRequest(method, host, resource, extra)
             t[i] = ("%s: %s"):format(k, v)
         end
     end
-    t[i+1] = "" -- terminator
+    t[i+1] = "\r\n" -- terminator
     return table.concat(t, "\r\n")
 end
 
+return M

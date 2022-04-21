@@ -4,7 +4,9 @@
 #include "treemem.h"
 #include "util.h"
 #include "json_out.h"
+#include "json_in.h"
 #include "civetweb/civetweb.h"
+#include <rapidjson/reader.h>
 
 enum
 {
@@ -404,6 +406,136 @@ static int api_json(lua_State *L)
     return 0;
 }
 
+
+struct LuaJsonLoader
+{
+    enum
+    {
+        ParseFlags = 0
+            | rapidjson::kParseValidateEncodingFlag
+            | rapidjson::kParseIterativeFlag
+            | rapidjson::kParseFullPrecisionFlag
+            | rapidjson::kParseCommentsFlag
+            | rapidjson::kParseNanAndInfFlag
+            | rapidjson::kParseEscapedApostropheFlag
+            | rapidjson::kParseTrailingCommasFlag
+    };
+
+    struct Frame
+    {
+        Frame(bool a) : isobj(a), idx(0) {}
+        const bool isobj;
+        lua_Integer idx;
+    };
+
+    bool _doadd()
+    {
+        if(!frames.empty())
+        {
+            Frame& f = frames.back();
+            if(f.isobj)
+            {
+                assert(lua_type(L, -3) == LUA_TTABLE);
+                assert(lua_type(L, -2) == LUA_TSTRING); // key must be string
+                lua_rawset(L, -3); // key and value are in slots -2 and -1, respectively
+            }
+            else
+            {
+                assert(lua_type(L, -2) == LUA_TTABLE);
+                lua_rawseti(L, -2, ++f.idx);
+            }
+            assert(lua_type(L, -1) == LUA_TTABLE); // current obj/array must be on top now
+        }
+        // else it's a single value, just leave that on the stack
+        return true;
+    }
+
+    bool _pushframe(bool isobj)
+    {
+        frames.emplace_back(isobj);
+        lua_newtable(L);
+        return true;
+    }
+
+    bool _popframe(bool isobj)
+    {
+        assert(lua_type(L, -1) == LUA_TTABLE);
+        assert(frames.back().isobj == isobj);
+        frames.pop_back();
+        return _doadd();
+    }
+
+    // ---- begin rapidjson stuff -----
+
+    bool Null() { lua_pushnil(L); return _doadd(); }
+    bool Bool(bool b) { lua_pushboolean(L, b); return _doadd(); }
+    bool Int(int i) { lua_pushinteger(L, i); return _doadd(); }
+    bool Uint(unsigned u) { lua_pushinteger(L, u); return _doadd(); }
+    bool Int64(int64_t i) { lua_pushinteger(L, i); return _doadd(); }
+    bool Uint64(uint64_t u) { lua_pushinteger(L, u); return _doadd(); }  // FIXME: overflow?
+    bool Double(double d) { lua_pushnumber(L, d); return _doadd(); }
+    bool RawNumber(const char* str, size_t length, bool copy)
+    { // only for when kParseNumbersAsStringsFlag is set (which we don't)
+        assert(false); // not called
+        return false;
+    }
+    bool String(const char* str, size_t length, bool copy)
+    {
+        lua_pushlstring(L, str, length);
+        return _doadd();
+    }
+    bool StartObject()
+    {
+        return _pushframe(true);
+    }
+    bool Key(const char* str, size_t length, bool copy)
+    {
+        lua_pushlstring(L, str, length); // value comes next
+        return true;
+    }
+    bool EndObject(size_t memberCount)
+    {
+        return _popframe(true);
+    }
+    bool StartArray()
+    {
+        return _pushframe(false);
+    }
+    bool EndArray(size_t elementCount)
+    {
+        return _popframe(false);
+    }
+
+    // ---- end rapidjson stuff -----
+
+    LuaJsonLoader(lua_State *L) : L(L) {}
+
+    template<typename STREAM>
+    bool parse(STREAM& stream)
+    {
+        rapidjson::Reader rd;
+        return rd.Parse<ParseFlags>(stream, *this);
+    }
+
+private:
+    lua_State* const L;
+    std::vector<Frame> frames;
+};
+
+static int api_loadjson(lua_State *L)
+{
+    LuaJsonLoader ld(L);
+    const char *s = str(L);
+    rapidjson::StringStream ss(s);
+    if(!ld.parse(ss))
+    {
+        lua_pushnil(L);
+        lua_pushstring(L, "parse error");
+        return 2;
+    }
+    return 1;
+}
+
 static int api_opensocket(lua_State *L)
 {
     const char *host = str(L, 1);
@@ -553,6 +685,7 @@ static const luaL_Reg reg[] =
     { "peek",      api_peek },
     { "timeout",   api_timeout },
     { "json",      api_json },
+    { "loadjson",  api_loadjson },
     { "opensocket",api_opensocket },
     { "base64enc", api_base64enc },
     { "base64dec", api_base64dec },

@@ -85,10 +85,10 @@ struct JsonLoader
     bool Int64(int64_t i) { return _emit((s64)i); }
     bool Uint64(uint64_t u) { return _emit((u64)u); }
     bool Double(double d) { return _emit(d); }
-    bool RawNumber(const char* str, size_t length, bool copy)
+    bool RawNumber(const char* str, size_t length, bool copy) // only when kParseNumbersAsStringsFlag is set, which is not.
     {
-        // Note: string is *not* \0-terminated!
-        return true; // FIXME: ???
+        assert(false); // not reached
+        return false; // FIXME: ???
     }
     bool String(const char* str, size_t length, bool copy)
     {
