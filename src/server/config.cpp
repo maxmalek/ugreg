@@ -41,6 +41,10 @@ bool ServerConfig::apply(VarCRef root)
                     listen.push_back(lis);
                 }
             }
+    
+    if(VarCRef xcert = root.lookup("cert"))
+        if(const char *pcert = xcert.asCString())
+            cert = pcert;
 
     VarCRef xdebugapi = root.lookup("expose_debug_apis");
     expose_debug_apis = xdebugapi && xdebugapi.asBool();

@@ -17,6 +17,7 @@ struct ServerConfig
 
    // --- begin fields ---
     std::vector<Listen> listen;
+    std::string cert;
     u32 listen_threads;
     bool expose_debug_apis;
     struct
