@@ -562,18 +562,33 @@ static int api_opensocket(lua_State *L)
     return 1;
 }
 
-static mg_connection *getConn(lua_State *L, int idx = 1)
+static mg_connection *& getConnRef(lua_State *L, int idx = 1)
 {
     void *ud = luaL_checkudata(L, 1, "mg_connection");
-    mg_connection *conn = *(mg_connection**)ud;
+    return *(mg_connection**)ud;
+}
+
+static mg_connection* getConn(lua_State* L, int idx = 1)
+{
+    mg_connection *conn = getConnRef(L, idx);
+    if(!conn)
+        luaL_error(L, "Connection is invalid or was already closed");
     return conn;
+}
+
+static int api_mg_connection_close(lua_State* L)
+{
+    if(mg_connection *& connref = getConnRef(L))
+    {
+        mg_close_connection(connref);
+        connref = NULL;
+    }
+    return 0;
 }
 
 static int api_mg_connection__gc(lua_State *L)
 {
-    mg_connection *conn = getConn(L);
-    mg_close_connection(conn);
-    return 0;
+    return api_mg_connection_close(L);
 }
 
 static int api_mg_connection_write(lua_State* L)
@@ -612,6 +627,7 @@ static int api_mg_connection_readResponse(lua_State *L)
     return 4; // status, text, contentLen, {headers}
 }
 
+// civetweb sets each socket as non-blocking, so a return of -1 is normal
 static int api_mg_connection_read(lua_State *L)
 {
     mg_connection* conn = getConn(L);
@@ -698,6 +714,7 @@ static const luaL_Reg mg_conn_reg[] =
     { "readResponse", api_mg_connection_readResponse },
     { "read",         api_mg_connection_read },
     { "write",        api_mg_connection_write },
+    { "close",        api_mg_connection_close },
     { NULL,           NULL }
 };
 
