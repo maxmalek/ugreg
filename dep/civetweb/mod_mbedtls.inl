@@ -1,11 +1,12 @@
 #if defined(USE_MBEDTLS) // USE_MBEDTLS used with NO_SSL
 
-#include "mbedtls/certs.h"
+//#include "mbedtls/certs.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/debug.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/error.h"
-#include "mbedtls/net.h"
+//#include "mbedtls/net.h"
+#include "mbedtls/net_sockets.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/ssl.h"
@@ -90,7 +91,7 @@ mbed_sslctx_init(SSL_CTX *ctx, const char *crt)
 		return -1;
 	}
 
-	rc = mbedtls_pk_parse_keyfile(&ctx->pkey, crt, NULL);
+	rc = mbedtls_pk_parse_keyfile(&ctx->pkey, crt, NULL, mbedtls_ctr_drbg_random, &ctx->ctr);
 	if (rc != 0) {
 		DEBUG_TRACE("TLS parse key file failed (%i)", rc);
 		return -1;
