@@ -21,4 +21,4 @@ if(WIN32)
 endif()
 
 add_executable(extrond ${src})
-target_link_libraries(extrond server lua ${libs})
+target_link_libraries(extrond server ${libs})

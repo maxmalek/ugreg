@@ -50,6 +50,9 @@ set(src
     co.h
     mt.cpp
     mt.h
+    luafuncs.cpp
+    luafuncs.h
 )
 
 add_library(base ${src})
+target_link_libraries(base lua)

@@ -4,7 +4,7 @@
 #include <utility>
 #include "minicoro.h"
 #include "util.h"
-#include <lua/lua.hpp>
+#include "luafuncs.h"
 
 static const char* const s_StateNames[] =
 {
