@@ -8,7 +8,8 @@ if(USE_MBEDTLS)
     find_package(MbedTLS REQUIRED)
     include_directories(${MBEDTLS_INCLUDE_DIRS})
     add_definitions(-DUSE_MBEDTLS)
-    set(extra_libs ${MBEDTLS_LIBRARIES})
+    set(extra_libs ${extra_libs} ${MBEDTLS_LIBRARIES})
+    message(STATUS "Using mbedTLS libs: ${MBEDTLS_LIBRARIES}")
 else()
     add_definitions(-DNO_SSL)   # listen on localhost and use a reverse proxy if ssl is needed
 endif()
@@ -52,7 +53,7 @@ set(src
 add_library(alldeps ${src})
 
 if(UNIX)
-    set(extra_libs pthread dl)
+    set(extra_libs ${extra_libs} pthread dl)
 endif()
 
 target_link_libraries(alldeps ${extra_libs})

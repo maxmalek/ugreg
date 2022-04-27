@@ -1,5 +1,6 @@
 #include "sisclient.h"
 #include <assert.h>
+#include <string.h>
 #include <mutex>
 #include <utility>
 #include "minicoro.h"
@@ -67,6 +68,7 @@ bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
         this->LA = LA;
         this->L = L;
         luaL_openlibs(L);
+        luafunc_register(L);
         sisluafunc_register(L, *this);
 
         luaImportVar(L, mycfg);

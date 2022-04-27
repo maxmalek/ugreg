@@ -7,6 +7,9 @@
 
 #include <limits.h>
 #include <assert.h>
+#include <string.h>
+#include <stdio.h>
+#include <string>
 
 #ifdef _WIN32
 /*#  ifndef _WIN32_WINNT
@@ -36,13 +39,12 @@
 #  include <netinet/in.h>
 #  include <netdb.h>
 #  include <sys/select.h>
+#  include <poll.h>
 #  define SOCKET_ERROR (-1)
 #  define INVALID_SOCKET (SOCKET)(~0)
 typedef intptr_t SOCKET;
 #endif
 
-#include <stdio.h>
-#include <string>
 
 #define SOCKETVALID(s) ((s) != INVALID_SOCKET)
 
@@ -194,7 +196,7 @@ void sissocket_close(SISSocket s)
 #ifdef _WIN32
     ::closesocket((SOCKET)s);
 #else
-    ::close(_s);
+    ::close(s);
 #endif
 }
 
@@ -203,8 +205,10 @@ static SocketIOResult getIOError()
     int err = _GetError();
     switch(err)
     {
-        case EAGAIN: 
+        case EAGAIN:
+#if EAGAIN != EWOULDBLOCK
         case EWOULDBLOCK:
+#endif
 #ifdef WSAEWOULDBLOCK
         case WSAEWOULDBLOCK:
 #endif
@@ -320,7 +324,7 @@ SISSocketSet::SocketAndStatus* SISSocketSet::update(size_t* n, int timeoutMS)
         {
             p.events &= ~POLLOUT;
             int soerr;
-            int soerrsize = sizeof(soerr);
+            socklen_t soerrsize = sizeof(soerr);
             if(::getsockopt(p.fd, SOL_SOCKET, SO_ERROR, (char*)&soerr, &soerrsize))
             {
                 int err = _GetError();

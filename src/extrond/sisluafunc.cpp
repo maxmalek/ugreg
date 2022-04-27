@@ -1,3 +1,4 @@
+#include <string.h>
 #include <sstream>
 #include <lua/lua.hpp>
 #include "sisclient.h"

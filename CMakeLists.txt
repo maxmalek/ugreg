@@ -8,6 +8,10 @@ option(RAPIDJSON_SSE42 "Use SSE 4.2 for parsing" TRUE)
 option(RAPIDJSON_SSE2 "Use SSE 2 for parsing" TRUE)
 option(RAPIDJSON_NEON "Use NEON (ARM) for parsing" TRUE)
 
+if(UNIX)
+    add_definitions(-fPIC)
+endif()
+
 if(RAPIDJSON_SSE42)
   add_definitions(-DRAPIDJSON_SSE42)
 endif()

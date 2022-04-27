@@ -1,5 +1,6 @@
 #pragma once
 
+#include "types.h"
 #include <vector>
 
 typedef uintptr_t SISSocket;

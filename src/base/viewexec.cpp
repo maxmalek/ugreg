@@ -271,7 +271,7 @@ static void filterObjectKey(VarRefs& out, const VarEntry& e, Var::CompareMode cm
 template<typename Iter>
 static void filterObjectsInArrayOrMapT(VarRefs& out, const TreeMem& mem, Iter begin, Iter end, Var::CompareMode cmp, const VarEntry *values, size_t numvalues, const char *keystr, unsigned invert)
 {
-    typedef typename GetElem<Iter> Get;
+    typedef GetElem<Iter> Get;
     for(Iter it = begin; it != end; ++it)
     {
         const VarEntry e { VarCRef(mem, Get::get(it)), Get::key(it) };
