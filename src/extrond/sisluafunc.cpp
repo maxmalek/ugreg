@@ -11,6 +11,7 @@
 enum
 {
     BufferSize = 256,  // bytes
+    HTTP_PORT = 80
 };
 
 static void setclient(lua_State *L, SISClient *cl)
@@ -369,7 +370,7 @@ static bool emitJson(Wr& w, lua_State *L, int idx, bool strict)
                 {
                     size_t len;
                     const char *k = lua_tolstring(L, -2, &len);
-                    if(!w.String(k, len, true))
+                    if(!w.String(k, (rapidjson::SizeType)len, true))
                         return false;
                     if(!emitJson(w, L, -1, strict))
                     {
@@ -536,10 +537,155 @@ static int api_loadjson(lua_State *L)
     return 1;
 }
 
-static int api_opensocket(lua_State *L)
+template<typename T>
+static int pushObj(lua_State *L, T *obj, const char *mtname)
+{
+    void* ud = lua_newuserdatauv(L, sizeof(T*), 0);
+    *(T**)ud = obj;
+
+    // assign metatable to make sure __gc is called if necessary
+    int mt = luaL_getmetatable(L, mtname);
+    assert(mt == LUA_TTABLE);
+    lua_setmetatable(L, -2); // pops mt
+
+    return 1; // the userdata still on the stack
+}
+
+template<typename T>
+static T*& getObjPtrRef(lua_State* L, const char* mtname, int idx = 1)
+{
+    void* ud = luaL_checkudata(L, 1, mtname);
+    return *(T**)ud;
+}
+
+template<typename T>
+static T* getObj(lua_State* L, const char *mtname, int idx = 1)
+{
+    T *obj = getObjPtrRef<T>(L, mtname, idx);
+    if (!obj)
+        luaL_error(L, "object is invalid or was already deleted");
+    return obj;
+}
+
+static int pushConn(lua_State *L, mg_connection *conn)
+{
+    return pushObj(L, conn, "mg_connection");
+}
+static mg_connection *getConn(lua_State* L, int idx = 1)
+{
+    return getObj<mg_connection>(L, "mg_connection", idx);
+}
+static mg_connection *& getConnRef(lua_State* L, int idx = 1)
+{
+    return getObjPtrRef<mg_connection>(L, "mg_connection", idx);
+}
+
+// Workaround to connect to a HTTP resource in background
+// so we don't have to wait until the socket is connected or incoming headers are parsed
+struct BackgroundHttpRequest
+{
+    BackgroundHttpRequest(const char *req, size_t reqsize, const char *host, unsigned port, bool ssl, int timeout)
+        : request(req, req + reqsize), host(host), port(port), timeout(timeout), ssl(ssl)
+        , conn(NULL), responseFut(responseProm.get_future())
+    {
+        std::thread(_Run_Th, this).detach();
+    }
+
+    ~BackgroundHttpRequest()
+    {
+        responseFut.wait();
+        mg_close_connection(conn); // handles NULL gracefully
+    }
+
+    int pushResult(lua_State *L)
+    {
+        if (responseFut.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+            return lua_yieldk(L, 0, (lua_KContext)this, pushResultK);
+
+        int resp = responseFut.get();
+        if (!conn)
+        {
+            lua_pushnil(L);
+            lua_pushstring(L, errbuf);
+            return 2;
+        }
+
+        const mg_response_info* ri = mg_get_response_info(conn);
+        pushConn(L, conn);
+        lua_pushinteger(L, ri->status_code);
+        lua_pushstring(L, ri->status_text);
+        lua_pushinteger(L, ri->content_length);
+        lua_createtable(L, 0, ri->num_headers);
+        for (int i = 0; i < ri->num_headers; ++i)
+        {
+            lua_pushstring(L, ri->http_headers[i].value);
+            lua_setfield(L, -2, ri->http_headers[i].name);
+        }
+        strcpy(errbuf, "already retrieved result");
+        conn = NULL;
+        return 5; // conn, status, text, contentLen, {headers}
+    }
+
+private:
+
+    void _run()
+    {
+        int resp = -1;
+        if(mg_connection *c = mg_connect_client(host.c_str(), port, ssl, errbuf, sizeof(errbuf)))
+        {
+            conn = c;
+            mg_write(c, request.data(), request.size());
+            resp = mg_get_response(c, errbuf, sizeof(errbuf), (int)timeout);
+        }
+        responseProm.set_value(resp);
+    }
+
+    static void _Run_Th(BackgroundHttpRequest *self)
+    {
+        self->_run();
+    }
+    static int pushResultK(lua_State* L, int status, lua_KContext ctx)
+    {
+        BackgroundHttpRequest *self = (BackgroundHttpRequest*)ctx;
+        return self->pushResult(L);
+    }
+
+    const std::vector<char> request;
+    const std::string host;
+    const unsigned port;
+    const int timeout;
+    const bool ssl;
+    mg_connection *conn;
+    std::promise<int> responseProm;
+    std::shared_future<int> responseFut;
+    char errbuf[256];
+};
+
+static int api_httprequest(lua_State *L)
+{
+    PoolStr req = strL(L, 1);
+    const char *host = str(L, 2);
+    const int port = (int)luaL_optinteger(L, 3, HTTP_PORT);
+    bool ssl = getBool(L, 4);
+    int timeout = (int)luaL_optinteger(L, 5, -1);
+
+    BackgroundHttpRequest *bg = new BackgroundHttpRequest(req.s, req.len, host, port, ssl, timeout);
+    pushObj(L, bg, "BackgroundHttpRequest"); // let the Lua GC take care of it from now on
+    return bg->pushResult(L);
+}
+
+static int api_BackgroundHttpRequest__gc(lua_State *L)
+{
+    BackgroundHttpRequest *& bg = getObjPtrRef<BackgroundHttpRequest>(L, "BackgroundHttpRequest");
+    delete bg;
+    bg = NULL;
+    return 0;
+}
+
+static int api_httpopen(lua_State *L)
 {
     const char *host = str(L, 1);
-    const int port = (int)lua_tointeger(L, 2);
+    const int port = (int)luaL_optinteger(L, 2, HTTP_PORT);
     bool ssl = getBool(L, 3);
 
     char errbuf[256];
@@ -551,29 +697,7 @@ static int api_opensocket(lua_State *L)
         return 2;
     }
 
-    // make pointer-sized heavy userdata and piggyback conn
-    void *ud = lua_newuserdatauv(L, sizeof(mg_connection*), 0);
-    *(mg_connection**)ud = conn;
-
-    // assign metatable to make sure __gc is called if necessary
-    int mt = luaL_getmetatable(L, "mg_connection");
-    assert(mt == LUA_TTABLE);
-    lua_setmetatable(L, -2);
-    return 1;
-}
-
-static mg_connection *& getConnRef(lua_State *L, int idx = 1)
-{
-    void *ud = luaL_checkudata(L, 1, "mg_connection");
-    return *(mg_connection**)ud;
-}
-
-static mg_connection* getConn(lua_State* L, int idx = 1)
-{
-    mg_connection *conn = getConnRef(L, idx);
-    if(!conn)
-        luaL_error(L, "Connection is invalid or was already closed");
-    return conn;
+    return pushConn(L, conn);
 }
 
 static int api_mg_connection_close(lua_State* L)
@@ -632,14 +756,19 @@ static int api_mg_connection_read(lua_State *L)
 {
     mg_connection* conn = getConn(L);
     int maxrd = (int)luaL_optinteger(L, 2, -1);
+
     char buf[1024];
     int bufrd = sizeof(buf) < maxrd ? sizeof(buf) : maxrd;
     int rd = mg_read(conn, buf, bufrd);
-    if(rd <= 0)
+    if(!rd)
     {
-gtfo:
+        lua_pushliteral(L, ""); // no data
+        return 1;
+    }
+    if(rd < 0)
+    {
         lua_pushnil(L);
-        lua_pushstring(L, rd == 0 ? "closed" : "error");
+        lua_pushliteral(L, "error");
         return 2;
     }
     if(rd < sizeof(buf)) // small read, just return what we have
@@ -657,10 +786,11 @@ gtfo:
     {
         int tord = std::min(bufrd, maxrd);
         rd = mg_read(conn, buf, tord);
-        if (rd <= 0)
-            goto gtfo;
+        if (rd < 0)
+            break; // b known to contain data; handle partial buffer
         luaL_addlstring(&b, buf, rd);
-        if(tord != rd) // drained recv socket; don't try again as that would make us wait
+        maxrd -= rd;
+        if(tord != rd) // drained everything that was available for now
             break;
     }
     luaL_pushresult(&b);
@@ -702,9 +832,10 @@ static const luaL_Reg reg[] =
     { "timeout",   api_timeout },
     { "json",      api_json },
     { "loadjson",  api_loadjson },
-    { "opensocket",api_opensocket },
+    { "httpopen",  api_httpopen },
     { "base64enc", api_base64enc },
     { "base64dec", api_base64dec },
+    { "httprequest", api_httprequest },
     { NULL,        NULL }
 };
 
@@ -718,6 +849,19 @@ static const luaL_Reg mg_conn_reg[] =
     { NULL,           NULL }
 };
 
+static const luaL_Reg BackgroundHttpRequest_reg[] =
+{
+    { "__gc", api_BackgroundHttpRequest__gc },
+    { NULL,   NULL }
+};
+
+static void makeMT(lua_State *L, const luaL_Reg *reg, const char *name)
+{
+    luaL_newmetatable(L, name);
+    luaL_setfuncs(L, reg, 0);
+    lua_setfield(L, -1, "__index"); // set and pop self
+}
+
 void sisluafunc_register(lua_State *L, SISClient& cl)
 {
     lua_pushglobaltable(L);
@@ -725,9 +869,8 @@ void sisluafunc_register(lua_State *L, SISClient& cl)
     lua_pop(L, 1);
     setclient(L, &cl);
 
-    luaL_newmetatable(L, "mg_connection");
-    luaL_setfuncs(L, mg_conn_reg, 0);
-    lua_setfield(L, -1, "__index"); // set and pop self
+    makeMT(L, mg_conn_reg, "mg_connection");
+    makeMT(L, BackgroundHttpRequest_reg, "BackgroundHttpRequest");
 }
 
 

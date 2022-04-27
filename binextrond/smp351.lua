@@ -177,24 +177,6 @@ local function _diskfree()
 end
 ]]
 
-local _status = { "stopped", "recording", "paused" }
-function status()
-    timeout "1s"
-    skipall()
-    send "\x1bYRCDR\r35I"
-    local st = readline() -- "<ESC>YRCDR\r"
-    local dur = readline() -- "35I"
-    st = _status[math.tointeger(st) + 1]
-    skipall()
-    local b --= _diskfree()
-    local suffix = ""
-    if b then
-        local mb = b // (1024*1024)
-        suffix = (" [%d MB free]"):format(mb)
-    end
-    return ("%s (%s)%s"):format(st, dur, suffix)
-end
-
 function info()
     skipall()
     send "I33I"
@@ -410,16 +392,27 @@ local function _authHdr()
     return "Basic " .. base64enc(user .. ":" .. pw)
 end
 
+local function readall(s)
+    local ret
+    local d, err
+    while true do
+        d, err = s:read()
+        if not d then
+            break
+        elseif d == "" then
+            coroutine.yield()
+        else
+            ret = (ret or "") .. d
+        end
+    end
+    return ret, err
+end
+
 -- unfortunately there are no SIS functions for livestreaming, so we need a bit of a kludge:
 -- The SMP device has an undocumented, internal REST API that is also callable from outside
 -- as long as we supply the proper admin login (which we know so this is easy)
 -- The web-interface itself uses this (trace outgoing REST calls in the browser if in doubt)
 local function livestartstop(streamer, on)
-    local s = opensocket(CONFIG.host, 80)
-    if not s then
-        error "Could not open socket to host"
-    end
-
     -- obtained from sniffing network traffic via firefox site debugger
     local payload = ('[{"uri":"/streamer/rtmp/%d/pub_control","value":%d}]'):format(streamer, on)
     local h =
@@ -430,14 +423,15 @@ local function livestartstop(streamer, on)
         ["Content-Length"] = tostring(#payload),
     }
     local req = extrond.httpFormatRequest("PUT", CONFIG.host, "/api/swis/resources", h)
-    s:write(req .. payload)
-    local status, statustext, contentlen, headers = s:readResponse(5000) -- gets invalid response header and reports failure
-    local data = s:read()
-    if loadjson(data) then -- ... but if it parses as some json, we're good
-        return true -- ok
+    local conn, status, statustext, contentlen, headers = httprequest(req .. payload, CONFIG.host, 80, false, 5000) -- gets invalid response header and reports failure
+    if conn then
+        local data = readall(conn)
+        conn:close()
+        if loadjson(data) then -- ... but if it parses as some json, we're good
+            return true -- ok
+        end
     end
-
-    error("conn:readResponse() failed:\n" .. statustext .. "\nData:\n" .. tostring(remain))
+    error("conn:readResponse() failed:\n" .. status .. "\nData:\n" .. tostring(remain))
 end
 
 function livestart()
@@ -458,38 +452,36 @@ local intToBool = setmetatable(
 )
 
 function _isstreaming()
-    local s = opensocket(CONFIG.host, 80)
-    if not s then
-        error"Could not open socket to host"
-    end
     local h =
     {
         Authorization = _authHdr(),
     }
     local req = extrond.httpFormatRequest("GET", CONFIG.host, "/api/swis/resources?uri=/streamer/rtmp/1/pub_control&uri=/streamer/rtmp/2/pub_control", h)
-    s:write(req)
-    local status, statustext, contentlen, headers = s:readResponse(5000) -- gets invalid response header and reports failure
-    -- try to parse it anyway
-    local data = s:read()
-    local j
-    if data then -- payload should be json, if it parses ok we're good
-        j = loadjson(data)
-        print(j)
-    end
-    if j then
-        local on = false
-        local t = {}
-        for _, e in pairs(j) do
-            local id = assert(e.meta.uri:match"^/streamer/rtmp/(%d+)/pub_control")
-            local v = assert(e.result)
-            id = math.tointeger(id)
-            v = intToBool[v]
-            t[id] = v
-            on = on or v
-        end
-        return on, t -- simple + detailed per-stream
-    end
     
+    local conn, status, statustext, contentlen, header = httprequest(req, CONFIG.host, 80, false, 5000)
+    -- likely was an invalid HTTP response header, try to parse the content anyway
+    if conn then
+        local data = readall(conn)
+        conn:close()
+        local j
+        if data then -- payload should be json, if it parses ok we're good
+            j = loadjson(data)
+            print(j)
+        end
+        if j then
+            local on = false
+            local t = {}
+            for _, e in pairs(j) do
+                local id = assert(e.meta.uri:match"^/streamer/rtmp/(%d+)/pub_control")
+                local v = assert(e.result)
+                id = math.tointeger(id)
+                v = intToBool[v]
+                t[id] = v
+                on = on or v
+            end
+            return on, t -- simple + detailed per-stream
+        end
+    end
     return nil, "conn:readResponse() failed:\n" .. statustext .. "\nData:\n" .. tostring(data)
 end
 
@@ -499,6 +491,34 @@ function livestatus()
         return x, 502, "text/plain; charset=utf-8"
     end
     return tostring((on and 1) or 0), "text/plain; charset=utf-8"
+end
+
+local _status = { "stopped", "recording", "paused" }
+function status()
+    timeout "1500ms"
+    skipall()
+    -- recording status
+    send "\x1bYRCDR\r35I" -- send this early so that the reply has time to arrive
+    local st = readline() -- "<ESC>YRCDR\r"
+    local dur = readline() -- "35I"
+    st = _status[math.tointeger(st) + 1]
+    skipall()
+    -- disk status (broken)
+    local b --= _diskfree()
+    local suffix = ""
+    if b then
+        local mb = b // (1024*1024)
+        suffix = (" [%d MB free]"):format(mb)
+    end
+    -- livestream status
+    local live, liveerr = _isstreaming()
+    if live == nil then
+        live = "error"
+    else
+        live = (live and "<b>ON</b>") or "off"
+    end
+    --
+    return ("%s (%s)%s, stream: %s"):format(st, dur, suffix, live)
 end
 
 -- TODO: detect ingesting status
