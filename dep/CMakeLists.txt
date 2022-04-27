@@ -1,12 +1,19 @@
 # This thing pulls in too much shit, so just do the bare essentials below instead
 #add_subdirectory(civetweb)
 
-find_package(MbedTLS REQUIRED)
-include_directories(${MBEDTLS_INCLUDE_DIRS})
+set(extra_libs)
+
+option(USE_MBEDTLS "Enable SSL/TLS support via mbedTLS" TRUE)
+if(USE_MBEDTLS)
+    find_package(MbedTLS REQUIRED)
+    include_directories(${MBEDTLS_INCLUDE_DIRS})
+    add_definitions(-DUSE_MBEDTLS)
+    set(extra_libs ${MBEDTLS_LIBRARIES})
+else()
+    add_definitions(-DNO_SSL)   # listen on localhost and use a reverse proxy if ssl is needed
+endif()
 
 # via https://github.com/civetweb/civetweb/blob/master/docs/Building.md
-#add_definitions(-DNO_SSL)   # listen on localhost and use a reverse proxy if ssl is needed
-add_definitions(-DUSE_MBEDTLS)
 add_definitions(-DNO_CGI)   # not required
 add_definitions(-DUSE_IPV6)
 add_definitions(-DNO_FILES)
@@ -44,12 +51,10 @@ set(src
 
 add_library(alldeps ${src})
 
-set(extra_libs)
-
 if(UNIX)
     set(extra_libs pthread dl)
 endif()
 
-target_link_libraries(alldeps ${MBEDTLS_LIBRARIES} ${extra_libs})
+target_link_libraries(alldeps ${extra_libs})
 
 add_subdirectory(lua)
