@@ -14,11 +14,5 @@ set(src
     handler_ctrl.h
 )
 
-set(libs)
-
-if(WIN32)
-  set(libs ws2_32)
-endif()
-
 add_executable(extrond ${src})
-target_link_libraries(extrond server ${libs})
+target_link_libraries(extrond server)

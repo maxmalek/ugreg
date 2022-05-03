@@ -56,6 +56,10 @@ if(UNIX)
     set(extra_libs ${extra_libs} pthread dl)
 endif()
 
+if(WIN32)
+  set(extra_libs ${extra_libs} ws2_32)
+endif()
+
 target_link_libraries(alldeps ${extra_libs})
 
 add_subdirectory(lua)

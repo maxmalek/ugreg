@@ -13,15 +13,9 @@ InfoHandler::~InfoHandler()
 {
 }
 
-static void writeStr(BufferedWriteStream& out, const char* s)
-{
-    while (*s)
-        out.Put(*s++);
-}
-
 int InfoHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
-    writeStr(dst, "--- memory stats of main tree ---\n");
+    dst.WriteStr("--- memory stats of main tree ---\n");
     std::string out;
     {
         std::ostringstream os;
@@ -29,7 +23,7 @@ int InfoHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const 
         dumpAllocInfoToString(os, _tree);
         out = os.str();
     }
-    writeStr(dst, out.c_str());
+    dst.Write(out.c_str(), out.length());
     return 0;
 }
 
@@ -54,7 +48,7 @@ int DebugStrpoolHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn
 
     char buf[64];
     sprintf(buf, "--- %u strings in pool ---\n", (unsigned)n);
-    writeStr(dst, buf);
+    dst.WriteStr(buf);
 
     if(coll)
     {
@@ -91,24 +85,24 @@ int DebugCleanupHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn
     for (size_t i = 0; i < _toclean.size(); ++i)
         _toclean[i]->clearCache();
     sprintf(buf, "--- %u caches cleared ---\n", (unsigned)_toclean.size());
-    writeStr(dst, buf);
+    dst.WriteStr(buf);
 
     std::vector<Var*> todo;
     _tree.fillExpiredSubnodes(todo);
 
     sprintf(buf, "--- %u subnodes have expired: ---\n", (unsigned)todo.size());
-    writeStr(dst, buf);
+    dst.WriteStr(buf);
 
     for (size_t i = 0; i < todo.size(); ++i)
     {
-        writeStr(dst, dumpjson(VarCRef(_tree, todo[i]), true).c_str());
+        dst.WriteStr(dumpjson(VarCRef(_tree, todo[i]), true).c_str());
         todo[i]->clear(_tree);
     }
 
-    writeStr(dst, "--- defrag... ---\n");
+    dst.WriteStr("--- defrag... ---\n");
 
     _tree.defrag();
 
-    writeStr(dst, "--- Done. ---\n");
+    dst.WriteStr("--- Done. ---\n");
     return 0;
 }

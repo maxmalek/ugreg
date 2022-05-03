@@ -122,6 +122,7 @@ public:
     void init();
 
     void Write(const char *buf, size_t n);
+    void WriteStr(const char *s);
 
 
     // ----- Direct memory-to-memory API --------

@@ -82,12 +82,6 @@ ViewDebugHandler::~ViewDebugHandler()
 {
 }
 
-static void writeStr(BufferedWriteStream& out, const char *s)
-{
-    while(*s)
-        out.Put(*s++);
-}
-
 int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
     const char *query = rq.query.c_str();
@@ -113,8 +107,8 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
     }
 
     {
-        writeStr(dst, query);
-        writeStr(dst, "\n\n--- Disasm ---\n");
+        dst.WriteStr(query);
+        dst.WriteStr("\n\n--- Disasm ---\n");
         std::vector<std::string> dis;
         exe.disasm(dis);
         for (size_t i = 1; i < dis.size(); ++i)
@@ -131,7 +125,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
 
     if(!vm.run(_tree.root()))
     {
-        writeStr(dst, "!!! Error during VM run. This is bad.\n");
+        dst.WriteStr("!!! Error during VM run. This is bad.\n");
         // TODO: dump state
         return 500;
     }
@@ -144,9 +138,9 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
     {
         char buf[64];
         sprintf(buf, "--- Results: %u ---\n", (unsigned)out.size());
-        writeStr(dst, buf);
+        dst.WriteStr(buf);
         if(out.size() > 1)
-            writeStr(dst, "--- WARNING: Reduce the number of results to 1 for live data, else this will fail!\n");
+            dst.WriteStr("--- WARNING: Reduce the number of results to 1 for live data, else this will fail!\n");
     }
     dst.Put('\n');
 
@@ -154,7 +148,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
     {
         dst.Put('<');
         const char *k = vm.mem.getS(e.key);
-        writeStr(dst, k ? k : "(no key name)");
+        dst.WriteStr(k ? k : "(no key name)");
         dst.Put('>');
         dst.Put('\n');
 
@@ -163,10 +157,10 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
         dst.Put('\n');
     }
 
-    writeStr(dst, "\n\n--- memory stats of VM after exec ---\n");
+    dst.WriteStr("\n\n--- memory stats of VM after exec ---\n");
     std::ostringstream os;
     dumpAllocInfoToString(os, vm.mem);
-    writeStr(dst, os.str().c_str());
+    dst.WriteStr(os.str().c_str());
 
     return 0;
 }

@@ -98,6 +98,12 @@ void BufferedWriteStream::Write(const char* buf, size_t n)
     }
 }
 
+void BufferedWriteStream::WriteStr(const char* s)
+{
+    while(*s)
+        this->Put(*s++);
+}
+
 BufferedWriteStream::BufInfo BufferedWriteStream::getBuffer() const
 {
     assert(_dst && _dst <= _last);
