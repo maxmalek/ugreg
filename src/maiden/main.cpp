@@ -14,7 +14,6 @@
 #include "json_out.h"
 #include "mxstore.h"
 #include "handler_mxid_v2.h"
-#include "handler_mxidinfo.h"
 #include <civetweb/civetweb.h>
 
 std::atomic<bool> s_quit;
