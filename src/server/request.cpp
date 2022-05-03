@@ -5,6 +5,30 @@
 
 #include "civetweb/civetweb.h"
 
+struct RequestTypeLUT
+{
+    RequestType type;
+    const char *str;
+};
+
+static const RequestTypeLUT requestTypeLUT[] =
+{
+    { RQ_GET,     "GET" },
+    { RQ_POST,    "POST" },
+    { RQ_HEAD,    "HEAD" },
+    { RQ_OPTIONS, "OPTIONS" },
+    { RQ_PUT,     "PUT" },
+    { RQ_DELETE,  "DELETE" },
+};
+
+static const RequestType getRequestType(const char *s)
+{
+    for(size_t i = 0; i < Countof(requestTypeLUT); ++i)
+        if(!stricmp(s, requestTypeLUT[i].str))
+            return requestTypeLUT[i].type;
+    return RQ_UNKNOWN;
+}
+
 
 static CompressionType parseEncoding(const char *enc)
 {
@@ -74,6 +98,8 @@ bool Request::parse(const mg_request_info* info, size_t skipFromQuery)
                 this->compression = c;
         }
     }
+
+    this->type = getRequestType(info->request_method);
 
     return true;
 }

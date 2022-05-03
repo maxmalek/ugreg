@@ -7,6 +7,17 @@
 
 struct mg_request_info;
 
+enum RequestType
+{
+    RQ_UNKNOWN,
+    RQ_GET,
+    RQ_POST,
+    RQ_HEAD,
+    RQ_OPTIONS,
+    RQ_PUT,
+    RQ_DELETE,
+};
+
 // Supported compression algorithms, ordered by preference
 // Higher values are preferred
 // See request.cpp: parseEncoding()
@@ -64,6 +75,7 @@ public:
     CompressionType compression;
     RequestFlags flags;
     RequestFormat fmt;
+    RequestType type;
 
     bool operator==(const Request& o) const
     {
