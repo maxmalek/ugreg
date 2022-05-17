@@ -166,30 +166,31 @@ int Request::ReadQueryVars(VarRef dst, const mg_request_info* info)
     return importQueryStrVars(dst, vq);
 }
 
-int Request::ReadJsonBodyVars(VarRef dst, mg_connection* conn, bool ignoreMIME, bool acceptNotMap)
+int Request::ReadJsonBodyVars(VarRef dst, mg_connection* conn, bool ignoreMIME, bool acceptNotMap, size_t maxsize)
 {
-    const mg_request_info* info = mg_get_request_info(conn);
-
-    if (!info->content_length)
-        return 0;
-
-    const char* content_type = mg_get_header(conn, "Content-Type");
-    if(!content_type)
-        return -1;
-
-    if(!ignoreMIME && mg_strncasecmp(content_type, "application/json", 16))
-        return -2;
-
-    size_t todo = info->content_length, pos = 0;
-    std::vector<char> rd(todo);
-    while (todo)
+    if(!ignoreMIME)
     {
-        int done = mg_read(conn, &rd[pos], todo);
+        const char* content_type = mg_get_header(conn, "Content-Type");
+        if(!content_type)
+            return -1;
+
+        if( mg_strncasecmp(content_type, "application/json", 16))
+            return -2;
+    }
+
+    // TODO: Use a BufferedReadStream to load successively rather than slurping up the entire thing first
+    std::vector<char> rd;
+    while (maxsize)
+    {
+        char buf[1024];
+        int done = mg_read(conn, buf, sizeof(buf)); // TODO: handle lack of data gracefully
         if (done > 0)
         {
-            todo -= done;
-            pos += done;
+            maxsize -= done;
+            rd.insert(rd.end(), &buf[0], &buf[done]);
         }
+        else if(!done) // Connection closed? Get out.
+            break;
     }
     if (!loadJsonDestructive(dst, rd.data(), rd.size()))
         return -3;

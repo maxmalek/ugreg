@@ -8,6 +8,7 @@
 #include "mxdefines.h"
 #include "mxresolv.h"
 #include <civetweb/civetweb.h>
+#include "mxhttprequest.h"
 
 // anything after /_matrix/identity/v2
 const MxidHandler_v2::Endpoint MxidHandler_v2::s_endpoints[] =
@@ -244,18 +245,43 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
         return sendError(conn, 401, M_MISSING_PARAMS, "Must provide at least matrix_server_name & access_token");
 
     // get matrix server name from host's .well-known
-    std::string homeserver;
-    unsigned port;
-    MxStore::LookupResult res = _store.getCachedHomeserverForHost(sn, homeserver, port);
+    MxResolvResult resolv;
+    MxStore::LookupResult res = _store.getCachedHomeserverForHost(sn, resolv.host, resolv.port);
     if(res == MxStore::FAILED)
-        return sendError(conn, 502, M_NOT_FOUND, "No homeserver exsits for this host (cached)");
-    
+        return sendError(conn, 502, M_NOT_FOUND, "No homeserver exists for this host (cached)");
+
     if(res != MxStore::VALID)
     {
-        int resp = lookupHomeserverForHost(homeserver, sn, 5000, 1024*50); // TODO: make configurable
+        resolv = lookupHomeserverForHost(sn, 5000, 1024*50); // TODO: make configurable
+        if(!resolv.host.empty())
+        {
+            _store.storeHomeserverForHost(sn, resolv.host.c_str(), resolv.port);
+        }
+
     }
-    
-    return 0;
+
+    if(resolv.host.empty())
+        return sendError(conn, 502, M_NOT_FOUND, "Failed to resolve homeserver");
+
+    std::string account;
+    {
+        DataTree tmp(DataTree::TINY);
+        std::ostringstream uri;
+        uri << "/_matrix/federation/v1/openid/userinfo?access_token=" << tok; // FIXME: quote
+        int r = mxGetJson(tmp.root(), resolv.host.c_str(), resolv.port, uri.str().c_str(), 5000, 4*1024);
+        if(r <= 0)
+            return sendError(conn, 500, M_UNKNOWN, (resolv.host + ": Federation API sent malformed reply").c_str());
+
+        if(VarCRef sub = tmp.root().lookup("sub"))
+            if(const char *user = sub.asCString())
+                account = user;
+    }
+
+    if(account.empty())
+        return sendError(conn, 500, M_NOT_FOUND, (resolv.host + ": Access token does not belong to a known user").c_str());
+
+
+
 }
 
 int MxidHandler_v2::get_terms(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const

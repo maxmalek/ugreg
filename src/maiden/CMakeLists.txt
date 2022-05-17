@@ -8,6 +8,8 @@ set(src
     mxdefines.h
     mxresolv.cpp
     mxresolv.h
+    mxhttprequest.cpp
+    mxhttprequest.h
 )
 
 set(extra_libs)

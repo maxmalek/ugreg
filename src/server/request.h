@@ -98,7 +98,7 @@ public:
 
     // pass ignoreMIME = true to load even if Content-Type isn't "application/json"
     // result must eval to a map unless acceptNotMap == true
-    static int ReadJsonBodyVars(VarRef dst, mg_connection* conn, bool ignoreMIME = false, bool acceptNotMap = false);
+    static int ReadJsonBodyVars(VarRef dst, mg_connection* conn, bool ignoreMIME = false, bool acceptNotMap = false, size_t maxsize = 0);
 };
 
 // !! MUST be allocated with new when you use this!

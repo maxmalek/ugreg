@@ -1,7 +1,9 @@
 #include "mxresolv.h"
-#include <civetweb/civetweb.h>
 #include <sstream>
 #include <string>
+#include "request.h"
+#include "datatree.h"
+#include "mxhttprequest.h"
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -13,8 +15,12 @@
 #include <resolv.h>
 #endif
 
-static std::string srvLookup(const char *host)
+// FIXME: finish this.
+static MxResolvResult srvLookup(const char *host)
 {
+    MxResolvResult ret;
+    ret.port = 0;
+
 #ifdef _WIN32
     PDNS_RECORD prec = NULL;
     DNS_STATUS dns = DnsQuery_A(host, DNS_TYPE_SRV, DNS_QUERY_STANDARD, NULL, &prec, NULL);
@@ -40,57 +46,43 @@ static std::string srvLookup(const char *host)
 
 #endif
 
-    return "";
+    return ret;
 }
 
-int lookupHomeserverForHost(std::string& dst, const char* host, u64 timeoutMS, size_t maxsize)
+MxResolvResult lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t maxsize)
 {
+    MxResolvResult ret;
+    ret.port = 0;
+
     // try .well-known first
     const char *what = "/.well-known/matrix/server";
-    char errbuf[1024];
-    int res = 0;
-    std::ostringstream os;
-    //os << "GET " << what << " HTTP/1.1\r\n"
-    os << "GET / HTTP/1.1\r\n"
-        << "Host: " << host << "\r\n"
-        << "Connection: close\r\n"
-        << "\r\n";
 
-    struct mg_client_options opt = { 0 };
-    opt.host = host;
-    opt.port = 443;           /* Default HTTPS port */
-    opt.client_cert = NULL;   /* Client certificate, if required */
-    opt.server_cert = NULL;   /* Server certificate to verify */
-    opt.host_name = opt.host; /* Host name for SNI */
-
-    if (mg_connection* c = mg_connect_client_secure(&opt, errbuf, sizeof(errbuf)))
+    DataTree tmp(DataTree::TINY);
+    int n = mxGetJson(tmp.root(), host, 443, what, (int)timeoutMS, maxsize);
+    if(n > 0)
     {
-        std::string request = os.str();
-        mg_write(c, request.c_str(), request.size());
-
-        res = mg_get_response(c, errbuf, sizeof(errbuf), -1); // TODO: timeout
-        if(res == 200) // FIXME: does this handle redirects?
+        // root is now known to be a map with at least 1 element
+        if(VarCRef ref = tmp.root().lookup("m.server"))
         {
-            for(;;)
+            if(const char *s = ref.asCString())
             {
-                int rd = mg_read(c, errbuf, sizeof(errbuf));
-                if(rd == 0)
-                    break;
-                if(rd > 0)
+                const char *colon = strrchr(s, ':');
+                if(colon)
                 {
-                    dst.append(errbuf, rd);
-                    if(maxsize >= rd)
-                        maxsize -= rd;
-                    else
-                        break;
+                    ret.port = atoi(colon + 1);
+                    ret.host.assign(s, colon);
                 }
+                else
+                    ret.host = s;
             }
         }
-        mg_close_connection(c);
     }
 
-    std::string srv = srvLookup(host);
+    if(ret.host.empty())
+        ret = srvLookup(host);
 
+    if(!ret.host.empty() && !ret.port)
+        ret.port = 8448; // default matrix port
 
-    return 0;
+    return ret;
 }
