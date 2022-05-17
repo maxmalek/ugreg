@@ -3,8 +3,16 @@
 
 set(extra_libs)
 
-option(USE_MBEDTLS "Enable SSL/TLS support via mbedTLS" TRUE)
-if(USE_MBEDTLS)
+option(ENABLE_SSL "EnableSSL/TLS support? Requries mbedTLS or OpenSSL" TRUE)
+
+option(USE_MBEDTLS "Enable SSL/TLS support via mbedTLS" FALSE)
+option(USE_OPENSSL "Enable SSL/TLS support via OpenSSL" TRUE)
+
+if(USE_OPENSSL)
+    add_definitions(-DUSE_OPENSSL)
+    add_definitions(-DOPENSSL_API_3_0)
+    message(STATUS "Will load OpenSSL dynamically")
+elseif(USE_MBEDTLS)
     find_package(MbedTLS REQUIRED)
     include_directories(${MBEDTLS_INCLUDE_DIRS})
     add_definitions(-DUSE_MBEDTLS)
