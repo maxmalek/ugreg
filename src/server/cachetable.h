@@ -102,8 +102,8 @@ private:
         return s & (_cols - 1);
     }
 public:
-    CacheTable()
-        : _enabled(false), _cols(0), _rng(6581), _mask(0)
+    CacheTable(u32 seed = 6581)
+        : _enabled(false), _cols(0), _rng(seed + !seed), _mask(0)
     {
     }
 
