@@ -2,6 +2,8 @@
 #include <string.h>
 #include "request.h"
 #include "util.h"
+#include "variant.h"
+#include "json_in.h"
 
 #include "civetweb/civetweb.h"
 
@@ -72,6 +74,45 @@ static bool parseAndApplyVars(Request& r, const char *vars)
     return true;
 }
 
+// parse ?a=bla&b=0 to a Var
+static int importQueryStrVars(VarRef v, const char* vars)
+{
+    assert(vars);
+    char tmp[8 * 1024];
+    const size_t tocopy = strlen(vars) + 1; // ensure to always include \0
+    if (tocopy > sizeof(tmp))
+        return -99;
+    memcpy(tmp, vars, tocopy);
+    mg_header hd[MG_MAX_HEADERS];
+    const int num = mg_split_form_urlencoded(tmp, hd, MG_MAX_HEADERS);
+    if (num < 0)
+        return num;
+    for (int i = 0; i < num; ++i)
+        v[hd[i].name] = hd[i].value ? hd[i].value : "";
+    return num;
+}
+
+static int field_found(const char* key,
+    const char* filename,
+    char* path,
+    size_t pathlen,
+    void* user_data)
+{
+    return MG_FORM_FIELD_STORAGE_GET;
+}
+
+static int field_get(const char* key,
+    const char* value,
+    size_t valuelen,
+    void* user_data)
+{
+    VarRef& v = *(VarRef*)user_data;
+    v[key].setStr(value, valuelen);
+
+    return MG_FORM_FIELD_HANDLE_NEXT;
+}
+
+
 bool Request::parse(const mg_request_info* info, size_t skipFromQuery)
 {
     if(!info->local_uri)
@@ -91,11 +132,17 @@ bool Request::parse(const mg_request_info* info, size_t skipFromQuery)
     const int n = info->num_headers;
     for(int i = 0; i < n; ++i)
     {
-        if(!mg_strcasecmp("Accept-Encoding", info->http_headers[i].name))
+        const char *k = info->http_headers[i].name;
+        const char *v = info->http_headers[i].value;
+        if(!mg_strcasecmp("Accept-Encoding", k))
         {
-            CompressionType c = parseEncoding(info->http_headers[i].value);
+            CompressionType c = parseEncoding(v);
             if(c > this->compression) // preference by value
                 this->compression = c;
+        }
+        if (!mg_strcasecmp("Authorization", k))
+        {
+            authorization = v;
         }
     }
 
@@ -107,8 +154,71 @@ bool Request::parse(const mg_request_info* info, size_t skipFromQuery)
 u32 Request::Hash(const Request& r)
 {
     u32 hash = strhash(r.query.c_str());
-    hash ^= (r.compression << 2) ^ r.flags ^ (r.fmt << 7);
+    hash ^= (r.compression << 2) ^ r.flags ^ (r.fmt << 7) ^ (r.type << 8);
     return hash;
+}
+
+int Request::ReadQueryVars(VarRef dst, const mg_request_info* info)
+{
+    const char* vq = info->query_string;
+    if(!vq)
+        return -1;
+    return importQueryStrVars(dst, vq);
+}
+
+int Request::ReadJsonBodyVars(VarRef dst, mg_connection* conn, bool ignoreMIME, bool acceptNotMap)
+{
+    const mg_request_info* info = mg_get_request_info(conn);
+
+    if (!info->content_length)
+        return 0;
+
+    const char* content_type = mg_get_header(conn, "Content-Type");
+    if(!content_type)
+        return -1;
+
+    if(!ignoreMIME && mg_strncasecmp(content_type, "application/json", 16))
+        return -2;
+
+    size_t todo = info->content_length, pos = 0;
+    std::vector<char> rd(todo);
+    while (todo)
+    {
+        int done = mg_read(conn, &rd[pos], todo);
+        if (done > 0)
+        {
+            todo -= done;
+            pos += done;
+        }
+    }
+    if (!loadJsonDestructive(dst, rd.data(), rd.size()))
+        return -3;
+
+    if (!acceptNotMap && dst.type() != Var::TYPE_MAP)
+        return -4;
+
+    return (int)dst.size();
+}
+
+int Request::ReadFormDataVars(VarRef dst, mg_connection* conn)
+{
+    mg_form_data_handler handleForm = { field_found, field_get, NULL, &dst };
+    return mg_handle_form_request(conn, &handleForm);
+}
+
+int Request::AutoReadVars(VarRef dst, mg_connection* conn)
+{
+    const mg_request_info* info = mg_get_request_info(conn);
+
+    int json = ReadJsonBodyVars(dst, conn, false, false);
+    if(json <= -3)
+        return json; // if it's json it should at least be valid and eval to a map
+    int fd = ReadFormDataVars(dst, conn);
+    int q = ReadQueryVars(dst, info);
+    if(json < 0 && fd < 0 && q < 0)
+        return -1; // everything failed
+
+    return (int)dst.size();
 }
 
 StoredReplyWriteStream::StoredReplyWriteStream(StoredReply* req, char* buf, size_t bufsize)
@@ -147,3 +257,4 @@ bool StoredReply::spliceHeader(const char* hdr1, size_t sz1, const char* hdr2, s
     hdrstart = offs;
     return true;
 }
+

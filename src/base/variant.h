@@ -410,6 +410,7 @@ public:
 
     Var::Type type() const { return v->type(); }
     const char* typestr() const { return v->typestr(); }
+    size_t size() const { return v->size(); }
     bool isNull() const { return v->isNull(); }
     bool isContainer() const { return v->isContainer(); }
     const s64* asInt() const { return v->asInt(); }

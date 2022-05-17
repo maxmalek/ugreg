@@ -2,6 +2,7 @@
 
 #include "webserver.h"
 #include "datatree.h"
+#include "mxdefines.h"
 
 class MxStore;
 
@@ -15,6 +16,7 @@ public:
 private:
     MxStore& _store;
     DataTree _handlers; // ptr entries are actually Endpoint*
+    unsigned _port;
     void _setupHandlers();
 
     typedef int (MxidHandler_v2::*EndpointFunc)(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
@@ -27,6 +29,16 @@ private:
     };
 
     static const Endpoint s_endpoints[];
+
+    struct AuthResult
+    {
+        int status;
+        MxError err;
+        char token[256];
+    };
+
+    // 0 if ok, http error code otherwise
+    AuthResult _authorize(mg_connection* conn, const Request& rq) const;
 
     int get_account                      (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
     int post_account_logout              (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;

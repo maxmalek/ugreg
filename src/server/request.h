@@ -6,6 +6,8 @@
 #include "jsonstreamwrapper.h"
 
 struct mg_request_info;
+struct mg_connection;
+class VarRef;
 
 enum RequestType
 {
@@ -64,14 +66,15 @@ class Request
 {
 public:
     Request()
-        : compression(COMPR_NONE), flags(RQF_NONE) {}
+        : compression(COMPR_NONE), flags(RQF_NONE), fmt(RQFMT_DEFAULT), type(RQ_UNKNOWN) {}
 
     Request(const char* q, CompressionType compression, RequestFlags flags, RequestFormat f)
-        : query(q), compression(compression), flags(flags), fmt(f) {}
+        : query(q), compression(compression), flags(flags), fmt(f), type(RQ_UNKNOWN) {}
 
+    // can optionally parse params if needed. converts *params to map.
     bool parse(const mg_request_info *info, size_t skipFromQuery);
 
-    std::string query;
+    std::string query, authorization;
     CompressionType compression;
     RequestFlags flags;
     RequestFormat fmt;
@@ -79,10 +82,23 @@ public:
 
     bool operator==(const Request& o) const
     {
-        return query == o.query && compression == o.compression && flags == o.flags && fmt == o.fmt;
+        return query == o.query && compression == o.compression && flags == o.flags
+            && fmt == o.fmt && type == o.type && authorization == o.authorization;
     }
 
     static u32 Hash(const Request& r);
+
+    // try and combine all 3 variants below to read variables.
+    // json body first, then form data, then query.
+    // in case of conflicts, the last read var wins.
+    static int AutoReadVars(VarRef dst, mg_connection *conn);
+
+    static int ReadFormDataVars(VarRef dst, mg_connection *conn);
+    static int ReadQueryVars(VarRef dst, const mg_request_info *info);
+
+    // pass ignoreMIME = true to load even if Content-Type isn't "application/json"
+    // result must eval to a map unless acceptNotMap == true
+    static int ReadJsonBodyVars(VarRef dst, mg_connection* conn, bool ignoreMIME = false, bool acceptNotMap = false);
 };
 
 // !! MUST be allocated with new when you use this!
