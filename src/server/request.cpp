@@ -180,7 +180,7 @@ int Request::ReadJsonBodyVars(VarRef dst, mg_connection* conn, bool ignoreMIME, 
 
     // TODO: Use a BufferedReadStream to load successively rather than slurping up the entire thing first
     std::vector<char> rd;
-    while (maxsize)
+    do
     {
         char buf[1024];
         int done = mg_read(conn, buf, sizeof(buf)); // TODO: handle lack of data gracefully
@@ -192,6 +192,8 @@ int Request::ReadJsonBodyVars(VarRef dst, mg_connection* conn, bool ignoreMIME, 
         else if(!done) // Connection closed? Get out.
             break;
     }
+    while(maxsize);
+
     if (!loadJsonDestructive(dst, rd.data(), rd.size()))
         return -3;
 

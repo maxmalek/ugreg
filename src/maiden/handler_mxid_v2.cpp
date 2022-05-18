@@ -9,6 +9,14 @@
 #include "mxresolv.h"
 #include <civetweb/civetweb.h>
 #include "mxhttprequest.h"
+#include "mxtoken.h"
+
+
+// All /account/register tokens we issue start with this
+#define TOKEN_PREFIX "mai_"
+#define TOKEN_PREFIX_LEN 4
+
+#define MIMETYPE "application/json; charset=utf-8"
 
 // anything after /_matrix/identity/v2
 const MxidHandler_v2::Endpoint MxidHandler_v2::s_endpoints[] =
@@ -50,7 +58,7 @@ static const char *mountpointForRequestType(RequestType type)
 
 static int _ok(mg_connection *conn)
 {
-    mg_send_http_ok(conn, "application/json; charset=utf-8", 2);
+    mg_send_http_ok(conn, MIMETYPE, 2);
     mg_write(conn, "{}", 2);
     return 200;
 }
@@ -68,7 +76,7 @@ static s64 intor0(VarCRef ref)
 }
 
 MxidHandler_v2::MxidHandler_v2(MxStore& mxs, const char* prefix)
-    : RequestHandler(prefix, NULL)
+    : RequestHandler(prefix, MIMETYPE)
     , _store(mxs)
     , _handlers(DataTree::TINY)
     , _port(8448)
@@ -131,8 +139,11 @@ static bool extractToken(char *dst, size_t avail,  mg_connection* conn, const Re
     {
         const char *s = rq.authorization.c_str() + 6;
         size_t ws = 0;
-        while(isspace(*s++))
+        while(isspace(*s))
+        {
             ++ws;
+            ++s;
+        }
         if(ws)
             token = s;
     }
@@ -149,9 +160,9 @@ static bool extractToken(char *dst, size_t avail,  mg_connection* conn, const Re
                 token = ref.asCString();
         }
     }
-    if(token && *token)
+    if(token && *token && !strncmp(token, TOKEN_PREFIX, TOKEN_PREFIX_LEN))
     {
-        strncpy(dst, token, avail);
+        strncpy(dst, token + TOKEN_PREFIX_LEN, avail);
         return true;
     }
     return false;
@@ -187,7 +198,7 @@ int MxidHandler_v2::get_account(BufferedWriteStream& dst, mg_connection* conn, c
         return auth.status;
     std::string acc = _store.getAccount(auth.token);
     if(acc.empty())
-        return 500;
+        return sendError(conn, 500, M_UNRECOGNIZED, "Authorization succeeded but no user is associated with the token");
 
     dst.WriteStr("{\"user_id\": \"");
     dst.Write(acc.c_str(), acc.length());
@@ -203,28 +214,6 @@ int MxidHandler_v2::post_account_logout(BufferedWriteStream& dst, mg_connection*
 
     _store.logout(auth.token);
     return _ok(conn);
-}
-
-static int HttpsGet(std::vector<char>& dst, const char *host, const char *what, int timeout)
-{
-    char errbuf[1024];
-    int res = 0;
-    std::ostringstream os;
-    os << "GET " << what << " HTTP/1.1\r\n"
-       << "Host: " << host << "\r\n"
-       << "Connection: close\r\n"
-       << "\r\n";
-    if (mg_connection* c = mg_connect_client(host, 443, true, errbuf, sizeof(errbuf)))
-    {
-        std::string request = os.str();
-        mg_write(c, request.c_str(), request.size());
-        res = mg_get_response(c, errbuf, sizeof(errbuf), (int)timeout);
-    }
-
-    if(res == 200)
-    {
-        // TODO read conn
-    }
 }
 
 int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
@@ -243,6 +232,12 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
         printf("MX-SPEC: Expected expires_in > 0\n");
     if(!sn || !tok || !*sn || !*tok)
         return sendError(conn, 401, M_MISSING_PARAMS, "Must provide at least matrix_server_name & access_token");
+
+    if(!exp)
+        exp = 3600; // FIXME: make configurable
+
+    // MX-SPEC: we should be reading the request body and ensure it's at least {}
+    // but since the contents are ignored, who cares
 
     // get matrix server name from host's .well-known
     MxResolvResult resolv;
@@ -281,7 +276,22 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
         return sendError(conn, 500, M_NOT_FOUND, (resolv.host + ": Access token does not belong to a known user").c_str());
 
 
+    char thetoken[44]; // whatev
+    mxGenerateToken(thetoken, sizeof(thetoken));
 
+    _store.register_(thetoken, exp, account.c_str());
+
+    // Same thing as sydent does: Supply both keys to make older clients happy
+    dst.WriteStr("{\"token\": \"" TOKEN_PREFIX);
+    dst.WriteStr(thetoken);
+    dst.WriteStr("\", \"access_token\": \"" TOKEN_PREFIX);
+    dst.WriteStr(thetoken);
+    // ++ non-standard: to help with debugging ++
+    dst.WriteStr("\", \"user_id\": \"");
+    dst.WriteStr(account.c_str());
+    // ++
+    dst.WriteStr("\"}");
+    return 0;
 }
 
 int MxidHandler_v2::get_terms(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const

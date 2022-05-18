@@ -52,6 +52,8 @@ set(src
     mt.h
     luafuncs.cpp
     luafuncs.h
+    rng.cpp
+    rng.h
 )
 
 add_library(base ${src})

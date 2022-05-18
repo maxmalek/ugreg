@@ -4,6 +4,7 @@
 #include <sstream>
 #include <atomic>
 #include <assert.h>
+#include <time.h>
 
 #include "webserver.h"
 #include "config.h"
@@ -35,6 +36,7 @@ int handler_versions(struct mg_connection* conn, void*)
 
 int main(int argc, char** argv)
 {
+    srand(unsigned(time(NULL)));
     handlesigs(sigquit);
 
     ServerConfig cfg;

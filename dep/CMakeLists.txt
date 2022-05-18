@@ -56,6 +56,7 @@ set(src
     upgrade_mutex.cpp
     upgrade_mutex.h
     minicoro.h
+    ascon-sponge.h
 )
 
 add_library(alldeps ${src})
