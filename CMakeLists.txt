@@ -31,6 +31,7 @@ if(RAPIDJSON_NEON)
   add_definitions(-DRAPIDJSON_NEON)
 endif()
 
+include_directories(dep/tomcrypt)
 include_directories(dep)
 add_subdirectory(dep)
 add_subdirectory(src)

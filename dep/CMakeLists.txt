@@ -1,6 +1,12 @@
 # This thing pulls in too much shit, so just do the bare essentials below instead
 #add_subdirectory(civetweb)
 
+# Yes i know we could be using mbedTLS or OpenSSL for this...
+# but too lazy to dispatch at runtime so we'll just
+# use a tiny subset of libtomcrypt
+add_subdirectory(tomcrypt)
+
+
 set(extra_libs)
 
 option(ENABLE_SSL "EnableSSL/TLS support? Requries mbedTLS or OpenSSL" TRUE)
@@ -69,6 +75,7 @@ if(WIN32)
   set(extra_libs ${extra_libs} ws2_32)
 endif()
 
-target_link_libraries(alldeps ${extra_libs})
+target_link_libraries(alldeps ${extra_libs} tomcrypt)
 
 add_subdirectory(lua)
+
