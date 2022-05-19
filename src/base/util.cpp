@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <thread>
 #include "safe_numerics.h"
+#include "tomcrypt/tomcrypt.h"
 
 template<typename T>
 static NumConvertResult strtounum_T_NN(T* dst, const char* s, size_t len)
@@ -181,93 +182,84 @@ size_t base64size(size_t len)
     return len * 8 / 6 + 4;
 }
 
-// base64 conversion from civetweb and changed int->size_t and param order
-// unfortunately it's a static func inside civetweb so had to copy it out
-size_t base64enc(char* dst, const unsigned char* src, size_t src_len)
+size_t base64enc(char* dst, const unsigned char* src, size_t src_len, bool pad)
 {
-    static const char* b64 =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    size_t i, j;
-    unsigned a, b, c;
+    unsigned long dstlen = 0;
+    int r = pad ? base64_encode         (src, src_len, (unsigned char*)dst, &dstlen)
+                : base64_encode_unpadded(src, src_len, (unsigned char*)dst, &dstlen);
 
-    for (i = j = 0; i < src_len; i += 3) {
-        a = src[i];
-        b = ((i + 1) >= src_len) ? 0 : src[i + 1];
-        c = ((i + 2) >= src_len) ? 0 : src[i + 2];
-
-        dst[j++] = b64[a >> 2];
-        dst[j++] = b64[((a & 3) << 4) | (b >> 4)];
-        if (i + 1 < src_len) {
-            dst[j++] = b64[(b & 15) << 2 | (c >> 6)];
-        }
-        if (i + 2 < src_len) {
-            dst[j++] = b64[c & 63];
-        }
-    }
-    while (j % 4 != 0) {
-        dst[j++] = '=';
-    }
-    dst[j] = '\0';
-    return j;
+    return r == CRYPT_OK ? dstlen : 0;
 }
 
-static unsigned char
-b64reverse(char letter)
+size_t base64dec(char* dst, const unsigned char* src, size_t src_len, bool strict)
 {
-    if ((letter >= 'A') && (letter <= 'Z')) {
-        return letter - 'A';
-    }
-    if ((letter >= 'a') && (letter <= 'z')) {
-        return letter - 'a' + 26;
-    }
-    if ((letter >= '0') && (letter <= '9')) {
-        return letter - '0' + 52;
-    }
-    if (letter == '+') {
-        return 62;
-    }
-    if (letter == '/') {
-        return 63;
-    }
-    if (letter == '=') {
-        return 255; /* normal end */
-    }
-    return 254; /* error */
+    unsigned long dstlen = 0;
+    int r = strict ? base64_strict_decode(src, src_len, (unsigned char*)dst, &dstlen)
+                   : base64_decode       (src, src_len, (unsigned char*)dst, &dstlen);
+
+    return r == CRYPT_OK ? dstlen : 0;
 }
 
-size_t base64dec(char* dst, size_t* dst_len, const unsigned char* src, size_t src_len)
+size_t hash_oneshot(char* dst, const void* src, size_t len, const ltc_hash_descriptor *hd)
 {
-    *dst_len = 0;
-
-    for (size_t i = 0; i < src_len; i += 4) {
-        unsigned char a = b64reverse(src[i]);
-        if (a >= 254) {
-            return i;
-        }
-
-        unsigned char b = b64reverse(((i + 1) >= src_len) ? 0 : src[i + 1]);
-        if (b >= 254) {
-            return i + 1;
-        }
-
-        unsigned char c = b64reverse(((i + 2) >= src_len) ? 0 : src[i + 2]);
-        if (c == 254) {
-            return i + 2;
-        }
-
-        unsigned char d = b64reverse(((i + 3) >= src_len) ? 0 : src[i + 3]);
-        if (d == 254) {
-            return i + 3;
-        }
-
-        dst[(*dst_len)++] = (a << 2) + (b >> 4);
-        if (c != 255) {
-            dst[(*dst_len)++] = (b << 4) + (c >> 2);
-            if (d != 255) {
-                dst[(*dst_len)++] = (c << 6) + d;
-            }
-        }
+    if(dst)
+    {
+        hash_state h;
+        hd->init(&h);
+        hd->process(&h, (const unsigned char*)src, (unsigned long)len);
+        hd->done(&h, (unsigned char*)dst);
     }
-    return 0;
+    return hd->hashsize;
 }
 
+size_t hash_sha256(char* dst, const void* src, size_t len)
+{
+    return hash_oneshot(dst, src, len, &sha256_desc);
+}
+
+size_t hash_sha512(char* dst, const void* src, size_t len)
+{
+    return hash_oneshot(dst, src, len, &sha512_desc);
+}
+
+size_t hash_sha3_512(char* dst, const void* src, size_t len)
+{
+    return hash_oneshot(dst, src, len, &sha3_512_desc);
+}
+
+static const ltc_hash_descriptor * const s_hashdesc[] =
+{
+    &sha256_desc,
+    &sha512_desc,
+    &sha3_224_desc,
+    &sha3_256_desc,
+    &sha3_384_desc,
+    &sha3_512_desc,
+};
+
+const ltc_hash_descriptor* hash_getdesc(const char* name)
+{
+    for(size_t i = 0; i < Countof(s_hashdesc); ++i)
+        if(!strcmp(s_hashdesc[i]->name, name))
+            return s_hashdesc[i];
+    return NULL;
+}
+
+void hash_testall()
+{
+    bool fail = false;
+    printf("-- tomcrypt hash test --\n");
+    for(size_t i = 0; i < Countof(s_hashdesc); ++i)
+    {
+        printf("%-12s ... ", s_hashdesc[i]->name);
+        switch(s_hashdesc[i]->test())
+        {
+            case CRYPT_OK: printf("ok\n"); break;
+            case CRYPT_NOP: printf("not tested\n"); break;
+            default: printf("FAILED\n"); fail = true; break;
+        }
+    }
+    if(fail)
+        exit(23);
+    printf("-- hash test done, seems ok --\n");
+}

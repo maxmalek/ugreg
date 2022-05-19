@@ -36,6 +36,7 @@ int handler_versions(struct mg_connection* conn, void*)
 
 int main(int argc, char** argv)
 {
+    hash_testall();
     srand(unsigned(time(NULL)));
     handlesigs(sigquit);
 

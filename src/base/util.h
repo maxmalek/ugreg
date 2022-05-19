@@ -77,6 +77,21 @@ inline bool mul_check_overflow(T* res, T a, T b)
 #endif
 }
 
-size_t base64size(size_t len);
-size_t base64enc(char* dst, const unsigned char* src, size_t src_len);
-size_t base64dec(char* dst, size_t* dst_len, const unsigned char* src, size_t src_len);
+size_t base64size(size_t len); // to reserve a buffer for base64'd output
+
+// both return 0 on failure, otherwise the size written to dst.
+// dst is zero-terminated
+size_t base64enc(char* dst, const unsigned char* src, size_t src_len, bool pad);
+size_t base64dec(char* dst, const unsigned char* src, size_t src_len, bool strict);
+
+// one-shot hash functions
+// returns size of target buffer (pass dst == NULL to find out the size without doing anything)
+size_t hash_sha256(char *dst, const void *src, size_t len);
+size_t hash_sha512(char *dst, const void *src, size_t len);
+size_t hash_sha3_512(char *dst, const void *src, size_t len);
+
+struct ltc_hash_descriptor;
+const ltc_hash_descriptor *hash_getdesc(const char *name);
+size_t hash_oneshot(char* dst, const void* src, size_t len, const ltc_hash_descriptor *hd);
+
+void hash_testall();
