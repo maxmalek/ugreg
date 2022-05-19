@@ -21,29 +21,29 @@
 // anything after /_matrix/identity/v2
 const MxidHandler_v2::Endpoint MxidHandler_v2::s_endpoints[] =
 {
-    { RQ_GET,  "/account",                       &get_account  },
-    { RQ_POST, "/account/logout",                &post_account_logout  },
-    { RQ_POST, "/account/register",              &post_account_register  },
-    { RQ_GET,  "/terms",                         &get_terms  },
-    { RQ_POST, "/terms",                         &post_terms  },
-    { RQ_GET,  "/",                              &get_status  }, // status check
-    { RQ_GET,  "/pubkey/ephemeral/isvalid",      &get_pubkey_eph_isvalid  },
-    { RQ_GET,  "/pubkey/isvalid",                &get_pubkey_isvalid  },
-    { RQ_GET,  "/pubkey",                        &get_pubkey  }, // actually pubkey/{keyId}
-    { RQ_GET,  "/hash_details",                  &get_hashdetails  },
-    { RQ_POST, "/lookup",                        &get_lookup  },
-    { RQ_POST, "/validate/email/requestToken",   &get_validate_email_requestToken  },
-    { RQ_GET,  "/validate/email/submitToken",    &get_validate_email_submitToken  },
-    { RQ_POST, "/validate/email/submitToken",    &post_validate_email_submitToken  },
-    { RQ_POST, "/validate/msisdn/requestToken",  &get_validate_msisdn_requestToken  },
-    { RQ_GET,  "/validate/msisdn/submitToken",   &get_validate_msisdn_submitToken  },
-    { RQ_POST, "/validate/msisdn/submitToken",   &post_validate_msisdn_submitToken  },
-    { RQ_POST, "/3pid/bind",                     &post_3pid_bind  },
-    { RQ_GET,  "/3pid/getValidated3pid",         &get_2pid_getValidated3pid  },
-    { RQ_POST, "/3pid/unbind",                   &post_3pid_unbind  },
-    { RQ_POST, "/store-invite",                  &post_store_invite  },
-    { RQ_POST, "/sign-ed25519",                  &post_sign_ed25519  },
-    { RQ_UNKNOWN, NULL, NULL }
+    { RQ_GET,  AUTHED, "/account",                       &get_account  },
+    { RQ_POST, AUTHED, "/account/logout",                &post_account_logout  },
+    { RQ_POST, NOAUTH, "/account/register",              &post_account_register  },
+    { RQ_GET,  AUTHED, "/terms",                         &get_terms  },
+    { RQ_POST, NOAUTH, "/terms",                         &post_terms  },
+    { RQ_GET,  AUTHED, "/",                              &get_status  }, // status check
+    { RQ_GET,  NOAUTH, "/pubkey/ephemeral/isvalid",      &get_pubkey_eph_isvalid  },
+    { RQ_GET,  NOAUTH, "/pubkey/isvalid",                &get_pubkey_isvalid  },
+    { RQ_GET,  NOAUTH, "/pubkey",                        &get_pubkey  }, // actually pubkey/{keyId}
+    { RQ_GET,  AUTHED, "/hash_details",                  &get_hashdetails  },
+    { RQ_POST, AUTHED, "/lookup",                        &get_lookup  },
+    { RQ_POST, AUTHED, "/validate/email/requestToken",   &get_validate_email_requestToken  },
+    { RQ_GET,  AUTHED, "/validate/email/submitToken",    &get_validate_email_submitToken  },
+    { RQ_POST, AUTHED, "/validate/email/submitToken",    &post_validate_email_submitToken  },
+    { RQ_POST, AUTHED, "/validate/msisdn/requestToken",  &get_validate_msisdn_requestToken  },
+    { RQ_GET,  AUTHED, "/validate/msisdn/submitToken",   &get_validate_msisdn_submitToken  },
+    { RQ_POST, AUTHED, "/validate/msisdn/submitToken",   &post_validate_msisdn_submitToken  },
+    { RQ_POST, AUTHED, "/3pid/bind",                     &post_3pid_bind  },
+    { RQ_GET,  AUTHED, "/3pid/getValidated3pid",         &get_2pid_getValidated3pid  },
+    { RQ_POST, AUTHED, "/3pid/unbind",                   &post_3pid_unbind  },
+    { RQ_POST, AUTHED, "/store-invite",                  &post_store_invite  },
+    { RQ_POST, AUTHED, "/sign-ed25519",                  &post_sign_ed25519  },
+    { RQ_UNKNOWN, NOAUTH, NULL, NULL }
 };
 
 // these names can not be passed in via URL
@@ -114,10 +114,30 @@ int MxidHandler_v2::onRequest(BufferedWriteStream& dst, mg_connection* conn, con
 
     // TODO: send CORS headers
 
-    const Endpoint *ep = static_cast<const Endpoint*>(vp.asPtr());
+    const Endpoint * const ep = static_cast<const Endpoint*>(vp.asPtr());
 
-    // TODO: this should be uncached
-    return (this->*ep->func)(dst, conn, rq);
+    // Handle user authorization if the endpoint requires it
+    UserInfo user;
+    const char *autherr = NULL;
+    {
+        const AuthResult au = _tryAuthorize(conn, rq);
+        if(au.err == M_OK)
+        {
+            user.token = au.token;
+            user.username = _store.getAccount(au.token);
+            if(user.username.empty())
+                return sendError(conn, 500, M_UNRECOGNIZED, "Authorization succeeded but no user is associated with the token");
+            user.auth = AUTHED;
+        }
+        else if(au.hadToken)
+            autherr = "Invalid/unknown token";
+    }
+
+    // If the user supplied an invalid token (but DID supply a token) this will still succeed if the endpoint does not require authorization
+    if(user.auth < ep->auth)
+        return sendError(conn, 403, M_UNKNOWN, autherr ? autherr : "Action requires authorization (must send 'Authorization: Bearer " TOKEN_PREFIX "<token>' HTTP header)");
+
+    return (this->*ep->func)(dst, conn, rq, user);
 }
 
 void MxidHandler_v2::_setupHandlers()
@@ -169,54 +189,42 @@ static bool extractToken(char *dst, size_t avail,  mg_connection* conn, const Re
 }
 
 
-MxidHandler_v2::AuthResult MxidHandler_v2::_authorize(mg_connection* conn, const Request& rq) const
+MxidHandler_v2::AuthResult MxidHandler_v2::_tryAuthorize(mg_connection* conn, const Request& rq) const
 {
     AuthResult res;
     res.err = M_OK;
-    res.status = 0;
-    if(!extractToken(res.token, sizeof(res.token), conn, rq))
+    res.httpstatus = 0;
+    res.hadToken = extractToken(res.token, sizeof(res.token), conn, rq);
+    if(!res.hadToken)
     {
         res.err = M_MISSING_PARAMS;
-        res.status = 401;
+        res.httpstatus = 401;
     }
     else
     {
         res.err = _store.authorize(res.token);
         if(res.err)
-            res.status = 403;
+            res.httpstatus = 403;
     }
-    if(res.err)
-        sendError(conn, res.status, res.err);
 
     return res;
 }
 
-int MxidHandler_v2::get_account(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_account(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    const AuthResult auth = _authorize(conn, rq);
-    if(auth.status)
-        return auth.status;
-    std::string acc = _store.getAccount(auth.token);
-    if(acc.empty())
-        return sendError(conn, 500, M_UNRECOGNIZED, "Authorization succeeded but no user is associated with the token");
-
     dst.WriteStr("{\"user_id\": \"");
-    dst.Write(acc.c_str(), acc.length());
+    dst.Write(u.username.c_str(), u.username.length());
     dst.WriteStr("\"}");
     return 0;
 }
 
-int MxidHandler_v2::post_account_logout(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::post_account_logout(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    const AuthResult auth = _authorize(conn, rq);
-    if (auth.status)
-        return auth.status;
-
-    _store.logout(auth.token);
+    _store.logout(u.token.c_str());
     return _ok(conn);
 }
 
-int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     DataTree params(DataTree::TINY);
     if(Request::AutoReadVars(params.root(), conn) <= 0)
@@ -294,99 +302,100 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
     return 0;
 }
 
-int MxidHandler_v2::get_terms(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_terms(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     // TODO: this should be handled in Lua?
     dst.WriteStr("{\"policies\":{}}");
     return 0;
 }
 
-int MxidHandler_v2::post_terms(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::post_terms(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 501; // TODO
 }
 
-int MxidHandler_v2::get_status(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_status(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return _ok(conn);
 }
 
-int MxidHandler_v2::get_pubkey_eph_isvalid(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_pubkey_eph_isvalid(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::get_pubkey_isvalid(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_pubkey_isvalid(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::get_pubkey(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_pubkey(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::get_hashdetails(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_hashdetails(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::get_lookup(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_lookup(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::get_validate_email_requestToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_validate_email_requestToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::get_validate_email_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_validate_email_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::post_validate_email_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::post_validate_email_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::get_validate_msisdn_requestToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_validate_msisdn_requestToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::get_validate_msisdn_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_validate_msisdn_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::post_validate_msisdn_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::post_validate_msisdn_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::post_3pid_bind(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::post_3pid_bind(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::get_2pid_getValidated3pid(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::get_2pid_getValidated3pid(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::post_3pid_unbind(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::post_3pid_unbind(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::post_store_invite(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::post_store_invite(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
 
-int MxidHandler_v2::post_sign_ed25519(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+int MxidHandler_v2::post_sign_ed25519(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     return 0;
 }
+

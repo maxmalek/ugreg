@@ -19,11 +19,25 @@ private:
     unsigned _port;
     void _setupHandlers();
 
-    typedef int (MxidHandler_v2::*EndpointFunc)(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
+    enum AuthStatus
+    {
+        NOAUTH,
+        AUTHED,
+    };
+
+    // Infos about the currently authorized user that sent the request (previously via /account/register)
+    struct UserInfo
+    {
+        AuthStatus auth = NOAUTH;
+        std::string username, token;
+    };
+
+    typedef int (MxidHandler_v2::*EndpointFunc)(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
 
     struct Endpoint
     {
         RequestType type;
+        AuthStatus auth;
         const char* endpoint;
         EndpointFunc func;
     };
@@ -32,34 +46,35 @@ private:
 
     struct AuthResult
     {
-        int status;
+        int httpstatus; // http status if there was an error, otherwise 0
         MxError err;
+        bool hadToken;
         char token[256];
     };
 
-    // 0 if ok, http error code otherwise
-    AuthResult _authorize(mg_connection* conn, const Request& rq) const;
 
-    int get_account                      (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int post_account_logout              (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int post_account_register            (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_terms                        (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int post_terms                       (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_status                       (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_pubkey_eph_isvalid           (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_pubkey_isvalid               (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_pubkey                       (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_hashdetails                  (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_lookup                       (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_validate_email_requestToken  (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_validate_email_submitToken   (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int post_validate_email_submitToken  (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_validate_msisdn_requestToken (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_validate_msisdn_submitToken  (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int post_validate_msisdn_submitToken (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int post_3pid_bind                   (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int get_2pid_getValidated3pid        (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int post_3pid_unbind                 (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int post_store_invite                (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
-    int post_sign_ed25519                (BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const;
+    AuthResult _tryAuthorize(mg_connection* conn, const Request& rq) const;
+
+    int get_account                      (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int post_account_logout              (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int post_account_register            (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_terms                        (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int post_terms                       (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_status                       (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_pubkey_eph_isvalid           (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_pubkey_isvalid               (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_pubkey                       (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_hashdetails                  (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_lookup                       (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_validate_email_requestToken  (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_validate_email_submitToken   (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int post_validate_email_submitToken  (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_validate_msisdn_requestToken (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_validate_msisdn_submitToken  (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int post_validate_msisdn_submitToken (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int post_3pid_bind                   (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int get_2pid_getValidated3pid        (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int post_3pid_unbind                 (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int post_store_invite                (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+    int post_sign_ed25519                (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
 };
