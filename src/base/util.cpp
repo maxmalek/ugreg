@@ -235,11 +235,17 @@ static const ltc_hash_descriptor * const s_hashdesc[] =
     &sha3_256_desc,
     &sha3_384_desc,
     &sha3_512_desc,
+    NULL
 };
+
+const ltc_hash_descriptor* const* hash_alldesc()
+{
+    return s_hashdesc;
+}
 
 const ltc_hash_descriptor* hash_getdesc(const char* name)
 {
-    for(size_t i = 0; i < Countof(s_hashdesc); ++i)
+    for(size_t i = 0; s_hashdesc[i]; ++i)
         if(!strcmp(s_hashdesc[i]->name, name))
             return s_hashdesc[i];
     return NULL;
@@ -249,7 +255,7 @@ void hash_testall()
 {
     bool fail = false;
     printf("-- tomcrypt hash test --\n");
-    for(size_t i = 0; i < Countof(s_hashdesc); ++i)
+    for(size_t i = 0; s_hashdesc[i]; ++i)
     {
         printf("%-12s ... ", s_hashdesc[i]->name);
         switch(s_hashdesc[i]->test())

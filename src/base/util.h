@@ -91,7 +91,8 @@ size_t hash_sha512(char *dst, const void *src, size_t len);
 size_t hash_sha3_512(char *dst, const void *src, size_t len);
 
 struct ltc_hash_descriptor;
+const ltc_hash_descriptor * const *hash_alldesc(); // returns array of pointers, terminated with a NULL entry
 const ltc_hash_descriptor *hash_getdesc(const char *name);
 size_t hash_oneshot(char* dst, const void* src, size_t len, const ltc_hash_descriptor *hd);
 
-void hash_testall();
+void hash_testall(); // exits when failed
