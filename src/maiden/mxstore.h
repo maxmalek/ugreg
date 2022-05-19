@@ -19,7 +19,7 @@ public:
     };
 
     // --- authentication ---
-    void register_(const char *token, size_t expireInSeconds, const char *account);
+    bool register_(const char *token, size_t expireInSeconds, const char *account); // return false is already exists
     MxError authorize(const char *token) const;
     std::string getAccount(const char *token) const;
     void logout(const char *token);
@@ -31,10 +31,12 @@ public:
     void storeFailForHost(const char *host);
     LookupResult getCachedHomeserverForHost(const char *host, std::string& hsOut, unsigned& portOut) const;
 
-    bool save(const char *fn);
+    bool save(const char *fn) const;
     bool load(const char *fn);
 
 private:
+    bool save_nolock(const char *fn) const;
+    bool load_nolock(const char *fn);
     DataTree authdata;
     DataTree wellknown;
     u64 _wellKnownValidTime, _wellKnownFailTime;

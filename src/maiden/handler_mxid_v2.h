@@ -48,7 +48,6 @@ private:
     {
         int httpstatus; // http status if there was an error, otherwise 0
         MxError err;
-        bool hadToken;
         char token[256];
     };
 

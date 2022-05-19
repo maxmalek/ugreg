@@ -118,24 +118,19 @@ int MxidHandler_v2::onRequest(BufferedWriteStream& dst, mg_connection* conn, con
 
     // Handle user authorization if the endpoint requires it
     UserInfo user;
-    const char *autherr = NULL;
-    {
-        const AuthResult au = _tryAuthorize(conn, rq);
-        if(au.err == M_OK)
-        {
-            user.token = au.token;
-            user.username = _store.getAccount(au.token);
-            if(user.username.empty())
-                return sendError(conn, 500, M_UNRECOGNIZED, "Authorization succeeded but no user is associated with the token");
-            user.auth = AUTHED;
-        }
-        else if(au.hadToken)
-            autherr = "Invalid/unknown token";
-    }
+    const AuthResult au = _tryAuthorize(conn, rq);
+    if(au.err != M_OK)
+        return sendError(conn, 403, au.err, "Invalid/unknown token");
+
+    user.token = au.token;
+    user.username = _store.getAccount(au.token);
+    if(user.username.empty())
+        return sendError(conn, 500, M_UNRECOGNIZED, "Authorization succeeded but no user is associated with the token");
+    user.auth = AUTHED;
 
     // If the user supplied an invalid token (but DID supply a token) this will still succeed if the endpoint does not require authorization
     if(user.auth < ep->auth)
-        return sendError(conn, 403, M_UNKNOWN, autherr ? autherr : "Action requires authorization (must send 'Authorization: Bearer " TOKEN_PREFIX "<token>' HTTP header)");
+        return sendError(conn, 403, M_UNKNOWN, "Action requires authorization (must send 'Authorization: Bearer " TOKEN_PREFIX "<token>' HTTP header)");
 
     return (this->*ep->func)(dst, conn, rq, user);
 }
@@ -194,8 +189,8 @@ MxidHandler_v2::AuthResult MxidHandler_v2::_tryAuthorize(mg_connection* conn, co
     AuthResult res;
     res.err = M_OK;
     res.httpstatus = 0;
-    res.hadToken = extractToken(res.token, sizeof(res.token), conn, rq);
-    if(!res.hadToken)
+    bool hastoken = extractToken(res.token, sizeof(res.token), conn, rq);
+    if(!hastoken)
     {
         res.err = M_MISSING_PARAMS;
         res.httpstatus = 401;
@@ -284,10 +279,11 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
         return sendError(conn, 500, M_NOT_FOUND, (resolv.host + ": Access token does not belong to a known user").c_str());
 
 
+    // Keep trying until we get un unused token (the chance that this actually loops is pretty much zero)
     char thetoken[44]; // whatev
-    mxGenerateToken(thetoken, sizeof(thetoken));
-
-    _store.register_(thetoken, exp, account.c_str());
+    do
+        mxGenerateToken(thetoken, sizeof(thetoken));
+    while(!_store.register_(thetoken, exp, account.c_str()));
 
     // Same thing as sydent does: Supply both keys to make older clients happy
     dst.WriteStr("{\"token\": \"" TOKEN_PREFIX);

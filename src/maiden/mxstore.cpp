@@ -8,7 +8,7 @@
 // (just dump as json, then load later)
 
 #ifdef _DEBUG
-#define DEBUG_SAVE
+#define DEBUG_SAVE // <-- define this to serialize auth state to disk every time. intended for actively debugging/developing
 #endif
 
 static const u64 second = 1000;
@@ -26,24 +26,30 @@ MxStore::MxStore()
     authdata.root().makeMap();
 }
 
-void MxStore::register_(const char* token, size_t expireInSeconds, const char *account)
+bool MxStore::register_(const char* token, size_t expireInSeconds, const char *account)
 {
     std::lock_guard lock(authdata.mutex);
+    //---------------------------------------
     u64 expiryTime = timeNowMS() + expireInSeconds * 1000;
     VarRef u = authdata.root()[token];
+    if(!u.isNull())
+        return false;
     u["expiry"] = expiryTime;
     u["account"] = account;
 
 #ifdef DEBUG_SAVE
     save("debug.mxstore");
 #endif
+
+    return true;
 }
 
 MxError MxStore::authorize(const char* token) const
 {
     std::lock_guard lock(authdata.mutex);
+    //---------------------------------------
     VarCRef ref = authdata.root().lookup(token);
-    if(!ref)
+    if(!ref || ref.isNull())
         return M_NOT_FOUND;
     VarCRef exp = ref.lookup("expiry");
     if(!exp)
@@ -59,6 +65,7 @@ std::string MxStore::getAccount(const char* token) const
 {
     std::string ret;
     std::lock_guard lock(authdata.mutex);
+    //---------------------------------------
     VarCRef ref = authdata.root().lookup(token);
     if (ref)
         if(VarCRef acc = ref.lookup("account"))
@@ -70,14 +77,16 @@ std::string MxStore::getAccount(const char* token) const
 void MxStore::logout(const char* token)
 {
     std::lock_guard lock(authdata.mutex);
+    //---------------------------------------
     VarRef ref = authdata.root().lookup(token);
-    ref.clear();
+    ref.clear(); // map doesn't support deleting individual keys, so just set to TYPE_NULL for now
 }
 
 void MxStore::storeHomeserverForHost(const char* host, const char* hs, unsigned port)
 {
     assert(hs && *hs && port);
     std::lock_guard lock(wellknown.mutex);
+    //---------------------------------------
     VarRef u = wellknown.root()[host];
     u["homeserver"] = hs;
     u["port"] = u64(port);
@@ -88,6 +97,7 @@ void MxStore::storeFailForHost(const char* host)
 {
     // FIXME: might want to use a CacheTable<> instead
     std::lock_guard lock(wellknown.mutex);
+    //---------------------------------------
     wellknown.root()[host] = timeNowMS();
 }
 
@@ -96,6 +106,7 @@ MxStore::LookupResult MxStore::getCachedHomeserverForHost(const char* host, std:
     u64 ts;
     {
         std::lock_guard lock(wellknown.mutex);
+        //---------------------------------------
         VarCRef u = wellknown.root().lookup(host);
         if(!u)
             return UNKNOWN;
@@ -128,10 +139,24 @@ MxStore::LookupResult MxStore::getCachedHomeserverForHost(const char* host, std:
         : VALID;
 }
 
+bool MxStore::save(const char* fn) const
+{
+    std::lock_guard lock(authdata.mutex);
+    //---------------------------------------
+    return save_nolock(fn);
+}
+
+bool MxStore::load(const char* fn)
+{
+    std::lock_guard lock(authdata.mutex);
+    //---------------------------------------
+    return load_nolock(fn);
+}
+
 
 // TODO periodic defragment auth to get rid of leftover map keys
 
-bool MxStore::save(const char *fn)
+bool MxStore::save_nolock(const char *fn) const
 {
     bool ok = false;
     std::string tmp = fn;
@@ -152,7 +177,7 @@ bool MxStore::save(const char *fn)
     return ok;
 }
 
-bool MxStore::load(const char *fn)
+bool MxStore::load_nolock(const char *fn)
 {
     bool ok = false;
     if(FILE* f = fopen(fn, "rb"))
