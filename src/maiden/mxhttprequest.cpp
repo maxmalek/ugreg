@@ -22,6 +22,7 @@ int mxGetJson(VarRef dst, const char * host, unsigned port, const char * res, in
 
     int ret = -1;
 
+    printf("mxGetJson: %s:%u GET %s\n", host, port, res);
     if (mg_connection* c = mg_connect_client_secure(&opt, errbuf, sizeof(errbuf)))
     {
         std::string request = os.str();

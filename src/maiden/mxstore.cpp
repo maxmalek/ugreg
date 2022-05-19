@@ -1,9 +1,15 @@
 #include "mxstore.h"
 #include "util.h"
+#include "json_in.h"
+#include "json_out.h"
 
 // Yes, the entries in authdata are stringly typed.
 // But this way saving/restoring the entire structure is very simple if we ever need it
 // (just dump as json, then load later)
+
+#ifdef _DEBUG
+#define DEBUG_SAVE
+#endif
 
 static const u64 second = 1000;
 static const u64 minute = second * 60;
@@ -14,6 +20,9 @@ MxStore::MxStore()
     , _wellKnownValidTime(1 * hour)
     , _wellKnownFailTime(10 * minute)
 {
+#ifdef DEBUG_SAVE
+    load("debug.mxstore");
+#endif
     authdata.root().makeMap();
 }
 
@@ -24,6 +33,10 @@ void MxStore::register_(const char* token, size_t expireInSeconds, const char *a
     VarRef u = authdata.root()[token];
     u["expiry"] = expiryTime;
     u["account"] = account;
+
+#ifdef DEBUG_SAVE
+    save("debug.mxstore");
+#endif
 }
 
 MxError MxStore::authorize(const char* token) const
@@ -118,7 +131,38 @@ MxStore::LookupResult MxStore::getCachedHomeserverForHost(const char* host, std:
 
 // TODO periodic defragment auth to get rid of leftover map keys
 
-bool MxStore::save()
+bool MxStore::save(const char *fn)
 {
-    return false;
+    bool ok = false;
+    std::string tmp = fn;
+    tmp += ".new";
+    if(FILE* f = fopen(tmp.c_str(), "wb"))
+    {
+        {
+            char buf[12*1024];
+            BufferedFILEWriteStream wr(f, buf, sizeof(buf));
+            writeJson(wr, authdata.root(), true);
+            wr.Flush();
+            printf("MxStore::save: Wrote %zu bytes\n", wr.Tell());
+        }
+        fclose(f);
+        remove(fn);
+        ok = !rename(tmp.c_str(), fn);
+    }
+    return ok;
 }
+
+bool MxStore::load(const char *fn)
+{
+    bool ok = false;
+    if(FILE* f = fopen(fn, "rb"))
+    {
+        char buf[12*1024];
+        BufferedFILEReadStream fs(f, buf, sizeof(buf));
+        ok = loadJsonDestructive(authdata.root(), fs);
+        printf("MxStore::load: Read %zu bytes, success = %u\n", fs.Tell(), ok);
+        fclose(f);
+    }
+    return ok;
+}
+

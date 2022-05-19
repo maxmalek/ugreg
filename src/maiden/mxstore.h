@@ -31,10 +31,11 @@ public:
     void storeFailForHost(const char *host);
     LookupResult getCachedHomeserverForHost(const char *host, std::string& hsOut, unsigned& portOut) const;
 
-    bool save();
+    bool save(const char *fn);
+    bool load(const char *fn);
 
 private:
-    DataTree authdata; // string => User* or None
+    DataTree authdata;
     DataTree wellknown;
     u64 _wellKnownValidTime, _wellKnownFailTime;
 
