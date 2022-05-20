@@ -10,6 +10,7 @@
 #include <civetweb/civetweb.h>
 #include "mxhttprequest.h"
 #include "mxtoken.h"
+#include "tomcrypt/tomcrypt.h"
 
 
 // All /account/register tokens we issue start with this
@@ -119,14 +120,17 @@ int MxidHandler_v2::onRequest(BufferedWriteStream& dst, mg_connection* conn, con
     // Handle user authorization if the endpoint requires it
     UserInfo user;
     const AuthResult au = _tryAuthorize(conn, rq);
-    if(au.err != M_OK)
-        return sendError(conn, 403, au.err, "Invalid/unknown token");
+    if(ep->auth != NOAUTH)
+    {
+        if(au.err != M_OK)
+            return sendError(conn, 403, au.err, "Invalid/unknown token");
 
-    user.token = au.token;
-    user.username = _store.getAccount(au.token);
-    if(user.username.empty())
-        return sendError(conn, 500, M_UNRECOGNIZED, "Authorization succeeded but no user is associated with the token");
-    user.auth = AUTHED;
+        user.token = au.token;
+        user.username = _store.getAccount(au.token);
+        if(user.username.empty())
+            return sendError(conn, 500, M_UNRECOGNIZED, "Authorization succeeded but no user is associated with the token");
+        user.auth = AUTHED;
+    }
 
     // If the user supplied an invalid token (but DID supply a token) this will still succeed if the endpoint does not require authorization
     if(user.auth < ep->auth)
@@ -332,6 +336,22 @@ int MxidHandler_v2::get_pubkey(BufferedWriteStream& dst, mg_connection* conn, co
 
 int MxidHandler_v2::get_hashdetails(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
+    dst.WriteStr("{\"algorithms\":[");
+    size_t n = 0;
+    for(const ltc_hash_descriptor * const *desc = hash_alldesc(); *desc; ++desc, ++n)
+    {
+        const ltc_hash_descriptor *h = *desc;
+        if(n)
+            dst.Put(',');
+        dst.Put('\"');
+        dst.WriteStr(h->name);
+        dst.Put('\"');
+    }
+
+    dst.WriteStr("], \"lookup_pepper\":\"");
+    std::string pepper = _store.getHashPepper(true);
+    dst.Write(pepper.c_str(), pepper.length());
+    dst.WriteStr("\"}");
     return 0;
 }
 

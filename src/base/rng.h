@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include <limits>
 
 #define ASOCN_SPONGE_DECL_ONLY
 #include "ascon-sponge.h"
@@ -41,3 +42,18 @@ private:
 MixRand& GetThreadRng();
 u64 GetRandom64();
 u64 GetRandom64(u64 duplex); // mix duplex value back into the state
+
+// adapter for std::uniform_int_distribution
+struct RngEngine
+{
+    typedef u64 result_type;
+    MixRand& _r;
+    inline RngEngine(MixRand& r) : _r(r) {}
+    inline RngEngine() : RngEngine(GetThreadRng()) {}
+    inline result_type operator()() { return _r.next(); }
+
+    static constexpr result_type min() { return std::numeric_limits<result_type>::min(); }
+    static constexpr result_type max() { return std::numeric_limits<result_type>::max(); }
+};
+
+int RandomNumberBetween(int minval, int maxval); // inclusive

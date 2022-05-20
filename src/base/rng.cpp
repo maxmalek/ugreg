@@ -159,3 +159,10 @@ u64 GetRandom64(u64 duplex)
 {
     return GetThreadRng().next(duplex);
 }
+
+int RandomNumberBetween(int minval, int maxval)
+{
+    RngEngine eng;
+    std::uniform_int_distribution dist(minval, maxval);
+    return dist(eng);
+}

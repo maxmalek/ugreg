@@ -5,17 +5,7 @@
 #include <assert.h>
 #include "util.h"
 
-// adapter for std::uniform_int_distribution
-struct RngEngine
-{
-    typedef u64 result_type;
-    MixRand& _r;
-    RngEngine(MixRand& r) : _r(r) {}
-    result_type operator()() { return _r.next(); }
 
-    static constexpr result_type min() { return std::numeric_limits<result_type>::min(); }
-    static constexpr result_type max() { return std::numeric_limits<result_type>::max(); }
-};
 
 void mxGenerateToken(char * dst, size_t n, const char * alphabet, size_t alphabetSize)
 {
@@ -25,7 +15,7 @@ void mxGenerateToken(char * dst, size_t n, const char * alphabet, size_t alphabe
         return;
 
     std::uniform_int_distribution dist(0, int(alphabetSize - 1));
-    RngEngine eng(GetThreadRng());
+    RngEngine eng;
 
     --n;
     for(size_t i = 0; i < n; ++i)

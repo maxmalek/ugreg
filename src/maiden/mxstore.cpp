@@ -2,6 +2,8 @@
 #include "util.h"
 #include "json_in.h"
 #include "json_out.h"
+#include "mxtoken.h"
+#include "rng.h"
 
 // Yes, the entries in authdata are stringly typed.
 // But this way saving/restoring the entire structure is very simple if we ever need it
@@ -19,6 +21,10 @@ MxStore::MxStore()
     : authdata(DataTree::SMALL), wellknown(DataTree::SMALL)
     , _wellKnownValidTime(1 * hour)
     , _wellKnownFailTime(10 * minute)
+    , hashPepperTime(0)
+    , hashPapperValidity(15 * minute)
+    , hashPepperLenMin(24)
+    , hashPepperLenMax(40)
 {
 #ifdef DEBUG_SAVE
     load("debug.mxstore");
@@ -38,7 +44,7 @@ bool MxStore::register_(const char* token, size_t expireInSeconds, const char *a
     u["account"] = account;
 
 #ifdef DEBUG_SAVE
-    save("debug.mxstore");
+    save_nolock("debug.mxstore");
 #endif
 
     return true;
@@ -139,6 +145,29 @@ MxStore::LookupResult MxStore::getCachedHomeserverForHost(const char* host, std:
         : VALID;
 }
 
+std::string MxStore::getHashPepper(bool allowUpdate)
+{
+    std::lock_guard lock(hashPepperMtx);
+    //---------------------------------------
+
+    if(allowUpdate)
+    {
+        u64 now = timeNowMS();
+        if(hashPepperTime + hashPapperValidity < now)
+            rotateHashPepper_nolock(now);
+    }
+
+    return hashPepper;
+}
+
+void MxStore::rotateHashPepper()
+{
+    u64 now = timeNowMS();
+    std::lock_guard lock(hashPepperMtx);
+    //---------------------------------------
+    rotateHashPepper_nolock(now);
+}
+
 bool MxStore::save(const char* fn) const
 {
     std::lock_guard lock(authdata.mutex);
@@ -191,3 +220,18 @@ bool MxStore::load_nolock(const char *fn)
     return ok;
 }
 
+void MxStore::rotateHashPepper_nolock(u64 now)
+{
+    int r = RandomNumberBetween((int)hashPepperLenMin, (int)hashPepperLenMax);
+    hashPepper = GenerateHashPepper(r);
+    hashPepperTime = now;
+}
+
+std::string MxStore::GenerateHashPepper(size_t n)
+{
+    static const char alphabet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_01234567890^$%&/()[]{}<>=?#+*~,.-_:;@|";
+    std::string s;
+    s.resize(n);
+    mxGenerateToken(s.data(), n, alphabet, sizeof(alphabet) - 1);
+    return s;
+}
