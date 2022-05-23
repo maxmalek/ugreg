@@ -2,6 +2,18 @@
 
 #include "jsonstreamwrapper.h"
 
+class SocketReadStream : public BufferedReadStream
+{
+public:
+    SocketReadStream(void *conn, char *buf, size_t bufsize, size_t maxsize = 0);
+
+private:
+    static size_t _Read(void* dst, size_t bytes, BufferedReadStream* self);
+    void _Init(BufferedReadStream* self);
+    void* const _conn; // mg_connection
+    size_t _maxsize;
+};
+
 
 // Use after mg_send_http_ok(conn, "...", -1) -- this enables chunked transfer encoding
 class SocketWriteStream : public BufferedWriteStream

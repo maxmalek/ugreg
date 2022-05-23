@@ -2,6 +2,33 @@
 #include "civetweb/civetweb.h"
 #include <assert.h>
 
+SocketReadStream::SocketReadStream(void* conn, char* buf, size_t bufsize, size_t maxsize)
+    : BufferedReadStream(NULL, _Read, buf, bufsize), _conn(conn), _maxsize(maxsize ? maxsize : size_t(-1))
+{
+}
+
+size_t SocketReadStream::_Read(void* dst, size_t bytes, BufferedReadStream* self)
+{
+    SocketReadStream* me = static_cast<SocketReadStream*>(self);
+    mg_connection* conn = static_cast<mg_connection*>(me->_conn);
+    const int rd = mg_read(conn, dst, bytes);
+    assert(rd >= 0); // Read is expected to be blocking, so this shouldn't happen
+    if(rd <= 0)
+        return 0;
+
+    size_t n = (size_t)rd;
+    // Once we're over the limit, set EOF regardless of whether there are more incoming data or not
+    if(me->_maxsize >= n)
+        me->_maxsize -= n;
+    else
+    {
+        n = me->_maxsize;
+        me->setEOF();
+    }
+    return n;
+}
+
+
 SocketWriteStream::SocketWriteStream(void* conn, char* buf, size_t bufsize, const char* hdr, size_t hdrsize)
     : BufferedWriteStream(NULL, _WriteInit, buf, bufsize), _conn(conn), _hdr(hdr), _hdrsize(hdrsize)
 {

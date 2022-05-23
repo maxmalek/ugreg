@@ -4,6 +4,7 @@
 #include "util.h"
 #include "variant.h"
 #include "json_in.h"
+#include "socketstream.h"
 
 #include "civetweb/civetweb.h"
 
@@ -178,23 +179,9 @@ int Request::ReadJsonBodyVars(VarRef dst, mg_connection* conn, bool ignoreMIME, 
             return -2;
     }
 
-    // TODO: Use a BufferedReadStream to load successively rather than slurping up the entire thing first
-    std::vector<char> rd;
-    do
-    {
-        char buf[1024];
-        int done = mg_read(conn, buf, sizeof(buf)); // TODO: handle lack of data gracefully
-        if (done > 0)
-        {
-            maxsize -= done;
-            rd.insert(rd.end(), &buf[0], &buf[done]);
-        }
-        else if(!done) // Connection closed? Get out.
-            break;
-    }
-    while(maxsize);
-
-    if (!loadJsonDestructive(dst, rd.data(), rd.size()))
+    char buf[4096];
+    SocketReadStream sm(conn, buf, sizeof(buf), maxsize);
+    if (!loadJsonDestructive(dst, sm))
         return -3;
 
     if (!acceptNotMap && dst.type() != Var::TYPE_MAP)

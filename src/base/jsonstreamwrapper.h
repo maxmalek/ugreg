@@ -61,6 +61,8 @@ public:
         return _eof && _cur == _last;
     }
 
+    void setEOF();
+
     // ----- DO NOT TOUCH ------------
     void _Refill();
 
@@ -72,8 +74,9 @@ public:
     size_t _lastread;
     size_t _count;  //!< Number of characters read
     const ReadFunc _readf;
-    bool _eof;
     const InitFunc _initf;
+    bool _eof;
+    bool _autoEOF; // stream can set this to turn off automatic eof handling when 0 bytes are read
 };
 
 class BufferedFILEReadStream : public BufferedReadStream

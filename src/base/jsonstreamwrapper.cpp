@@ -7,7 +7,7 @@
 
 BufferedReadStream::BufferedReadStream(InitFunc initf, ReadFunc rf, char* buf, size_t bufsz)
     : _cur(0), _buf(buf), _last(0), _dst(0), _bufsz(bufsz), _lastread(0), _count(0)
-    , _readf(rf), _eof(false), _initf(initf)
+    , _readf(rf), _initf(initf), _eof(false), _autoEOF(true)
 {
     assert(rf && buf && bufsz > 4);
 }
@@ -31,6 +31,16 @@ const BufferedReadStream::Ch* BufferedReadStream::Peek4() const
     return (_cur + 4 - !_eof <= _last) ? _cur : 0;
 }
 
+void BufferedReadStream::setEOF()
+{
+    if(!_eof)
+    {
+        _buf[0] = '\0';
+        _eof = true;
+        ++_last;
+    }
+}
+
 void BufferedReadStream::_Refill()
 {
     if (!_eof)
@@ -41,12 +51,8 @@ void BufferedReadStream::_Refill()
         _last = _buf + rd - 1;
         _cur = _buf;
 
-        if(!rd)
-        {
-            _buf[rd] = '\0';
-            _eof = true;
-            ++_last;
-        }
+        if(!rd && _autoEOF)
+            setEOF();
     }
 }
 
