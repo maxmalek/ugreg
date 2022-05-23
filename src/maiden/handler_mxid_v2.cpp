@@ -3,6 +3,7 @@
 #include <string>
 #include "debugfunc.h"
 #include "json_out.h"
+#include "json_in.h"
 #include "mxstore.h"
 #include "request.h"
 #include "mxdefines.h"
@@ -336,14 +337,11 @@ int MxidHandler_v2::get_pubkey(BufferedWriteStream& dst, mg_connection* conn, co
 
 int MxidHandler_v2::get_hashdetails(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    dst.WriteStr("{\"algorithms\":[");
-    size_t n = 0;
-    for(const ltc_hash_descriptor * const *desc = hash_alldesc(); *desc; ++desc, ++n)
+    dst.WriteStr("{\"algorithms\":[\"none\"");
+    for(const ltc_hash_descriptor * const *desc = hash_alldesc(); *desc; ++desc)
     {
         const ltc_hash_descriptor *h = *desc;
-        if(n)
-            dst.Put(',');
-        dst.Put('\"');
+        dst.WriteStr(",\"'");
         dst.WriteStr(h->name);
         dst.Put('\"');
     }
@@ -357,6 +355,41 @@ int MxidHandler_v2::get_hashdetails(BufferedWriteStream& dst, mg_connection* con
 
 int MxidHandler_v2::get_lookup(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
+    DataTree data(DataTree::SMALL);
+    if(Request::ReadJsonBodyVars(data.root(), conn) < 0)
+        return sendError(conn, 400, M_MISSING_PARAMS, "Failed to parse JSON body");
+
+    VarCRef xaddr = data.root().lookup("addresses");
+    VarCRef xalgo = data.root().lookup("algorithm");
+    VarCRef xpep = data.root().lookup("pepper");
+
+    if(!(xaddr && xalgo && xpep && xaddr.type() == Var::TYPE_ARRAY))
+        return sendError(conn, 400, M_MISSING_PARAMS, "Expected fields not present");
+
+    const char * const algo = xalgo.asCString();
+    const char * const pepper = xpep.asCString();
+    if(!algo || !pepper)
+        return sendError(conn, 400, M_INVALID_PARAM, "Type mismatch");
+    
+    const ltc_hash_descriptor * hd = NULL;
+    if(strcmp(algo, "none"))
+    {
+        hd = hash_getdesc(algo);
+        if(!hd)
+            return sendError(conn, 400, M_MISSING_PARAMS, "Unknown algorithm");
+    }
+
+    // Re-use our own private pool that we already have
+    VarRef out = data.root()["_"];
+    out.clear(); // for smug clients
+    VarRef xdst = out["mappings"];
+
+    MxError err = _store.bulkLookup(xdst, xaddr, algo, pepper);
+    if(err != M_OK)
+        sendError(conn, 400, err);
+
+
+    writeJson(dst, out, false);
     return 0;
 }
 

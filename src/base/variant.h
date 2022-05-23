@@ -436,6 +436,7 @@ public:
     // ref["hello"]["world"] = 42; creates the following JSON: { "hello":{"world":42}}
     // The VarRef returned from this is always valid & safe, but if a new key was created it will be of TYPE_NULL.
     VarRef operator[](const char *key);
+    VarRef operator[](PoolStr ps);
 
     // Merge o into this according to MergeFlags.
     // Returns false if o is not a map.

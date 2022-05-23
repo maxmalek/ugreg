@@ -37,6 +37,9 @@ public:
     std::string getHashPepper(bool allowUpdate);
     void rotateHashPepper();
 
+    // -- lookup API --
+    MxError bulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper); // dst is made a map, in is an array
+
     bool save(const char *fn) const;
     bool load(const char *fn);
 
@@ -48,12 +51,13 @@ private:
 
     DataTree authdata;
     DataTree wellknown;
+    DataTree hashcache;
+    DataTree threepid; // {medium => {3pid => mxid}}
     u64 _wellKnownValidTime, _wellKnownFailTime;
 
     std::string hashPepper;
     u64 hashPepperTime; // timestamp at which the pepper was generated
     u64 hashPapperValidity;
     size_t hashPepperLenMin, hashPepperLenMax;
-    std::mutex hashPepperMtx;
 
 };

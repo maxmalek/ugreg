@@ -18,7 +18,7 @@ static const u64 minute = second * 60;
 static const u64 hour = minute * 60;
 
 MxStore::MxStore()
-    : authdata(DataTree::SMALL), wellknown(DataTree::SMALL)
+    : authdata(DataTree::SMALL), wellknown(DataTree::SMALL), hashcache(DataTree::DEFAULT)
     , _wellKnownValidTime(1 * hour)
     , _wellKnownFailTime(10 * minute)
     , hashPepperTime(0)
@@ -147,7 +147,7 @@ MxStore::LookupResult MxStore::getCachedHomeserverForHost(const char* host, std:
 
 std::string MxStore::getHashPepper(bool allowUpdate)
 {
-    std::lock_guard lock(hashPepperMtx);
+    std::lock_guard lock(hashcache.mutex);
     //---------------------------------------
 
     if(allowUpdate)
@@ -163,9 +163,53 @@ std::string MxStore::getHashPepper(bool allowUpdate)
 void MxStore::rotateHashPepper()
 {
     u64 now = timeNowMS();
-    std::lock_guard lock(hashPepperMtx);
+    std::lock_guard lock(hashcache.mutex);
     //---------------------------------------
     rotateHashPepper_nolock(now);
+}
+
+MxError MxStore::bulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper)
+{
+    Var::Map* m = dst.makeMap().v->map();
+    const Var *a = in.v->array();
+    const size_t n = in.size();
+    assert(a);
+
+    std::lock_guard lock(hashcache.mutex);
+    //---------------------------------------
+
+    VarRef cache = hashcache.root()[algo];
+    if(!cache)
+        return M_INVALID_PARAM; // unsupported algo
+
+    if(hashPepper != pepper)
+        return M_INVALID_PEPPER;
+
+    // value is 'false' if marked as 'no cache available' aka 'cache was dropped'
+    if(cache.type() == Var::TYPE_BOOL && !cache.asBool())
+    {
+        // TODO
+        //_generateCache(cache, algo, pepper);
+    }
+
+    for(size_t i = 0; i < n; ++i)
+    {
+        PoolStr pshash = a[i].asString(*in.mem);
+
+        // Client sent padded base64? Trim the padding.
+        while(pshash.len && pshash.s[pshash.len-1] == '=')
+            --pshash.len;
+
+        if(!pshash.len)
+            continue;
+
+        if(VarRef v = cache.lookup(pshash.s, pshash.len))
+        {
+            PoolStr ps = v.asString();
+            if(ps.s)
+                dst[pshash].setStr(ps.s, ps.len);
+        }
+    }
 }
 
 bool MxStore::save(const char* fn) const

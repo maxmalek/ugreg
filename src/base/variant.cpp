@@ -1248,6 +1248,12 @@ VarRef VarRef::operator[](const char* key)
     return VarRef(*mem, &sub);
 }
 
+VarRef VarRef::operator[](PoolStr ps)
+{
+    Var& sub = v->makeMap(*mem)->putKey(*mem, ps.s, ps.len);
+    return VarRef(*mem, &sub);
+}
+
 bool VarRef::merge(const VarCRef& o, MergeFlags mergeflags)
 {
     assert(v && o.v);

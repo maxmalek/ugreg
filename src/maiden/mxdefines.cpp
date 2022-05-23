@@ -18,6 +18,7 @@ static const char *mxErrorStrs[] =
     "M_UNRECOGNIZED",
     "M_THREEPID_IN_USE",
     "M_UNKNOWN",
+    "M_INVALID_PEPPER",
 
     // if you change this: keep in sync with array in .h file
 };
