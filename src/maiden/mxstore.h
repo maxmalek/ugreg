@@ -4,6 +4,7 @@
 #include "datatree.h"
 #include "mxdefines.h"
 #include "cachetable.h"
+#include <unordered_map>
 
 class MxStore
 {
@@ -18,15 +19,16 @@ public:
         FAILED,  // cached, known invalid
     };
 
+    bool apply(VarCRef config);
+    void defrag();
+
     // --- authentication ---
-    bool register_(const char *token, size_t expireInSeconds, const char *account); // return false is already exists
+    bool register_(const char *token, size_t expireInMS, const char *account); // return false is already exists
     MxError authorize(const char *token) const;
     std::string getAccount(const char *token) const;
     void logout(const char *token);
 
     // --- well-known ---
-    void setWellKnownCacheTime(u64 ms) { _wellKnownValidTime = ms; }
-    void setWellKnownFailCacheTime(u64 ms) { _wellKnownFailTime = ms; }
     void storeHomeserverForHost(const char *host, const char *hs, unsigned port);
     void storeFailForHost(const char *host);
     LookupResult getCachedHomeserverForHost(const char *host, std::string& hsOut, unsigned& portOut) const;
@@ -38,7 +40,7 @@ public:
     void rotateHashPepper();
 
     // -- lookup API --
-    MxError bulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper); // dst is made a map, in is an array
+    MxError hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper); // dst is made a map, in is an array
 
     bool save(const char *fn) const;
     bool load(const char *fn);
@@ -47,17 +49,57 @@ private:
     bool save_nolock(const char *fn) const;
     bool load_nolock(const char *fn);
     void rotateHashPepper_nolock(u64 now);
+    MxError _generateHashCache_nolock(VarRef cache, const char *algo);
+    void _clearHashCache_nolock();
 
 
     DataTree authdata;
     DataTree wellknown;
-    DataTree hashcache;
+    DataTree hashcache; // {base64(hash) => mxid} // TODO: maybe don't store the mxid here, it's a duplicate and wastes mem
     DataTree threepid; // {medium => {3pid => mxid}}
-    u64 _wellKnownValidTime, _wellKnownFailTime;
 
     std::string hashPepper;
-    u64 hashPepperTime; // timestamp at which the pepper was generated
-    u64 hashPapperValidity;
-    size_t hashPepperLenMin, hashPepperLenMax;
+    u64 hashPepperTS; // timestamp at which the pepper was generated
+
+    // --- config --- (same structure as JSON in config file)
+
+public:
+    struct Config
+    {
+        Config();
+
+        struct
+        {
+            u64 pepperTime;
+            size_t pepperLenMin, pepperLenMax;
+        } hashcache;
+
+        struct
+        {
+            u64 cacheTime;
+            u64 failTime;
+            u64 requestTimeout;
+            u64 requestMaxSize;
+        } wellknown;
+
+        struct
+        {
+            u64 maxTime;
+        } register_;
+
+        struct Hash
+        {
+            Hash();
+            bool lazy;
+        };
+
+        typedef std::unordered_map<std::string, Hash> Hashes;
+        Hashes hashes;
+
+    };
+    const Config& getConfig() const { return this->config; }
+
+private:
+    Config config;
 
 };

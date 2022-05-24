@@ -54,6 +54,7 @@ set(src
     luafuncs.h
     rng.cpp
     rng.h
+    scopetimer.h
 )
 
 add_library(base ${src})

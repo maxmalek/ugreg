@@ -40,6 +40,7 @@ int main(int argc, char** argv)
     srand(unsigned(time(NULL)));
     handlesigs(sigquit);
 
+    MxStore mxs;
     ServerConfig cfg;
     {
         DataTree cfgtree;
@@ -52,9 +53,9 @@ int main(int argc, char** argv)
                 dumpjson(cfgtree.root(), true).c_str()
             );
         }
+        if(!mxs.apply(cfgtree.subtree("/matrix")))
+            bail("Invalid matrix config. Exiting.", "");
     }
-
-    MxStore mxs;
 
     WebServer::StaticInit();
     WebServer srv;

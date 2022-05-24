@@ -232,17 +232,22 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
 
     const char *sn =    str(params.root().lookup("matrix_server_name"));
     const char *tok =   str(params.root().lookup("access_token"));
-    s64 exp = intor0(params.root().lookup("expires_in"));
+    s64 exps = intor0(params.root().lookup("expires_in"));
     const char *tokty = str(params.root().lookup("token_type"));
     if(!tokty || strcmp(tokty, "Bearer"))
         printf("MX-SPEC: Expected token_type == 'Bearer', got '%s'\n", tokty);
-    if(!exp)
+    if(exps <= 0)
+    {
         printf("MX-SPEC: Expected expires_in > 0\n");
+        exps = 0;
+    }
     if(!sn || !tok || !*sn || !*tok)
         return sendError(conn, 401, M_MISSING_PARAMS, "Must provide at least matrix_server_name & access_token");
 
-    if(!exp)
-        exp = 3600; // FIXME: make configurable
+    u64 expMS = u64(exps) * 1000; // make unsigned & millis
+    u64 maxexpMS = _store.getConfig().register_.maxTime;
+    if(!expMS || expMS > maxexpMS)
+        expMS = maxexpMS;
 
     // MX-SPEC: we should be reading the request body and ensure it's at least {}
     // but since the contents are ignored, who cares
@@ -255,7 +260,8 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
 
     if(res != MxStore::VALID)
     {
-        resolv = lookupHomeserverForHost(sn, 5000, 1024*50); // TODO: make configurable
+        const MxStore::Config& cfg = _store.getConfig();
+        resolv = lookupHomeserverForHost(sn, cfg.wellknown.requestTimeout, cfg.wellknown.requestMaxSize);
         if(!resolv.host.empty())
         {
             _store.storeHomeserverForHost(sn, resolv.host.c_str(), resolv.port);
@@ -288,7 +294,7 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
     char thetoken[44]; // whatev
     do
         mxGenerateToken(thetoken, sizeof(thetoken));
-    while(!_store.register_(thetoken, exp, account.c_str()));
+    while(!_store.register_(thetoken, expMS, account.c_str()));
 
     // Same thing as sydent does: Supply both keys to make older clients happy
     dst.WriteStr("{\"token\": \"" TOKEN_PREFIX);
@@ -370,21 +376,13 @@ int MxidHandler_v2::get_lookup(BufferedWriteStream& dst, mg_connection* conn, co
     const char * const pepper = xpep.asCString();
     if(!algo || !pepper)
         return sendError(conn, 400, M_INVALID_PARAM, "Type mismatch");
-    
-    const ltc_hash_descriptor * hd = NULL;
-    if(strcmp(algo, "none"))
-    {
-        hd = hash_getdesc(algo);
-        if(!hd)
-            return sendError(conn, 400, M_MISSING_PARAMS, "Unknown algorithm");
-    }
 
     // Re-use our own private pool that we already have
     VarRef out = data.root()["_"];
     out.clear(); // for smug clients
     VarRef xdst = out["mappings"];
 
-    MxError err = _store.bulkLookup(xdst, xaddr, algo, pepper);
+    MxError err = _store.hashedBulkLookup(xdst, xaddr, algo, pepper);
     if(err != M_OK)
         sendError(conn, 400, err);
 

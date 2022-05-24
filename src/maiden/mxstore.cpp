@@ -4,6 +4,8 @@
 #include "json_out.h"
 #include "mxtoken.h"
 #include "rng.h"
+#include "tomcrypt.h"
+#include "scopetimer.h"
 
 // Yes, the entries in authdata are stringly typed.
 // But this way saving/restoring the entire structure is very simple if we ever need it
@@ -17,26 +19,183 @@ static const u64 second = 1000;
 static const u64 minute = second * 60;
 static const u64 hour = minute * 60;
 
+MxStore::Config::Hash::Hash()
+    : lazy(true)
+{
+}
+
+
+MxStore::Config::Config()
+{
+    // default config
+    hashcache.pepperTime = 1 * hour;
+    hashcache.pepperLenMin = 24;
+    hashcache.pepperLenMax = 40;
+    wellknown.cacheTime = 1 * hour;
+    wellknown.failTime = 10 * minute;
+    register_.maxTime = 24 * hour;
+
+    hashes["sha256"] = Hash();
+}
+
+
 MxStore::MxStore()
     : authdata(DataTree::SMALL), wellknown(DataTree::SMALL), hashcache(DataTree::DEFAULT)
-    , _wellKnownValidTime(1 * hour)
-    , _wellKnownFailTime(10 * minute)
-    , hashPepperTime(0)
-    , hashPapperValidity(15 * minute)
-    , hashPepperLenMin(24)
-    , hashPepperLenMax(40)
+    , hashPepperTS(0)
 {
 #ifdef DEBUG_SAVE
     load("debug.mxstore");
 #endif
     authdata.root().makeMap();
+
+    // TODO: enable hashcache entries from config
 }
 
-bool MxStore::register_(const char* token, size_t expireInSeconds, const char *account)
+static bool readUint(u64& dst, VarCRef ref)
+{
+    if(!ref)
+        return true;
+    if(ref.type() != Var::TYPE_UINT)
+        return false;
+    dst = *ref.asUint();
+    return true;
+}
+
+static bool readUintKey(u64& dst, VarCRef m, const char *key)
+{
+    if(!m)
+        return true;
+    return readUint(dst, m.lookup(key));
+}
+
+
+static bool readBool(bool& dst, VarCRef ref)
+{
+    if(!ref)
+        return true;
+    dst = ref.asBool();
+    return true;
+}
+
+static bool readBoolKey(bool& dst, VarCRef m, const char *key)
+{
+    if(!m)
+        return true;
+    return readBool(dst, m.lookup(key));
+}
+static bool readTimeKey(u64& dst, VarCRef m, const char *key)
+{
+    if(!m)
+        return true;
+    VarCRef ref = m.lookup(key);
+    if(!ref)
+        return true;
+    if(ref.type() != Var::TYPE_STRING)
+        return false;
+    PoolStr ps = ref.asString();
+    return strToDurationMS_Safe(&dst, ps.s, ps.len);
+}
+
+bool MxStore::apply(VarCRef config)
+{
+    if(config.type() != Var::TYPE_MAP)
+        return false;
+
+    Config cfg;
+
+    VarCRef xhashcache = config.lookup("hashcache");
+    VarCRef xwellknown = config.lookup("wellknown");
+    VarCRef xregister = config.lookup("register");
+    VarCRef xhashes = config.lookup("hashes");
+
+    bool ok =
+           readTimeKey(cfg.hashcache.pepperTime, xhashcache, "pepperTime")
+        && readTimeKey(cfg.wellknown.cacheTime, xwellknown, "cacheTime")
+        && readTimeKey(cfg.wellknown.failTime, xwellknown, "failTime")
+        && readTimeKey(cfg.wellknown.requestTimeout, xwellknown, "requestTimeout")
+        && readUintKey(cfg.wellknown.requestMaxSize, xwellknown, "requestMaxSize")
+        && readTimeKey(cfg.register_.maxTime, xregister, "maxTime");
+
+    if(ok && xhashcache)
+        if(VarCRef xpepperlen = xhashcache.lookup("pepperLen"))
+        {
+            if(xpepperlen.type() == Var::TYPE_UINT)
+                cfg.hashcache.pepperLenMin = cfg.hashcache.pepperLenMax = *xpepperlen.asUint();
+            else if(xpepperlen.type() == Var::TYPE_ARRAY)
+            {
+                ok = readUint(cfg.hashcache.pepperLenMin, xpepperlen.at(0))
+                  && readUint(cfg.hashcache.pepperLenMax, xpepperlen.at(1));
+            }
+            else
+                ok = false;
+        }
+
+    if(ok && xhashes)
+    {
+        const Var::Map *m = xhashes.v->map();
+        if(m)
+        {
+            for(Var::Map::Iterator it = m->begin();  it != m->end(); ++it)
+            {
+                PoolStr hashname = xhashes.mem->getSL(it.key());
+                if(strcmp(hashname.s, "none") && !hash_getdesc(hashname.s))
+                {
+                    printf("MxStore: Unknown hash [%s] in config, ignoring\n", hashname.s);
+                    continue;
+                }
+
+                VarCRef t = VarCRef(xhashes.mem, &it.value());
+
+                if(t.type() == Var::TYPE_MAP)
+                {
+                    Config::Hash h;
+                    ok = ok && readBoolKey(h.lazy, t, "lazy");
+
+                    cfg.hashes[hashname.s] = h;
+                }
+                else // just a bool or none entry? apply default or delete entry
+                {
+                    bool on = t.asBool();
+                    if(on)
+                        cfg.hashes[hashname.s] = Config::Hash();
+                    else
+                        cfg.hashes.erase(hashname.s);
+                }
+            }
+        }
+        else
+            ok = false;
+    }
+    ok = ok && cfg.hashcache.pepperLenMin <= cfg.hashcache.pepperLenMax;
+    if(!ok)
+    {
+        printf("MxStore::apply(): Failed to apply config\n");
+        return false;
+    }
+
+    // config looks good, apply
+    printf("MxStore: pepper len = %ju .. %ju\n", cfg.hashcache.pepperLenMin, cfg.hashcache.pepperLenMax);
+    printf("MxStore: pepper time = %ju seconds\n", cfg.hashcache.pepperTime / 1000);
+    printf("MxStore: wellknown cache time = %ju seconds\n", cfg.wellknown.cacheTime / 1000);
+    printf("MxStore: wellknown fail time = %ju seconds\n", cfg.wellknown.failTime / 1000);
+    printf("MxStore: register max time = %ju seconds\n", cfg.register_.maxTime / 1000);
+    for(Config::Hashes::const_iterator it = cfg.hashes.begin(); it != cfg.hashes.end(); ++it)
+        printf("MxStore: Use hash [%s], lazy = %u\n", it->first.c_str(), it->second.lazy);
+
+    this->config = cfg;
+    return true;
+}
+
+void MxStore::defrag()
+{
+    // TODO
+}
+
+bool MxStore::register_(const char* token, u64 expireInMS, const char *account)
 {
     std::lock_guard lock(authdata.mutex);
     //---------------------------------------
-    u64 expiryTime = timeNowMS() + expireInSeconds * 1000;
+    u64 expiryTime = timeNowMS() + expireInMS;
     VarRef u = authdata.root()[token];
     if(!u.isNull())
         return false;
@@ -119,7 +278,7 @@ MxStore::LookupResult MxStore::getCachedHomeserverForHost(const char* host, std:
 
         if(const u64 *pFailTs = u.asUint())
         {
-            return *pFailTs + _wellKnownFailTime < timeNowMS()
+            return *pFailTs + config.wellknown.failTime < timeNowMS()
                 ? UNKNOWN // fail expired, time to try again
                 : FAILED;
         }
@@ -140,7 +299,7 @@ MxStore::LookupResult MxStore::getCachedHomeserverForHost(const char* host, std:
     }
 
     u64 now = timeNowMS();
-    return ts + _wellKnownValidTime < timeNowMS()
+    return ts + config.wellknown.cacheTime < timeNowMS()
         ? EXPIRED
         : VALID;
 }
@@ -153,7 +312,7 @@ std::string MxStore::getHashPepper(bool allowUpdate)
     if(allowUpdate)
     {
         u64 now = timeNowMS();
-        if(hashPepperTime + hashPapperValidity < now)
+        if(hashPepperTS + config.hashcache.pepperTime < now)
             rotateHashPepper_nolock(now);
     }
 
@@ -168,7 +327,7 @@ void MxStore::rotateHashPepper()
     rotateHashPepper_nolock(now);
 }
 
-MxError MxStore::bulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper)
+MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper)
 {
     Var::Map* m = dst.makeMap().v->map();
     const Var *a = in.v->array();
@@ -178,18 +337,21 @@ MxError MxStore::bulkLookup(VarRef dst, VarCRef in, const char *algo, const char
     std::lock_guard lock(hashcache.mutex);
     //---------------------------------------
 
-    VarRef cache = hashcache.root()[algo];
+    VarRef cache = hashcache.root().lookup(algo);
     if(!cache)
         return M_INVALID_PARAM; // unsupported algo
 
-    if(hashPepper != pepper)
+    // This will also rotate the pepper if necessary
+    std::string mypepper = this->getHashPepper(true);
+    if(mypepper != pepper)
         return M_INVALID_PEPPER;
 
     // value is 'false' if marked as 'no cache available' aka 'cache was dropped'
     if(cache.type() == Var::TYPE_BOOL && !cache.asBool())
     {
-        // TODO
-        //_generateCache(cache, algo, pepper);
+        MxError err = _generateHashCache_nolock(cache, algo);
+        if(err != M_OK)
+            return err;
     }
 
     for(size_t i = 0; i < n; ++i)
@@ -210,6 +372,7 @@ MxError MxStore::bulkLookup(VarRef dst, VarCRef in, const char *algo, const char
                 dst[pshash].setStr(ps.s, ps.len);
         }
     }
+    return M_OK;
 }
 
 bool MxStore::save(const char* fn) const
@@ -266,14 +429,110 @@ bool MxStore::load_nolock(const char *fn)
 
 void MxStore::rotateHashPepper_nolock(u64 now)
 {
-    int r = RandomNumberBetween((int)hashPepperLenMin, (int)hashPepperLenMax);
+    int r = RandomNumberBetween((int)config.hashcache.pepperLenMin, (int)config.hashcache.pepperLenMax);
     hashPepper = GenerateHashPepper(r);
-    hashPepperTime = now;
+    hashPepperTS = now;
+    _clearHashCache_nolock();
+}
+
+static const unsigned char s_space = ' ';
+
+MxError MxStore::_generateHashCache_nolock(VarRef cache, const char* algo)
+{
+    // only "none" is fine, otherwise we need a valid descriptor
+    const ltc_hash_descriptor * hd = NULL;
+    if(strcmp(algo, "none"))
+    {
+        hd = hash_getdesc(algo);
+        if(!hd)
+            return M_INVALID_PARAM;
+    }
+
+    printf("Generating hash cache for [%s]...\n", algo);
+
+    Var::Map *mdst = cache.makeMap().v->map();
+
+    // TODO: lock threepid?
+
+    const Var::Map *mmed = threepid.root().v->map();
+
+    unsigned char *hashOut = (unsigned char*)(hd ? alloca(hd->hashsize) : NULL);
+    char *hashBase64 = (char*)(hd ? alloca(base64size(hd->hashsize)) : NULL);
+
+    ScopeTimer timer;
+
+    for(Var::Map::Iterator j = mmed->begin(); j != mmed->end(); ++j)
+    {
+        StrRef mediumref = j.key();
+        PoolStr mediumps = threepid.getSL(mediumref);
+
+        size_t done = 0;
+        printf("... medium \"%s\"...", mediumps.s);
+
+        const Var::Map *m = j.value().map();
+        assert(m);
+
+        // TODO: this could be done in parallel as long as we output to a local temp array and merge in the end
+
+        if(hd)
+        {
+            for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+            {
+                PoolStr kps = threepid.getSL(it.key()); // key: some 3pid
+                PoolStr ups = it.value().asString(threepid); // value: mxid
+                assert(kps.s && ups.s);
+                hash_state h;
+                hd->init(&h);
+                hd->process(&h, (const unsigned char*)kps.s, kps.len);
+                hd->process(&h, &s_space, 1);
+                hd->process(&h, (const unsigned char*)mediumps.s, mediumps.len);
+                hd->process(&h, &s_space, 1);
+                hd->process(&h, (const unsigned char*)hashPepper.c_str(), hashPepper.length());
+                hd->done(&h, hashOut);
+
+                size_t enc = base64enc(hashBase64, hashOut, hd->hashsize, false);
+                if(enc)
+                {
+                    mdst->putKey(*cache.mem, hashBase64, enc).setStr(*cache.mem, ups.s, ups.len);
+                    ++done;
+                }
+            }
+
+        }
+        else // "none"
+        {
+            std::string tmp;
+            for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+            {
+                PoolStr kps = threepid.getSL(it.key()); // key: some 3pid
+                PoolStr ups = it.value().asString(threepid); // value: mxid
+                assert(kps.s && ups.s);
+                tmp = kps.s;
+                tmp += ' ';
+                tmp += mediumps.s;
+                // don't need the pepper here
+                mdst->putKey(*cache.mem, tmp.c_str(), tmp.length()).setStr(*cache.mem, ups.s, ups.len);
+                ++done;
+            }
+        }
+
+        printf(" %zu entries done\n", done);
+    }
+    printf("... done generating cache, took %ju ms", timer.ms());
+    return M_OK;
+}
+
+void MxStore::_clearHashCache_nolock()
+{
+    Var::Map *m = hashcache.root().v->map();
+    if(m)
+        for(Var::Map::MutIterator it = m->begin(); it != m->end(); ++it)
+            it.value().setBool(hashcache, false);
 }
 
 std::string MxStore::GenerateHashPepper(size_t n)
 {
-    static const char alphabet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_01234567890^$%&/()[]{}<>=?#+*~,.-_:;@|";
+    static const char alphabet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_01234567890!^$%&/()[]{}<>=?#+*~,.-_:;@|";
     std::string s;
     s.resize(n);
     mxGenerateToken(s.data(), n, alphabet, sizeof(alphabet) - 1);
