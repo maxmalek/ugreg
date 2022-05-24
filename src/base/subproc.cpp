@@ -53,8 +53,13 @@ bool createProcess(subprocess_s* proc, const char** args, const char** env, int 
 
 bool loadJsonFromProcess(VarRef root, const char** args, const char **env)
 {
+    return loadJsonFromProcess(root, args, env, subprocess_option_enable_async | subprocess_option_no_window);
+}
+
+bool loadJsonFromProcess(VarRef root, const char** args, const char **env, int options)
+{
     subprocess_s proc;
-    if(!createProcess(&proc, args, env, subprocess_option_enable_async | subprocess_option_no_window))
+    if(!createProcess(&proc, args, env, options))
         return false;
 
     bool ok = loadJsonFromProcess(root, &proc, args[0]);

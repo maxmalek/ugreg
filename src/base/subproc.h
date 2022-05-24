@@ -11,6 +11,7 @@ class DataTree;
 
 // args[0] is the executable, args[1...] the params. args[] is terminated by a NULL entry.
 // output from process is parsed into json tree
+bool loadJsonFromProcess(VarRef root, const char **args, const char **env);
 bool loadJsonFromProcess(VarRef root, const char **args, const char **env, int options);
 bool loadJsonFromProcess(VarRef root, subprocess_s *proc, const char *procname);
 

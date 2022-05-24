@@ -380,6 +380,13 @@ MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, cons
     return M_OK;
 }
 
+bool MxStore::merge3pid(VarCRef root)
+{
+    std::lock_guard lock(threepid.mutex);
+    //---------------------------------------
+    return threepid.root().merge(root, MERGE_RECURSIVE);
+}
+
 bool MxStore::save(const char* fn) const
 {
     std::lock_guard lock(authdata.mutex);
@@ -439,6 +446,8 @@ void MxStore::rotateHashPepper_nolock(u64 now)
     hashPepperTS = now;
     printf("Hash pepper update, is now [%s]\n", hashPepper.c_str());
     _clearHashCache_nolock();
+
+    // TODO: rehash for all hashes with lazy==false
 }
 
 static const unsigned char s_space = ' ';

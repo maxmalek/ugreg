@@ -42,6 +42,8 @@ public:
     // -- lookup API --
     MxError hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper); // dst is made a map, in is an array
 
+    bool merge3pid(VarCRef root); // expects { medium => { something => mxid } }
+
     bool save(const char *fn) const;
     bool load(const char *fn);
 
