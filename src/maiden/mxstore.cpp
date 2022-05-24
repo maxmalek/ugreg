@@ -178,6 +178,8 @@ bool MxStore::apply(VarCRef config)
     printf("MxStore: pepper time = %ju seconds\n", cfg.hashcache.pepperTime / 1000);
     printf("MxStore: wellknown cache time = %ju seconds\n", cfg.wellknown.cacheTime / 1000);
     printf("MxStore: wellknown fail time = %ju seconds\n", cfg.wellknown.failTime / 1000);
+    printf("MxStore: wellknown request timeout = %ju ms\n", cfg.wellknown.requestTimeout);
+    printf("MxStore: wellknown request maxsize = %ju bytes\n", cfg.wellknown.requestMaxSize);
     printf("MxStore: register max time = %ju seconds\n", cfg.register_.maxTime / 1000);
     for(Config::Hashes::const_iterator it = cfg.hashes.begin(); it != cfg.hashes.end(); ++it)
         printf("MxStore: Use hash [%s], lazy = %u\n", it->first.c_str(), it->second.lazy);
@@ -191,12 +193,13 @@ void MxStore::defrag()
     // TODO
 }
 
-bool MxStore::register_(const char* token, u64 expireInMS, const char *account)
+bool MxStore::register_(const char* token, size_t tokenLen, u64 expireInMS, const char *account)
 {
     std::lock_guard lock(authdata.mutex);
     //---------------------------------------
     u64 expiryTime = timeNowMS() + expireInMS;
-    VarRef u = authdata.root()[token];
+    PoolStr tok = { token, tokenLen };
+    VarRef u = authdata.root()[tok];
     if(!u.isNull())
         return false;
     u["expiry"] = expiryTime;
@@ -250,6 +253,7 @@ void MxStore::logout(const char* token)
 void MxStore::storeHomeserverForHost(const char* host, const char* hs, unsigned port)
 {
     assert(hs && *hs && port);
+    printf("Cache HS: [%s] -> [%s:%u]\n", host, hs, port);
     std::lock_guard lock(wellknown.mutex);
     //---------------------------------------
     VarRef u = wellknown.root()[host];
@@ -260,6 +264,7 @@ void MxStore::storeHomeserverForHost(const char* host, const char* hs, unsigned 
 
 void MxStore::storeFailForHost(const char* host)
 {
+    printf("Cache fail for host: [%s]\n", host);
     // FIXME: might want to use a CacheTable<> instead
     std::lock_guard lock(wellknown.mutex);
     //---------------------------------------
@@ -432,6 +437,7 @@ void MxStore::rotateHashPepper_nolock(u64 now)
     int r = RandomNumberBetween((int)config.hashcache.pepperLenMin, (int)config.hashcache.pepperLenMax);
     hashPepper = GenerateHashPepper(r);
     hashPepperTS = now;
+    printf("Hash pepper update, is now [%s]\n", hashPepper.c_str());
     _clearHashCache_nolock();
 }
 
@@ -528,6 +534,7 @@ void MxStore::_clearHashCache_nolock()
     if(m)
         for(Var::Map::MutIterator it = m->begin(); it != m->end(); ++it)
             it.value().setBool(hashcache, false);
+    printf("Hash cache cleared\n");
 }
 
 std::string MxStore::GenerateHashPepper(size_t n)
@@ -535,6 +542,6 @@ std::string MxStore::GenerateHashPepper(size_t n)
     static const char alphabet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_01234567890!^$%&/()[]{}<>=?#+*~,.-_:;@|";
     std::string s;
     s.resize(n);
-    mxGenerateToken(s.data(), n, alphabet, sizeof(alphabet) - 1);
+    mxGenerateToken(s.data(), n, alphabet, sizeof(alphabet) - 1, false);
     return s;
 }

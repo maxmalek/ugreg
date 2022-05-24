@@ -293,14 +293,14 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
     // Keep trying until we get un unused token (the chance that this actually loops is pretty much zero)
     char thetoken[44]; // whatev
     do
-        mxGenerateToken(thetoken, sizeof(thetoken));
-    while(!_store.register_(thetoken, expMS, account.c_str()));
+        mxGenerateToken(thetoken, sizeof(thetoken), false);
+    while(!_store.register_(thetoken, sizeof(thetoken), expMS, account.c_str()));
 
     // Same thing as sydent does: Supply both keys to make older clients happy
     dst.WriteStr("{\"token\": \"" TOKEN_PREFIX);
-    dst.WriteStr(thetoken);
+    dst.Write(thetoken, sizeof(thetoken));
     dst.WriteStr("\", \"access_token\": \"" TOKEN_PREFIX);
-    dst.WriteStr(thetoken);
+    dst.Write(thetoken, sizeof(thetoken));
     // ++ non-standard: to help with debugging ++
     dst.WriteStr("\", \"user_id\": \"");
     dst.WriteStr(account.c_str());
@@ -344,11 +344,14 @@ int MxidHandler_v2::get_pubkey(BufferedWriteStream& dst, mg_connection* conn, co
 int MxidHandler_v2::get_hashdetails(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
     dst.WriteStr("{\"algorithms\":[\"none\"");
-    for(const ltc_hash_descriptor * const *desc = hash_alldesc(); *desc; ++desc)
+    const MxStore::Config::Hashes& hs = _store.getConfig().hashes;
+    size_t n = 0;
+    for(MxStore::Config::Hashes::const_iterator it = hs.begin(); it != hs.end(); ++it, ++n)
     {
-        const ltc_hash_descriptor *h = *desc;
-        dst.WriteStr(",\"'");
-        dst.WriteStr(h->name);
+        if(n)
+            dst.Put(',');
+        dst.Put('\"');
+        dst.WriteStr(it->first.c_str());
         dst.Put('\"');
     }
 

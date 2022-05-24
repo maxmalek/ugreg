@@ -23,7 +23,7 @@ public:
     void defrag();
 
     // --- authentication ---
-    bool register_(const char *token, size_t expireInMS, const char *account); // return false is already exists
+    bool register_(const char *token, size_t tokenLen, size_t expireInMS, const char *account); // return false is already exists
     MxError authorize(const char *token) const;
     std::string getAccount(const char *token) const;
     void logout(const char *token);
