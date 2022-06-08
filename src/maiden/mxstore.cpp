@@ -47,6 +47,7 @@ MxStore::MxStore()
     load("debug.mxstore");
 #endif
     authdata.root().makeMap();
+    threepid.root().makeMap();
 
     // TODO: enable hashcache entries from config
 }
