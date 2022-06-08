@@ -447,7 +447,13 @@ void MxStore::rotateHashPepper_nolock(u64 now)
     printf("Hash pepper update, is now [%s]\n", hashPepper.c_str());
     _clearHashCache_nolock();
 
-    // TODO: rehash for all hashes with lazy==false
+    // rehash for all hashes with lazy==false
+    for(Config::Hashes::const_iterator it = config.hashes.begin(); it != config.hashes.end(); ++it)
+    {
+        const Config::Hash &h = it->second;
+        if(!h.lazy)
+            _generateHashCache_nolock(hashcache.root(), it->first.c_str());
+    }
 }
 
 static const unsigned char s_space = ' ';
@@ -472,7 +478,8 @@ MxError MxStore::_generateHashCache_nolock(VarRef cache, const char* algo)
     const Var::Map *mmed = threepid.root().v->map();
 
     unsigned char *hashOut = (unsigned char*)(hd ? alloca(hd->hashsize) : NULL);
-    char *hashBase64 = (char*)(hd ? alloca(base64size(hd->hashsize)) : NULL);
+    const size_t hashBase64Len = hd ? base64size(hd->hashsize) : 0;
+    char *hashBase64 = (char*)(hd ? alloca(hashBase64Len) : NULL);
 
     ScopeTimer timer;
 
@@ -505,7 +512,7 @@ MxError MxStore::_generateHashCache_nolock(VarRef cache, const char* algo)
                 hd->process(&h, (const unsigned char*)hashPepper.c_str(), hashPepper.length());
                 hd->done(&h, hashOut);
 
-                size_t enc = base64enc(hashBase64, hashOut, hd->hashsize, false);
+                size_t enc = base64enc(hashBase64, hashBase64Len, hashOut, hd->hashsize, false);
                 if(enc)
                 {
                     mdst->putKey(*cache.mem, hashBase64, enc).setStr(*cache.mem, ups.s, ups.len);
@@ -533,7 +540,7 @@ MxError MxStore::_generateHashCache_nolock(VarRef cache, const char* algo)
 
         printf(" %zu entries done\n", done);
     }
-    printf("... done generating cache, took %ju ms", timer.ms());
+    printf("... done generating cache, took %ju ms\n", timer.ms());
     return M_OK;
 }
 

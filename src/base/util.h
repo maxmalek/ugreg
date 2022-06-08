@@ -81,8 +81,8 @@ size_t base64size(size_t len); // to reserve a buffer for base64'd output
 
 // both return 0 on failure, otherwise the size written to dst.
 // dst is zero-terminated
-size_t base64enc(char* dst, const unsigned char* src, size_t src_len, bool pad);
-size_t base64dec(char* dst, const unsigned char* src, size_t src_len, bool strict);
+size_t base64enc(char* dst, size_t dstlen, const unsigned char* src, size_t src_len, bool pad);
+size_t base64dec(char* dst, size_t dstlen, const unsigned char* src, size_t src_len, bool strict);
 
 // one-shot hash functions
 // returns size of target buffer (pass dst == NULL to find out the size without doing anything)

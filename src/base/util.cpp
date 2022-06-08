@@ -179,25 +179,25 @@ char* sizetostr_unsafe(char* buf, size_t bufsz, size_t num)
 
 size_t base64size(size_t len)
 {
-    return len * 8 / 6 + 4;
+    return (4 * ((len + 2) / 3)) + 1;
 }
 
-size_t base64enc(char* dst, const unsigned char* src, size_t src_len, bool pad)
+size_t base64enc(char* dst, size_t dstlen, const unsigned char* src, size_t src_len, bool pad)
 {
-    unsigned long dstlen = 0;
-    int r = pad ? base64_encode         (src, src_len, (unsigned char*)dst, &dstlen)
-                : base64_encode_unpadded(src, src_len, (unsigned char*)dst, &dstlen);
-
-    return r == CRYPT_OK ? dstlen : 0;
+    unsigned long dstlen_ = dstlen;
+    int r = pad ? base64_encode         (src, src_len, (unsigned char*)dst, &dstlen_)
+                : base64_encode_unpadded(src, src_len, (unsigned char*)dst, &dstlen_);
+    assert(r != CRYPT_BUFFER_OVERFLOW);
+    return r == CRYPT_OK ? dstlen_ : 0;
 }
 
-size_t base64dec(char* dst, const unsigned char* src, size_t src_len, bool strict)
+size_t base64dec(char* dst, size_t dstlen, const unsigned char* src, size_t src_len, bool strict)
 {
-    unsigned long dstlen = 0;
-    int r = strict ? base64_strict_decode(src, src_len, (unsigned char*)dst, &dstlen)
-                   : base64_decode       (src, src_len, (unsigned char*)dst, &dstlen);
-
-    return r == CRYPT_OK ? dstlen : 0;
+    unsigned long dstlen_ = dstlen;
+    int r = strict ? base64_strict_decode(src, src_len, (unsigned char*)dst, &dstlen_)
+                   : base64_decode       (src, src_len, (unsigned char*)dst, &dstlen_);
+    assert(r != CRYPT_BUFFER_OVERFLOW);
+    return r == CRYPT_OK ? dstlen_ : 0;
 }
 
 size_t hash_oneshot(char* dst, const void* src, size_t len, const ltc_hash_descriptor *hd)

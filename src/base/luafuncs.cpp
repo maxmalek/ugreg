@@ -542,7 +542,7 @@ static int api_base64enc(lua_State* L)
     size_t len;
     const char* s = luaL_checklstring(L, 1, &len);
     std::vector<char> enc(base64size(len));
-    size_t enclen = base64enc(enc.data(), (unsigned char*)s, len, true);
+    size_t enclen = base64enc(enc.data(), enc.size(), (unsigned char*)s, len, true);
     lua_pushlstring(L, enc.data(), enclen); // does not include the \0
     return 1;
 }
@@ -552,7 +552,7 @@ static int api_base64dec(lua_State* L)
     size_t len;
     const char* s = luaL_checklstring(L, 1, &len);
     std::vector<char> dec(len);
-    size_t declen = len ? base64dec(dec.data(), (unsigned char*)s, len, false) : 0;
+    size_t declen = len ? base64dec(dec.data(), dec.size(), (unsigned char*)s, len, false) : 0;
     if (len && !declen)
         luaL_error(L, "base64dec() failed");
     lua_pushlstring(L, dec.data(), declen);
