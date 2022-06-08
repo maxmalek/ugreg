@@ -1,6 +1,7 @@
 #include "mxresolv.h"
 #include <sstream>
 #include <string>
+#include <algorithm>
 #include "request.h"
 #include "datatree.h"
 #include "mxhttprequest.h"
@@ -15,11 +16,41 @@
 #include <resolv.h>
 #endif
 
-// FIXME: finish this.
-static MxResolvResult srvLookup(const char *host)
+void MxResolvResult::parse(const char* s)
 {
-    MxResolvResult ret;
-    ret.port = 0;
+    const char* colon = strrchr(s, ':');
+    if (colon)
+    {
+        port = atoi(colon + 1);
+        host.assign(s, colon);
+    }
+    else
+        host = s;
+
+    priority = -1; // .well-known should be preferred (for SRV records this is >= 0)
+    weight = 1;
+}
+
+bool MxResolvResult::operator<(const MxResolvResult& o) const
+{
+    return priority < o.priority // lower priority wins
+        || (priority == o.priority && weight > o.weight); // higher weight wins
+}
+
+bool MxResolvResult::validate()
+{
+    if(!port)
+        port = 8448; // default matrix port
+    return !host.empty();
+}
+
+// FIXME: finish this.
+static void srvLookup(MxResolvList &dst, const char *host)
+{
+    const size_t oldsize = dst.size();
+    std::string lookup = "_matrix._tcp.";
+    lookup += host;
+    printf("MxResolv/SRV: Looking up %s ...\n", lookup.c_str());
 
 #ifdef _WIN32
     PDNS_RECORD prec = NULL;
@@ -31,12 +62,21 @@ static MxResolvResult srvLookup(const char *host)
             printf("DNS: %s (type: %u)\n", p->pName, p->wType);
             if(p->wType == DNS_TYPE_SRV)
             {
-                printf("SRV: %s:%u\n", p->Data.Srv.pNameTarget, p->Data.Srv.wPort);
+                printf("SRV: %s:%u (prio=%d, weight=%d)\n",
+                    p->Data.Srv.pNameTarget, p->Data.Srv.wPort, p->Data.Srv.wPriority, p->Data.Srv.wWeight);
+                MxResolvResult res;
+                res.host = p->Data.Srv.pNameTarget;
+                res.port = p->Data.Srv.wPort;
+                res.priority = p->Data.Srv.wPriority;
+                res.weight = p->Data.Srv.wWeight;
+                // TODO: handle TTL?
+                if(res.validate())
+                    dst.push_back(res);
             }
         }
     }
     else
-        printf("srcLookup: Failed for '%s', error = %d", host, dns);
+        printf("srvLookup: Failed for '%s', error = %d\n", host, dns);
 
     if(prec)
         DnsRecordListFree(prec, DnsFreeRecordListDeep);
@@ -46,43 +86,42 @@ static MxResolvResult srvLookup(const char *host)
 
 #endif
 
-    return ret;
+    // sort added entries by priority and weight (keep existing entries as-is!)
+    if(dst.size() != oldsize)
+        std::sort(dst.begin() + oldsize, dst.end());
 }
 
-MxResolvResult lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t maxsize)
+MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t maxsize)
 {
-    MxResolvResult ret;
-    ret.port = 0;
+    MxResolvList ret;
 
     // try .well-known first
     const char *what = "/.well-known/matrix/server";
+
+    printf("MxResolv/GET: Looking up %s%s ...\n", host, what);
 
     DataTree tmp(DataTree::TINY);
     int n = mxGetJson(tmp.root(), host, 443, what, (int)timeoutMS, maxsize);
     if(n > 0)
     {
+        MxResolvResult res;
+        res.port = 0;
         // root is now known to be a map with at least 1 element
         if(VarCRef ref = tmp.root().lookup("m.server"))
         {
             if(const char *s = ref.asCString())
             {
-                const char *colon = strrchr(s, ':');
-                if(colon)
+                res.parse(s);
+                if(res.validate())
                 {
-                    ret.port = atoi(colon + 1);
-                    ret.host.assign(s, colon);
+                    printf("MxResolv/GET: Got %s:%u\n", res.host.c_str(), res.port);
+                    ret.push_back(res);
                 }
-                else
-                    ret.host = s;
             }
         }
     }
 
-    if(ret.host.empty())
-        ret = srvLookup(host);
-
-    if(!ret.host.empty() && !ret.port)
-        ret.port = 8448; // default matrix port
+    srvLookup(ret, host);
 
     return ret;
 }

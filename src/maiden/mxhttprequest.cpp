@@ -3,9 +3,9 @@
 #include <civetweb/civetweb.h>
 #include "request.h"
 
-int mxGetJson(VarRef dst, const char * host, unsigned port, const char * res, int timeoutMS, size_t maxsize)
+MxGetJsonResult mxGetJson(VarRef dst, const char * host, unsigned port, const char * res, int timeoutMS, size_t maxsize)
 {
-    char errbuf[1024];
+    char errbuf[1024] = {0};
     std::ostringstream os;
     os << "GET " << res << " HTTP/1.1\r\n"
         //os << "GET / HTTP/1.1\r\n"
@@ -20,7 +20,7 @@ int mxGetJson(VarRef dst, const char * host, unsigned port, const char * res, in
     opt.server_cert = NULL;
     opt.host_name = opt.host;
 
-    int ret = -1;
+    MxGetJsonResult ret = MXGJ_CONNECT_FAILED;
 
     printf("mxGetJson: %s:%u GET %s\n", host, port, res);
     if (mg_connection* c = mg_connect_client_secure(&opt, errbuf, sizeof(errbuf)))
@@ -34,14 +34,15 @@ int mxGetJson(VarRef dst, const char * host, unsigned port, const char * res, in
             const mg_response_info *info = mg_get_response_info(c);
             // FIXME: handle redirects here
             printf("mxGetJson: %u (%s), len = %d\n", info->status_code, info->status_text, (int)info->content_length);
-            ret = Request::ReadJsonBodyVars(dst, c, true, false, maxsize);
-            printf("... JSON parse returned %d\n", ret);
+            int r = Request::ReadJsonBodyVars(dst, c, true, false, maxsize);
+            printf("... JSON parse returned %d\n", r);
+            ret = r < 0 ? MXGJ_PARSE_ERROR : MXGJ_OK;
         }
         mg_close_connection(c);
     }
 
-    if(ret < 0)
-        printf("mxGetJson error: %s\n", errbuf);
+    if(ret != MXGJ_OK)
+        printf("mxGetJson error (%d): %s\n", ret, errbuf);
 
     return ret;
 }

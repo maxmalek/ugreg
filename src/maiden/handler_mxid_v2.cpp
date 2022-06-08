@@ -254,37 +254,56 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
 
     // get matrix server name from host's .well-known
     MxResolvResult resolv;
+    std::string account;
     MxStore::LookupResult res = _store.getCachedHomeserverForHost(sn, resolv.host, resolv.port);
     if(res == MxStore::FAILED)
         return sendError(conn, 502, M_NOT_FOUND, "No homeserver exists for this host (cached)");
 
+    std::ostringstream errors;
     if(res != MxStore::VALID)
     {
         const MxStore::Config& cfg = _store.getConfig();
-        resolv = lookupHomeserverForHost(sn, cfg.wellknown.requestTimeout, cfg.wellknown.requestMaxSize);
-        if(!resolv.host.empty())
+        MxResolvList list = lookupHomeserverForHost(sn, cfg.wellknown.requestTimeout, cfg.wellknown.requestMaxSize);
+        if(list.empty())
+            return sendError(conn, 502, M_NOT_FOUND, "Couldn't resolve homeserver");
+
+        // try hosts in the list until one works; the list is already sorted by priority
+        for(size_t i = 0; i < list.size() && res != MxStore::VALID; ++i)
         {
-            _store.storeHomeserverForHost(sn, resolv.host.c_str(), resolv.port);
+            resolv = list[i];
+            printf("Contacting homeserver %s for host %s [%u/%u] ...\n",
+                resolv.host.c_str(), sn, unsigned(i+1), unsigned(list.size()));
+            DataTree tmp(DataTree::TINY);
+            std::ostringstream uri;
+            uri << "/_matrix/federation/v1/openid/userinfo?access_token=" << tok; // FIXME: quote
+            MxGetJsonResult jr = mxGetJson(tmp.root(), resolv.host.c_str(), resolv.port, uri.str().c_str(), 5000, 4*1024);
+            switch(jr)
+            {
+                case MXGJ_OK:
+                    res = MxStore::VALID; // the host is good, get outta the loop
+                    if(VarCRef sub = tmp.root().lookup("sub"))
+                        if(const char *user = sub.asCString())
+                            account = user;
+                break;
+
+                case MXGJ_PARSE_ERROR:
+                    // don't consider this a good host; maybe the webserver config is messed up?
+                    errors << resolv.host << ": Federation API sent malformed reply\n";
+                    break; // try next
+
+                case MXGJ_CONNECT_FAILED:
+                    // unable to connect is what we'd expect from a downed server
+                    errors << resolv.host << ": Server looks down from here\n";
+                    break; // try next
+            }
         }
-
     }
 
-    if(resolv.host.empty())
-        return sendError(conn, 502, M_NOT_FOUND, "Failed to resolve homeserver");
-
-    std::string account;
-    {
-        DataTree tmp(DataTree::TINY);
-        std::ostringstream uri;
-        uri << "/_matrix/federation/v1/openid/userinfo?access_token=" << tok; // FIXME: quote
-        int r = mxGetJson(tmp.root(), resolv.host.c_str(), resolv.port, uri.str().c_str(), 5000, 4*1024);
-        if(r <= 0)
-            return sendError(conn, 500, M_UNKNOWN, (resolv.host + ": Federation API sent malformed reply").c_str());
-
-        if(VarCRef sub = tmp.root().lookup("sub"))
-            if(const char *user = sub.asCString())
-                account = user;
-    }
+    // store valid homeserver only if it managed to deliver a good reply
+    if(res == MxStore::VALID)
+        _store.storeHomeserverForHost(sn, resolv.host.c_str(), resolv.port);
+    else
+        return sendError(conn, 502, M_NOT_FOUND, ("Failed to resolve good homeserver, errors:\n" + errors.str()).c_str());
 
     if(account.empty())
         return sendError(conn, 500, M_NOT_FOUND, (resolv.host + ": Access token does not belong to a known user").c_str());
