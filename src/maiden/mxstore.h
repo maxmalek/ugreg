@@ -42,6 +42,7 @@ public:
     // -- lookup API --
     MxError hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper); // dst is made a map, in is an array
 
+
     bool merge3pid(VarCRef root); // expects { medium => { something => mxid } }
 
     bool save(const char *fn) const;
@@ -53,6 +54,7 @@ private:
     void rotateHashPepper_nolock(u64 now);
     MxError _generateHashCache_nolock(VarRef cache, const char *algo);
     void _clearHashCache_nolock();
+    MxError unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in); // only for algo == "none"
 
 
     DataTree authdata;

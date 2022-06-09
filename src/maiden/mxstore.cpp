@@ -335,7 +335,6 @@ void MxStore::rotateHashPepper()
 
 MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper)
 {
-    Var::Map* m = dst.makeMap().v->map();
     const Var *a = in.v->array();
     const size_t n = in.size();
     assert(a);
@@ -360,6 +359,8 @@ MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, cons
             return err;
     }
 
+    // try exact matches first
+    // this is also the only way to look up hashed 3pids
     for(size_t i = 0; i < n; ++i)
     {
         PoolStr pshash = a[i].asString(*in.mem);
@@ -378,6 +379,62 @@ MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, cons
                 dst[pshash].setStr(ps.s, ps.len);
         }
     }
+
+    // and if not hashed, try to find identifiers that somewhat match
+    if(!strcmp(algo, "none"))
+        unhashedFuzzyLookup_nolock(dst, in);
+
+    return M_OK;
+}
+
+// unhashed bulk lookup if "none" algo
+MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
+{
+    const Var *a = in.v->array();
+    const size_t n = in.size();
+    assert(a);
+
+    VarCRef cache = hashcache.root().lookup("none");
+    const Var::Map *m = cache ? cache.v->map() : NULL;
+    if(!m)
+        return M_NOT_FOUND;
+
+    // cache input strings so we don't have to go through the string pool every single time
+
+    std::vector<PoolStr> find(n);
+    for(size_t i = 0; i < n; ++i)
+        find[i] = a[i].asString(*in.mem);
+
+    for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+    {
+        const PoolStr k = in.mem->getSL(it.key());
+        size_t klen = k.len; // actually used length of k
+
+        // in the cache, key is always "3pid medium" so we want to stop after the first space
+        if(const char *spc = strchr(k.s, ' '))
+            klen -= (spc - k.s + 1);
+
+        for(size_t i = 0; i < n; ++i)
+        {
+            if(klen < find[i].len)
+                continue;
+
+            // TODO: might want to use actual fuzzy search? can we order by relevance?
+            const char *match = strstr(k.s, find[i].s);
+            if(!match || match >= k.s + klen)
+                continue;
+
+            // TODO: do we want to also search values (ie. mxids), or does the matrix server already do that?
+
+            PoolStr ps = it.value().asString(*cache.mem);
+            dst[k].setStr(ps.s, ps.len); // here we use the original k so that both 3pid and medium are part of the key
+        }
+    }
+
+    // TODO: call external 3pid providers?
+    // Would be better to keep a cache for their results too
+    // and only do an external call if uncached or too old
+
     return M_OK;
 }
 
