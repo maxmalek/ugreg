@@ -51,6 +51,7 @@ public:
 private:
     bool save_nolock(const char *fn) const;
     bool load_nolock(const char *fn);
+    std::string getHashPepper_nolock(bool allowUpdate);
     void rotateHashPepper_nolock(u64 now);
     MxError _generateHashCache_nolock(VarRef cache, const char *algo);
     void _clearHashCache_nolock();
@@ -96,6 +97,8 @@ public:
             Hash();
             bool lazy;
         };
+
+        size_t minSearchLen;
 
         typedef std::unordered_map<std::string, Hash> Hashes;
         Hashes hashes;

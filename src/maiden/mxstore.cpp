@@ -26,6 +26,7 @@ MxStore::Config::Hash::Hash()
 
 
 MxStore::Config::Config()
+    : minSearchLen(2)
 {
     // default config
     hashcache.pepperTime = 1 * hour;
@@ -34,8 +35,6 @@ MxStore::Config::Config()
     wellknown.cacheTime = 1 * hour;
     wellknown.failTime = 10 * minute;
     register_.maxTime = 24 * hour;
-
-    hashes["sha256"] = Hash();
 }
 
 
@@ -115,7 +114,8 @@ bool MxStore::apply(VarCRef config)
         && readTimeKey(cfg.wellknown.failTime, xwellknown, "failTime")
         && readTimeKey(cfg.wellknown.requestTimeout, xwellknown, "requestTimeout")
         && readUintKey(cfg.wellknown.requestMaxSize, xwellknown, "requestMaxSize")
-        && readTimeKey(cfg.register_.maxTime, xregister, "maxTime");
+        && readTimeKey(cfg.register_.maxTime, xregister, "maxTime")
+        && readUintKey(cfg.minSearchLen, config, "minSearchLen");
 
     if(ok && xhashcache)
         if(VarCRef xpepperlen = xhashcache.lookup("pepperLen"))
@@ -175,6 +175,7 @@ bool MxStore::apply(VarCRef config)
     }
 
     // config looks good, apply
+    printf("MxStore: minSearchLen = %u\n", cfg.minSearchLen);
     printf("MxStore: pepper len = %ju .. %ju\n", cfg.hashcache.pepperLenMin, cfg.hashcache.pepperLenMax);
     printf("MxStore: pepper time = %ju seconds\n", cfg.hashcache.pepperTime / 1000);
     printf("MxStore: wellknown cache time = %ju seconds\n", cfg.wellknown.cacheTime / 1000);
@@ -182,8 +183,17 @@ bool MxStore::apply(VarCRef config)
     printf("MxStore: wellknown request timeout = %ju ms\n", cfg.wellknown.requestTimeout);
     printf("MxStore: wellknown request maxsize = %ju bytes\n", cfg.wellknown.requestMaxSize);
     printf("MxStore: register max time = %ju seconds\n", cfg.register_.maxTime / 1000);
+
+    std::lock_guard lock(hashcache.mutex);
+    // --------------------------------------------------
+
     for(Config::Hashes::const_iterator it = cfg.hashes.begin(); it != cfg.hashes.end(); ++it)
+    {
         printf("MxStore: Use hash [%s], lazy = %u\n", it->first.c_str(), it->second.lazy);
+        VarRef cache = hashcache.root()[it->first.c_str()];
+        if(!cache.type() != Var::TYPE_MAP)
+            cache = false; // create dummy entry to signify the cache has to be generated
+    }
 
     this->config = cfg;
     return true;
@@ -314,7 +324,11 @@ std::string MxStore::getHashPepper(bool allowUpdate)
 {
     std::lock_guard lock(hashcache.mutex);
     //---------------------------------------
+    return getHashPepper_nolock(allowUpdate);;
+}
 
+std::string MxStore::getHashPepper_nolock(bool allowUpdate)
+{
     if(allowUpdate)
     {
         u64 now = timeNowMS();
@@ -347,7 +361,7 @@ MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, cons
         return M_INVALID_PARAM; // unsupported algo
 
     // This will also rotate the pepper if necessary
-    std::string mypepper = this->getHashPepper(true);
+    std::string mypepper = this->getHashPepper_nolock(true);
     if(mypepper != pepper)
         return M_INVALID_PEPPER;
 
@@ -359,19 +373,30 @@ MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, cons
             return err;
     }
 
+    const bool isNoneAlgo = !strcmp(algo, "none");
+
+    // ---- begin actual lookup ---
+    ScopeTimer timer;
+
     // try exact matches first
     // this is also the only way to look up hashed 3pids
     for(size_t i = 0; i < n; ++i)
     {
         PoolStr pshash = a[i].asString(*in.mem);
 
-        // Client sent padded base64? Trim the padding.
-        while(pshash.len && pshash.s[pshash.len-1] == '=')
-            --pshash.len;
+        // "none" is plaintext, not base64
+        if(!isNoneAlgo)
+        {
+            // Client sent padded base64? Trim the padding.
+            while(pshash.len && pshash.s[pshash.len-1] == '=')
+                --pshash.len;
+        }
 
-        if(!pshash.len)
+        if(pshash.len < config.minSearchLen)
             continue;
 
+        // NB: If we get invalid base64 here, there will simply be no match.
+        // so we don't even need to decode what the client sent us
         if(VarRef v = cache.lookup(pshash.s, pshash.len))
         {
             PoolStr ps = v.asString();
@@ -381,8 +406,12 @@ MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, cons
     }
 
     // and if not hashed, try to find identifiers that somewhat match
-    if(!strcmp(algo, "none"))
+    if(isNoneAlgo)
         unhashedFuzzyLookup_nolock(dst, in);
+
+
+    printf("MxStore: Lookup (%u in, %u out) took %ju ms\n",
+        (unsigned)n, (unsigned)dst.size(), timer.ms());
 
     return M_OK;
 }
@@ -390,10 +419,6 @@ MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, cons
 // unhashed bulk lookup if "none" algo
 MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
 {
-    const Var *a = in.v->array();
-    const size_t n = in.size();
-    assert(a);
-
     VarCRef cache = hashcache.root().lookup("none");
     const Var::Map *m = cache ? cache.v->map() : NULL;
     if(!m)
@@ -401,20 +426,39 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
 
     // cache input strings so we don't have to go through the string pool every single time
 
-    std::vector<PoolStr> find(n);
-    for(size_t i = 0; i < n; ++i)
-        find[i] = a[i].asString(*in.mem);
+    std::vector<PoolStr> find;
+    {
+        const Var *a = in.v->array();
+        const size_t n = in.size();
+        assert(a);
+
+        find.reserve(n);
+        for(size_t i = 0; i < n; ++i)
+        {
+            PoolStr ps = a[i].asString(*in.mem);
+            if(ps.len < config.minSearchLen)
+                continue;
+            find.push_back(ps);
+        }
+    }
+    const size_t N = find.size();
+    if(!N)
+        return M_OK;
 
     for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
     {
-        const PoolStr k = in.mem->getSL(it.key());
+        const PoolStr k = cache.mem->getSL(it.key());
+        assert(k.s);
         size_t klen = k.len; // actually used length of k
 
         // in the cache, key is always "3pid medium" so we want to stop after the first space
         if(const char *spc = strchr(k.s, ' '))
-            klen -= (spc - k.s + 1);
+            klen = spc - k.s;
 
-        for(size_t i = 0; i < n; ++i)
+        if(!klen)
+            continue;
+
+        for(size_t i = 0; i < N; ++i)
         {
             if(klen < find[i].len)
                 continue;

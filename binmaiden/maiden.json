@@ -31,6 +31,7 @@
             "sha512":    { "lazy": true  },
             "sha3-512":  { "lazy": true  },
         },
+        "minSearchLen": 2, // any search term must be at least this long; else it's ignored
     },
     
     // environment variables passed to external processes. Put passwords and stuff here.

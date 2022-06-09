@@ -402,7 +402,7 @@ int MxidHandler_v2::get_lookup(BufferedWriteStream& dst, mg_connection* conn, co
     // Re-use our own private pool that we already have
     VarRef out = data.root()["_"];
     out.clear(); // for smug clients
-    VarRef xdst = out["mappings"];
+    VarRef xdst = out["mappings"].makeMap();
 
     MxError err = _store.hashedBulkLookup(xdst, xaddr, algo, pepper);
     if(err != M_OK)
