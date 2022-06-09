@@ -407,12 +407,14 @@ public:
         return ret;
     }
 
-    InsertResult insert(Vec& vec, Allocator& mem, StrRef k, value_type&& v)
+    // insert element; if already exist, write to prevval
+    InsertResult insert(Vec& vec, Allocator& mem, StrRef k, value_type&& v, value_type& prevval)
     {
         typename KS::size_type& dst = ks.insertIndex(mem, vec.size(), k);
         if(dst)
         {
             value_type& vdst = vec[dst - 1];
+            prevval = std::move(vdst);
             vdst = std::move(v);
             InsertResult ret { vdst, false };
             return ret;
@@ -420,6 +422,7 @@ public:
         return _insert_always(dst, vec, mem, k, std::move(v));
     }
 
+    // always insert new element, don't change if already exist
     InsertResult insert_new(Vec& vec, Allocator& mem, StrRef k)
     {
         typename KS::size_type& dst = ks.insertIndex(mem, vec.size(), k);
@@ -541,9 +544,9 @@ public:
         return *this;
     }*/
 
-    InsertResult insert(Allocator& mem, StrRef k, T&& v)
+    InsertResult insert(Allocator& mem, StrRef k, T&& v, T& prev)
     {
-        return _hh.insert(_vec, mem, k, std::move(v));
+        return _hh.insert(_vec, mem, k, std::move(v), prev);
     }
 
     InsertResult insert_new(Allocator& mem, StrRef k)

@@ -14,7 +14,9 @@ void tinyhashmap_api_test()
 
     assert(m.empty());
 
-    m.insert(mem, 42, std::move(Var(u64(6581))));
+    Var unused;
+    m.insert(mem, 42, std::move(Var(u64(6581))), unused);
+    assert(unused.isNull());
     M::InsertResult ins = m.insert_new(mem, 42);
     ins.ref.setFloat(mem, -1.0f);
 

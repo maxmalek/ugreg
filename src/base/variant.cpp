@@ -1199,9 +1199,12 @@ Var& _VarMap::getOrCreate(TreeMem& mem, StrRef key)
 Var& _VarMap::put(TreeMem& mem, StrRef k, Var&& x)
 {
     _checkmem(mem);
-    _Map::InsertResult ins = _storage.insert(mem, k, std::move(x));
+    Var prev;
+    _Map::InsertResult ins = _storage.insert(mem, k, std::move(x), prev);
     if(ins.newly_inserted)
         mem.increfS(k);
+    else
+        prev.clear(mem);
     return ins.ref;
 }
 
