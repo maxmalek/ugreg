@@ -29,12 +29,12 @@ const MxidHandler_v2::Endpoint MxidHandler_v2::s_endpoints[] =
     { RQ_GET,  AUTHED, "/terms",                         &get_terms  },
     { RQ_POST, NOAUTH, "/terms",                         &post_terms  },
     { RQ_GET,  AUTHED, "/",                              &get_status  }, // status check
-    { RQ_GET,  NOAUTH, "/pubkey/ephemeral/isvalid",      &get_pubkey_eph_isvalid  },
-    { RQ_GET,  NOAUTH, "/pubkey/isvalid",                &get_pubkey_isvalid  },
-    { RQ_GET,  NOAUTH, "/pubkey",                        &get_pubkey  }, // actually pubkey/{keyId}
+    //{ RQ_GET,  NOAUTH, "/pubkey/ephemeral/isvalid",      &get_pubkey_eph_isvalid  },
+    //{ RQ_GET,  NOAUTH, "/pubkey/isvalid",                &get_pubkey_isvalid  },
+    //{ RQ_GET,  NOAUTH, "/pubkey",                        &get_pubkey  }, // actually pubkey/{keyId}
     { RQ_GET,  AUTHED, "/hash_details",                  &get_hashdetails  },
     { RQ_POST, AUTHED, "/lookup",                        &get_lookup  },
-    { RQ_POST, AUTHED, "/validate/email/requestToken",   &get_validate_email_requestToken  },
+    /*{ RQ_POST, AUTHED, "/validate/email/requestToken",   &get_validate_email_requestToken  },
     { RQ_GET,  AUTHED, "/validate/email/submitToken",    &get_validate_email_submitToken  },
     { RQ_POST, AUTHED, "/validate/email/submitToken",    &post_validate_email_submitToken  },
     { RQ_POST, AUTHED, "/validate/msisdn/requestToken",  &get_validate_msisdn_requestToken  },
@@ -42,9 +42,9 @@ const MxidHandler_v2::Endpoint MxidHandler_v2::s_endpoints[] =
     { RQ_POST, AUTHED, "/validate/msisdn/submitToken",   &post_validate_msisdn_submitToken  },
     { RQ_POST, AUTHED, "/3pid/bind",                     &post_3pid_bind  },
     { RQ_GET,  AUTHED, "/3pid/getValidated3pid",         &get_2pid_getValidated3pid  },
-    { RQ_POST, AUTHED, "/3pid/unbind",                   &post_3pid_unbind  },
-    { RQ_POST, AUTHED, "/store-invite",                  &post_store_invite  },
-    { RQ_POST, AUTHED, "/sign-ed25519",                  &post_sign_ed25519  },
+    { RQ_POST, AUTHED, "/3pid/unbind",                   &post_3pid_unbind  },*/
+    //{ RQ_POST, AUTHED, "/store-invite",                  &post_store_invite  },
+    //{ RQ_POST, AUTHED, "/sign-ed25519",                  &post_sign_ed25519  },
     { RQ_UNKNOWN, NOAUTH, NULL, NULL }
 };
 
@@ -92,11 +92,20 @@ MxidHandler_v2::~MxidHandler_v2()
 
 static int sendError(mg_connection* conn, int status, MxError err, const char* extra = 0)
 {
-    std::ostringstream os;
     const char* estr = mxErrorStr(err);
     if (!extra)
         extra = estr;
     mg_send_http_error(conn, status, "{\"errcode\":\"%s\",\"error\":\"%s\"}", estr, extra);
+    return status;
+}
+
+static int sendErrorEx(mg_connection* conn, VarRef dst, int status, MxError err, const char* extra = 0)
+{
+    const char* estr = mxErrorStr(err);
+    dst["errcode"] = estr;
+    dst["error"] = extra ? extra : estr;
+    std::string tmp = dumpjson(dst, false);
+    mg_send_http_error(conn, status, "%s", tmp.c_str());
     return status;
 }
 
@@ -406,8 +415,17 @@ int MxidHandler_v2::get_lookup(BufferedWriteStream& dst, mg_connection* conn, co
 
     MxError err = _store.hashedBulkLookup(xdst, xaddr, algo, pepper);
     if(err != M_OK)
-        sendError(conn, 400, err);
-
+    {
+        if(err != M_INVALID_PEPPER)
+            return sendError(conn, 400, err);
+        else // as per MSC2134, the returned error contains also the new pepper
+        {
+            out.clear();
+            out["algorithm"] = algo;
+            out["lookup_pepper"] = _store.getHashPepper(false).c_str();
+            return sendErrorEx(conn, out, 400, err, "received invalid pepper - was it rotated?");
+        }
+    }
 
     writeJson(dst, out, false);
     return 0;

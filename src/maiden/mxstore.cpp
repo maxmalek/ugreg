@@ -175,7 +175,7 @@ bool MxStore::apply(VarCRef config)
     }
 
     // config looks good, apply
-    printf("MxStore: minSearchLen = %u\n", cfg.minSearchLen);
+    printf("MxStore: minSearchLen = %zu\n", cfg.minSearchLen);
     printf("MxStore: pepper len = %ju .. %ju\n", cfg.hashcache.pepperLenMin, cfg.hashcache.pepperLenMax);
     printf("MxStore: pepper time = %ju seconds\n", cfg.hashcache.pepperTime / 1000);
     printf("MxStore: wellknown cache time = %ju seconds\n", cfg.wellknown.cacheTime / 1000);
@@ -426,7 +426,12 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
 
     // cache input strings so we don't have to go through the string pool every single time
 
-    std::vector<PoolStr> find;
+    struct FindEntry
+    {
+        PoolStr addr, medium;
+    };
+
+    std::vector<FindEntry> find;
     {
         const Var *a = in.v->array();
         const size_t n = in.size();
@@ -435,10 +440,20 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
         find.reserve(n);
         for(size_t i = 0; i < n; ++i)
         {
-            PoolStr ps = a[i].asString(*in.mem);
-            if(ps.len < config.minSearchLen)
+            // this is probably in the format "3pid medium" -- split it up
+            PoolStr addr = a[i].asString(*in.mem);
+            PoolStr med = {};
+            if(const char *spc = strchr(addr.s, ' '))
+            {
+                med.s = spc + 1;
+                med.len = strlen(med.s);
+                addr.len = spc - addr.s;
+            }
+            if(addr.len < config.minSearchLen)
                 continue;
-            find.push_back(ps);
+            printf("Plaintext lookup [%u]: %s (%s)\n", (unsigned)find.size(), addr.s, med.s);
+            FindEntry f { addr, med };
+            find.push_back(f);
         }
     }
     const size_t N = find.size();
@@ -452,19 +467,26 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
         size_t klen = k.len; // actually used length of k
 
         // in the cache, key is always "3pid medium" so we want to stop after the first space
+        const char *medium = NULL;
         if(const char *spc = strchr(k.s, ' '))
+        {
+            medium = spc + 1;
             klen = spc - k.s;
+        }
 
         if(!klen)
             continue;
 
         for(size_t i = 0; i < N; ++i)
         {
-            if(klen < find[i].len)
+            if(klen < find[i].addr.len)
+                continue;
+
+            if(medium && find[i].medium.len && !strcmp(medium, find[i].medium.s))
                 continue;
 
             // TODO: might want to use actual fuzzy search? can we order by relevance?
-            const char *match = strstr(k.s, find[i].s);
+            const char *match = strstr(k.s, find[i].addr.s);
             if(!match || match >= k.s + klen)
                 continue;
 
@@ -657,7 +679,7 @@ void MxStore::_clearHashCache_nolock()
 
 std::string MxStore::GenerateHashPepper(size_t n)
 {
-    static const char alphabet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_01234567890!^$%&/()[]{}<>=?#+*~,.-_:;@|";
+    static const char alphabet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890";
     std::string s;
     s.resize(n);
     mxGenerateToken(s.data(), n, alphabet, sizeof(alphabet) - 1, false);
