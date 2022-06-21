@@ -1,13 +1,15 @@
 {
     "config": {
         "listen": [
-            { "host": "0.0.0.0", "port": 8081, "ssl": true }
+            { "host": "0.0.0.0", "port": 8081, "ssl": true },
+            { "host": "0.0.0.0", "port": 8080 }
         ],
         "cert": "fullchain.pem",
         "listen_threads": 0
     },
     "forward": [
-        { "host": "localhost", "port": 443 },
-        { "host": "example.com", "port": 443, "fixHost": true }
+        // pass ssl=true/false to set it on/off, leave away to autodetect (pass along as-is)
+        { "host": "localhost", "port": 443, "ssl": true },
+        { "host": "example.com", "port": 443, "ssl": true, "fixHost": true }
     ]
 }

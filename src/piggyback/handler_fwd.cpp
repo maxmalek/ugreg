@@ -31,6 +31,7 @@ bool PiggybackHandler::apply(VarCRef cfg)
         VarCRef xhost = u.lookup("host");
         VarCRef xport = u.lookup("port");
         VarCRef xfixhost = u.lookup("fixHost");
+        VarCRef xssl = u.lookup("ssl");
 
         if(xhost && xport)
         {
@@ -39,7 +40,11 @@ bool PiggybackHandler::apply(VarCRef cfg)
             if(host && *host && port)
             {
                 printf("PiggybackHandler: Add %s:%u\n", host, port);
-                Destination d { host, port, xfixhost && xfixhost.asBool() };
+                Destination d
+                {
+                    host, port, xfixhost && xfixhost.asBool(),
+                    xssl ? (xssl.asBool() ? ENABLED : DISABLED) : AUTO
+                };
                 dest.push_back(std::move(d));
             }
         }
@@ -66,10 +71,10 @@ int PiggybackHandler::onRequest(BufferedWriteStream& /*dst*/, mg_connection* con
     const mg_request_info *info = mg_get_request_info(conn);
 
     const char *q = rq.query.c_str();
-    printf("<<< %s %s\n", info->request_method, q);
+    printf("<<< %s %s (ssl: %d)\n", info->request_method, q, info->is_ssl);
 
     const Destination *d;
-    mg_connection *c = connectToDest(d);
+    mg_connection *c = connectToDest(d, info);
     if(!c)
     {
         mg_send_http_error(conn, 504, "all destinations offline");
@@ -176,16 +181,20 @@ int PiggybackHandler::onRequest(BufferedWriteStream& /*dst*/, mg_connection* con
     return 200;
 }
 
-mg_connection* PiggybackHandler::connectToDest(const Destination *& dst) const
+mg_connection* PiggybackHandler::connectToDest(const Destination *& dst, const mg_request_info *info) const
 {
     mg_client_options opt = {};
     for(size_t i = 0; i < dest.size(); ++i)
     {
+        bool ssl = dest[i].ssl == AUTO ? info->is_ssl : (bool)dest[i].ssl;
         opt.host = dest[i].host.c_str();
-        opt.host_name = dest[i].host.c_str();
+        //opt.host_name = dest[i].host.c_str();
         opt.port = dest[i].port;
+
         char errbuf[1024];
-        if(mg_connection *c = mg_connect_client_secure(&opt, errbuf, sizeof(errbuf)))
+        if(mg_connection* c = ssl
+            ? mg_connect_client_secure(&opt, errbuf, sizeof(errbuf))
+            : mg_connect_client(opt.host, opt.port, ssl, errbuf, sizeof(errbuf)))
         {
             dst = &dest[i];
             printf("Connected to %s:%u\n", dest[i].host.c_str(), dest[i].port);
