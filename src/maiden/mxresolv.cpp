@@ -55,7 +55,7 @@ static void srvLookup(MxResolvList &dst, const char *host)
 
 #ifdef _WIN32
     PDNS_RECORD prec = NULL;
-    DNS_STATUS dns = DnsQuery_A(host, DNS_TYPE_SRV, DNS_QUERY_STANDARD, NULL, &prec, NULL);
+    DNS_STATUS dns = DnsQuery_A(lookup.c_str(), DNS_TYPE_SRV, DNS_QUERY_STANDARD, NULL, &prec, NULL);
     if(dns == 0)
     {
         for(PDNS_RECORD p = prec; p; p = p->pNext)
@@ -93,10 +93,10 @@ static void srvLookup(MxResolvList &dst, const char *host)
     }
     //printf("rs.options = %d\n", rs.options);
     unsigned char nsbuf[8*1024] = {0};
-    int len = res_nquery(&rs, host, ns_c_in, ns_t_srv, nsbuf, sizeof(nsbuf));
+    int len = res_nquery(&rs, lookup.c_str(), ns_c_in, ns_t_srv, nsbuf, sizeof(nsbuf));
     if(len < 0)
     {
-        perror("res_nquery");
+        perror("ERROR: res_nquery");
         return;
     }
     //printf("(len=%d)---nsbuf---:%s\n", len, nsbuf);
@@ -109,10 +109,11 @@ static void srvLookup(MxResolvList &dst, const char *host)
 
     for(int i = 0; i < N; ++i)
     {
-        char dispbuf[1024];
         ns_parserr(&msg, ns_s_an, i, &rr);
-        //ns_sprintrr(&msg, &rr, NULL, NULL, dispbuf, sizeof(dispbuf));
-        //printf("\t%s \n", dispbuf);
+
+        /*char dispbuf[1024];
+        ns_sprintrr(&msg, &rr, NULL, NULL, dispbuf, sizeof(dispbuf));
+        printf("\t%s \n", dispbuf);*/
 
         ns_type type = ns_rr_type(rr);
         if(type == ns_t_srv)
@@ -148,7 +149,7 @@ static void srvLookup(MxResolvList &dst, const char *host)
 MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t maxsize)
 {
     MxResolvList ret;
-    /*
+
     // try .well-known first
     const char *what = "/.well-known/matrix/server";
 
@@ -174,7 +175,7 @@ MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t max
             }
         }
     }
-    */
+
     srvLookup(ret, host);
 
     return ret;
