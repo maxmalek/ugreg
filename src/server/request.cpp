@@ -27,7 +27,7 @@ static const RequestTypeLUT requestTypeLUT[] =
 static const RequestType getRequestType(const char *s)
 {
     for(size_t i = 0; i < Countof(requestTypeLUT); ++i)
-        if(!stricmp(s, requestTypeLUT[i].str))
+        if(!mg_strcasecmp(s, requestTypeLUT[i].str))
             return requestTypeLUT[i].type;
     return RQ_UNKNOWN;
 }

@@ -111,7 +111,7 @@ void MixRand::systemSeed()
 
 #else
     u64 sys[16];
-    getrandom(buf, sizeof(buf), 0);
+    getrandom(sys, sizeof(sys), 0);
 #endif
     ascon.absorb(sys, Countof(sys));
 }

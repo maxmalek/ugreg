@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stddef.h>
+
 // generates a random series of characters taken from the alphabet and writes into dst.
 // dst is zero-terminated, n is the total size of the buffer.
 void mxGenerateToken(char *dst, size_t n, const char *alphabet, size_t alphabetSize, bool zeroterm);

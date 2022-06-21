@@ -2,6 +2,7 @@
 #include <sstream>
 #include <string>
 #include <algorithm>
+#include <string.h>
 #include "request.h"
 #include "datatree.h"
 #include "mxhttprequest.h"
@@ -82,8 +83,61 @@ static void srvLookup(MxResolvList &dst, const char *host)
         DnsRecordListFree(prec, DnsFreeRecordListDeep);
 
 #else // unix
-#error WRITE ME
 
+    struct __res_state rs;
+    int rc = res_ninit(&rs);
+    if (rc < 0)
+    {
+        printf("srvLookup: res_ninit() failed, error = %d\n", rc);
+        return;
+    }
+    //printf("rs.options = %d\n", rs.options);
+    unsigned char nsbuf[8*1024] = {0};
+    int len = res_nquery(&rs, host, ns_c_in, ns_t_srv, nsbuf, sizeof(nsbuf));
+    if(len < 0)
+    {
+        perror("res_nquery");
+        return;
+    }
+    //printf("(len=%d)---nsbuf---:%s\n", len, nsbuf);
+
+    ns_msg msg;
+    ns_rr rr;
+
+    ns_initparse(nsbuf, len, &msg);
+    int N = ns_msg_count(msg, ns_s_an);
+
+    for(int i = 0; i < N; ++i)
+    {
+        char dispbuf[1024];
+        ns_parserr(&msg, ns_s_an, i, &rr);
+        //ns_sprintrr(&msg, &rr, NULL, NULL, dispbuf, sizeof(dispbuf));
+        //printf("\t%s \n", dispbuf);
+
+        ns_type type = ns_rr_type(rr);
+        if(type == ns_t_srv)
+        {
+            if(ns_rr_rdlen(rr) < 3U * NS_INT16SZ)
+                continue;
+            const char *name = (const char *)ns_rr_name(rr);
+            const unsigned char *rdata = ns_rr_rdata(rr);
+            int priority = ns_get16(rdata);  rdata += NS_INT16SZ;
+            int weight = ns_get16(rdata);  rdata += NS_INT16SZ;
+            unsigned port = ns_get16(rdata);  rdata += NS_INT16SZ;
+
+            printf("SRV: %s:%u (prio=%d, weight=%d)\n",
+                name, port, priority, weight);
+
+            MxResolvResult res;
+            res.host = name;
+            res.port = port;
+            res.priority = priority;
+            res.weight = weight;
+            // TODO: handle TTL?
+            if (res.validate())
+                dst.push_back(res);
+        }
+    }
 #endif
 
     // sort added entries by priority and weight (keep existing entries as-is!)
@@ -94,7 +148,7 @@ static void srvLookup(MxResolvList &dst, const char *host)
 MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t maxsize)
 {
     MxResolvList ret;
-
+    /*
     // try .well-known first
     const char *what = "/.well-known/matrix/server";
 
@@ -120,7 +174,7 @@ MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t max
             }
         }
     }
-
+    */
     srvLookup(ret, host);
 
     return ret;
