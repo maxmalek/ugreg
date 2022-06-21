@@ -16,8 +16,18 @@ option(USE_OPENSSL "Enable SSL/TLS support via OpenSSL" TRUE)
 
 if(USE_OPENSSL)
     add_definitions(-DUSE_OPENSSL)
-    add_definitions(-DOPENSSL_API_3_0)
-    message(STATUS "Will load OpenSSL dynamically")
+    find_package(OpenSSL)
+    if(OpenSSL_FOUND)
+        message(STATUS "Found OpenSSL system install, using normal linking")
+        add_definitions(-DNO_SSL_DL)
+        message(STATUS "Using OpenSSL libs: ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY}")
+        include_directories(${OPENSSL_INCLUDE_DIR})
+        set(extra_libs ${extra_libs} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY})
+    else()
+        add_definitions(-DOPENSSL_API_3_0)
+        message(STATUS "Will load OpenSSL dynamically, assuming API version 3.0")
+    endif()
+    
 elseif(USE_MBEDTLS)
     find_package(MbedTLS REQUIRED)
     include_directories(${MBEDTLS_INCLUDE_DIRS})
@@ -68,12 +78,14 @@ set(src
 add_library(alldeps ${src})
 
 if(UNIX)
-    set(extra_libs ${extra_libs} pthread dl)
+    set(extra_libs ${extra_libs} pthread dl resolv)
 endif()
 
 if(WIN32)
   set(extra_libs ${extra_libs} ws2_32)
 endif()
+
+message(STATUS "dep extra libs: ${extra_libs}")
 
 target_link_libraries(alldeps ${extra_libs} tomcrypt)
 

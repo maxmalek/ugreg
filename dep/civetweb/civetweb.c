@@ -1548,7 +1548,7 @@ static void mg_snprintf(const struct mg_connection *conn,
 /* mg_init_library counter */
 static int mg_init_library_called = 0;
 
-#if !defined(NO_SSL)
+#if !defined(NO_SSL) && !defined(NO_SSL_DL)
 #if defined(OPENSSL_API_1_0) || defined(OPENSSL_API_1_1)                       \
     || defined(OPENSSL_API_3_0)
 static int mg_openssl_initialized = 0;
@@ -1773,6 +1773,14 @@ typedef struct SSL_CTX SSL_CTX;
 #define ENGINE_cleanup() ((void)0)
 #endif
 
+#if !defined(OPENSSL_VERSION_NUMBER) && defined(NO_SSL_DL)
+#error OPENSSL_VERSION_NUMBER not defined
+#endif
+
+#define STRINGIFY(s) XSTRINGIFY(s)
+#define XSTRINGIFY(s) #s
+#pragma message ("OPENSSL_VERSION_NUMBER=" STRINGIFY(OPENSSL_VERSION_NUMBER))
+
 /* If OpenSSL headers are included, automatically select the API version */
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 #if !defined(OPENSSL_API_3_0)
@@ -1792,6 +1800,8 @@ typedef struct SSL_CTX SSL_CTX;
 #define OPENSSL_REMOVE_THREAD_STATE() ERR_remove_thread_state(NULL)
 #endif
 #endif
+
+static int mg_openssl_initialized = 0;
 
 
 #else
