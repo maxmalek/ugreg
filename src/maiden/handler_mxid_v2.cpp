@@ -23,28 +23,28 @@
 // anything after /_matrix/identity/v2
 const MxidHandler_v2::Endpoint MxidHandler_v2::s_endpoints[] =
 {
-    { RQ_GET,  AUTHED, "/account",                       &get_account  },
-    { RQ_POST, AUTHED, "/account/logout",                &post_account_logout  },
-    { RQ_POST, NOAUTH, "/account/register",              &post_account_register  },
-    { RQ_GET,  AUTHED, "/terms",                         &get_terms  },
-    { RQ_POST, NOAUTH, "/terms",                         &post_terms  },
-    { RQ_GET,  AUTHED, "/",                              &get_status  }, // status check
-    //{ RQ_GET,  NOAUTH, "/pubkey/ephemeral/isvalid",      &get_pubkey_eph_isvalid  },
-    //{ RQ_GET,  NOAUTH, "/pubkey/isvalid",                &get_pubkey_isvalid  },
-    //{ RQ_GET,  NOAUTH, "/pubkey",                        &get_pubkey  }, // actually pubkey/{keyId}
-    { RQ_GET,  AUTHED, "/hash_details",                  &get_hashdetails  },
-    { RQ_POST, AUTHED, "/lookup",                        &get_lookup  },
-    /*{ RQ_POST, AUTHED, "/validate/email/requestToken",   &get_validate_email_requestToken  },
-    { RQ_GET,  AUTHED, "/validate/email/submitToken",    &get_validate_email_submitToken  },
-    { RQ_POST, AUTHED, "/validate/email/submitToken",    &post_validate_email_submitToken  },
-    { RQ_POST, AUTHED, "/validate/msisdn/requestToken",  &get_validate_msisdn_requestToken  },
-    { RQ_GET,  AUTHED, "/validate/msisdn/submitToken",   &get_validate_msisdn_submitToken  },
-    { RQ_POST, AUTHED, "/validate/msisdn/submitToken",   &post_validate_msisdn_submitToken  },
-    { RQ_POST, AUTHED, "/3pid/bind",                     &post_3pid_bind  },
-    { RQ_GET,  AUTHED, "/3pid/getValidated3pid",         &get_2pid_getValidated3pid  },
-    { RQ_POST, AUTHED, "/3pid/unbind",                   &post_3pid_unbind  },*/
-    //{ RQ_POST, AUTHED, "/store-invite",                  &post_store_invite  },
-    //{ RQ_POST, AUTHED, "/sign-ed25519",                  &post_sign_ed25519  },
+    { RQ_GET,  AUTHED, "/account",                       &MxidHandler_v2::get_account  },
+    { RQ_POST, AUTHED, "/account/logout",                &MxidHandler_v2::post_account_logout  },
+    { RQ_POST, NOAUTH, "/account/register",              &MxidHandler_v2::post_account_register  },
+    { RQ_GET,  AUTHED, "/terms",                         &MxidHandler_v2::get_terms  },
+    { RQ_POST, NOAUTH, "/terms",                         &MxidHandler_v2::post_terms  },
+    { RQ_GET,  AUTHED, "/",                              &MxidHandler_v2::get_status  }, // status check
+    { RQ_GET,  NOAUTH, "/pubkey/ephemeral/isvalid",      &MxidHandler_v2::get_pubkey_eph_isvalid  },
+    { RQ_GET,  NOAUTH, "/pubkey/isvalid",                &MxidHandler_v2::get_pubkey_isvalid  },
+    { RQ_GET,  NOAUTH, "/pubkey",                        &MxidHandler_v2::get_pubkey  }, // actually pubkey/{keyId}
+    { RQ_GET,  AUTHED, "/hash_details",                  &MxidHandler_v2::get_hashdetails  },
+    { RQ_POST, AUTHED, "/lookup",                        &MxidHandler_v2::get_lookup  },
+    { RQ_POST, AUTHED, "/validate/email/requestToken",   &MxidHandler_v2::get_validate_email_requestToken  },
+    { RQ_GET,  AUTHED, "/validate/email/submitToken",    &MxidHandler_v2::get_validate_email_submitToken  },
+    { RQ_POST, AUTHED, "/validate/email/submitToken",    &MxidHandler_v2::post_validate_email_submitToken  },
+    { RQ_POST, AUTHED, "/validate/msisdn/requestToken",  &MxidHandler_v2::get_validate_msisdn_requestToken  },
+    { RQ_GET,  AUTHED, "/validate/msisdn/submitToken",   &MxidHandler_v2::get_validate_msisdn_submitToken  },
+    { RQ_POST, AUTHED, "/validate/msisdn/submitToken",   &MxidHandler_v2::post_validate_msisdn_submitToken  },
+    { RQ_POST, AUTHED, "/3pid/bind",                     &MxidHandler_v2::post_3pid_bind  },
+    { RQ_GET,  AUTHED, "/3pid/getValidated3pid",         &MxidHandler_v2::get_2pid_getValidated3pid  },
+    { RQ_POST, AUTHED, "/3pid/unbind",                   &MxidHandler_v2::post_3pid_unbind  },
+    { RQ_POST, AUTHED, "/store-invite",                  &MxidHandler_v2::post_store_invite  },
+    { RQ_POST, AUTHED, "/sign-ed25519",                  &MxidHandler_v2::post_sign_ed25519  },
     { RQ_UNKNOWN, NOAUTH, NULL, NULL }
 };
 
@@ -98,6 +98,13 @@ static int sendError(mg_connection* conn, int status, MxError err, const char* e
     mg_send_http_error(conn, status, "{\"errcode\":\"%s\",\"error\":\"%s\"}", estr, extra);
     return status;
 }
+
+static int nyi(mg_connection* conn)
+{
+    mg_send_http_error(conn, 404, "not yet implemented");
+    return 404;
+}
+
 
 static int sendErrorEx(mg_connection* conn, VarRef dst, int status, MxError err, const char* extra = 0)
 {
@@ -356,17 +363,17 @@ int MxidHandler_v2::get_status(BufferedWriteStream& dst, mg_connection* conn, co
 
 int MxidHandler_v2::get_pubkey_eph_isvalid(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::get_pubkey_isvalid(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::get_pubkey(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::get_hashdetails(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
@@ -433,56 +440,56 @@ int MxidHandler_v2::get_lookup(BufferedWriteStream& dst, mg_connection* conn, co
 
 int MxidHandler_v2::get_validate_email_requestToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::get_validate_email_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::post_validate_email_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::get_validate_msisdn_requestToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::get_validate_msisdn_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::post_validate_msisdn_submitToken(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::post_3pid_bind(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::get_2pid_getValidated3pid(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::post_3pid_unbind(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::post_store_invite(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
 int MxidHandler_v2::post_sign_ed25519(BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const
 {
-    return 0;
+    return nyi(conn);
 }
 
