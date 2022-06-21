@@ -1,0 +1,13 @@
+{
+    "config": {
+        "listen": [
+            { "host": "0.0.0.0", "port": 8081, "ssl": true }
+        ],
+        "cert": "fullchain.pem",
+        "listen_threads": 0
+    },
+    "forward": [
+        { "host": "localhost", "port": 443 },
+        { "host": "example.com", "port": 443, "fixHost": true }
+    ]
+}
