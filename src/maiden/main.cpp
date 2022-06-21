@@ -32,6 +32,7 @@ int handler_versions(struct mg_connection* conn, void*)
 {
     // we only support v2 so this can be hardcoded for now
     static const char ver[] = "{\"versions\":[\"v1.2\"]}";
+    mg_send_http_ok(conn, "application/json", sizeof(ver) - 1);
     mg_write(conn, ver, sizeof(ver) - 1); // don't include trailing \0
     return 200;
 }

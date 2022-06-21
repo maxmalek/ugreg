@@ -28,7 +28,7 @@ const MxidHandler_v2::Endpoint MxidHandler_v2::s_endpoints[] =
     { RQ_POST, NOAUTH, "/account/register",              &MxidHandler_v2::post_account_register  },
     { RQ_GET,  AUTHED, "/terms",                         &MxidHandler_v2::get_terms  },
     { RQ_POST, NOAUTH, "/terms",                         &MxidHandler_v2::post_terms  },
-    { RQ_GET,  AUTHED, "/",                              &MxidHandler_v2::get_status  }, // status check
+    { RQ_GET,  NOAUTH, "/",                              &MxidHandler_v2::get_status  }, // status check
     { RQ_GET,  NOAUTH, "/pubkey/ephemeral/isvalid",      &MxidHandler_v2::get_pubkey_eph_isvalid  },
     { RQ_GET,  NOAUTH, "/pubkey/isvalid",                &MxidHandler_v2::get_pubkey_isvalid  },
     { RQ_GET,  NOAUTH, "/pubkey",                        &MxidHandler_v2::get_pubkey  }, // actually pubkey/{keyId}

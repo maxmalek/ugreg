@@ -2,7 +2,7 @@
     "config":{
         // Interfaces to listen on. If host is not given, listen on all network adapters on that port.
         "listen": [
-            { "host": "0.0.0.0", "port": 8080 },
+            { "host": "0.0.0.0", "port": 8089 },
             { "host": "0.0.0.0", "port": 8088, "ssl": true },
         ],
         "cert": "fullchain.pem",
