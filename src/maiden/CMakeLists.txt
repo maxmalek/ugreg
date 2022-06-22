@@ -12,6 +12,8 @@ set(src
     mxhttprequest.h
     mxtoken.cpp
     mxtoken.h
+    mxsources.cpp
+    mxsources.h
 )
 
 set(extra_libs)

@@ -511,6 +511,11 @@ bool MxStore::merge3pid(VarCRef root)
     return threepid.root().merge(root, MERGE_RECURSIVE);
 }
 
+DataTree::LockedRoot MxStore::get3pidRoot()
+{
+    return threepid.lockedRoot();
+}
+
 bool MxStore::save(const char* fn) const
 {
     std::lock_guard lock(authdata.mutex);

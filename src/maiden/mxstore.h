@@ -42,8 +42,10 @@ public:
     // -- lookup API --
     MxError hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper); // dst is made a map, in is an array
 
-
+    // -- update --
     bool merge3pid(VarCRef root); // expects { medium => { something => mxid } }
+    DataTree::LockedRoot get3pidRoot(); // for replacing the entire tree
+
 
     bool save(const char *fn) const;
     bool load(const char *fn);

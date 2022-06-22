@@ -19,6 +19,19 @@ public:
     VarRef  root();
     VarCRef root() const;
 
+    struct LockedRoot
+    {
+        friend class DataTree;
+        const VarRef ref;
+        inline VarRef operator->() const { return ref; }
+    private:
+        std::unique_lock<acme::upgrade_mutex> _lock;
+        LockedRoot(DataTree& tree)
+            :_lock(tree.mutex), ref(tree.root()) {}
+    };
+
+    inline LockedRoot lockedRoot() { return LockedRoot(*this); }
+
     // Use stringly typed JSON pointer (returns an invalid ref for malformed json pointers)
     // See https://rapidjson.org/md_doc_pointer.html#JsonPointer
     // and https://datatracker.ietf.org/doc/html/rfc6901

@@ -34,6 +34,29 @@
         "minSearchLen": 2, // any search term must be at least this long; else it's ignored
     },
     
+
+    "sources": {
+        /* Completely purge & reload the entire 3pid tree every now and then.
+           Fetches all sources as if on program startup, then atomically replaces the tree once everything is loaded.
+           Gets rid of stale entries. Comment out to never purge (not recommended). */
+        "purgeEvery": "2m",
+        
+        /* Fetching sources happens as follows:
+        exec: Executes this file/script/program and parses its stdout as JSON.
+        load: Load this file as JSON.
+        every: takes a time delay to do this action repeatly
+               (If not present, this is done only once on startup)
+        ----
+        Each resulting json tree is kept separately. Whenever the 3pid database is updated,
+        ie. one source has been loaded or executed, all trees are merged to the final 3pid tree.
+        (This is to make sure no deleted entries linger in the 3pid tree)
+        */
+        "list": [
+            { "exec": "3pid/fakestud.sh", "every": "1m" },
+            { "exec": "3pid/fakeusers.sh", "every": "1m" },
+        ],
+    },
+    
     // environment variables passed to external processes. Put passwords and stuff here.
     "env": {
         "KEY": "VAL",
