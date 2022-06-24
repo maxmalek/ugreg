@@ -78,8 +78,11 @@ bool MxSources::init(VarCRef src)
     printf("MxSources: %u sources configured\n", (unsigned)_cfg.list.size());
     printf("MxSources: Purge tree every %ju seconds\n", _cfg.purgeEvery / 1000);
 
+    printf("MxSources: Populating initial tree...\n");
+    _rebuildTree();
+
     _th = std::thread(_Loop_th, this);
-    printf("MxSources: Spawned background thread\n");
+    printf("MxSources: ... done & spawned background thread\n");
     return true;
 }
 
@@ -94,8 +97,15 @@ void MxSources::_loop_th_untilPurge()
 
     u64 purgeWhen = _cfg.purgeEvery ? now + _cfg.purgeEvery : 0;
 
+    std::vector<std::future<void> > futs;
+    futs.reserve(N);
+
     while(!_quit && (!purgeWhen || now < purgeWhen))
     {
+        for(size_t i = 0; i < futs.size(); ++i)
+            futs[i].wait();
+        futs.clear();
+
         std::unique_lock lock(_waitlock);
 
         now = timeNowMS();
@@ -115,13 +125,8 @@ void MxSources::_loop_th_untilPurge()
             else
             {
                 // TODO do this async
-                DataTree tmp;
-                _ingestData(tmp.root(), _cfg.list[i]);
-                if(tmp.root().type() == Var::TYPE_MAP)
-                    _store.merge3pid(tmp.root());
-                else
-                    printf("MxSources: WARNING: Ignored [%s], result type is not map\n", _cfg.list[i].fn.c_str());
 
+                futs.push_back(std::move(_ingestDataAsync(_cfg.list[i])));
                 whens[i] = now + every;
                 mintime = std::min(mintime, every);
 
@@ -130,36 +135,51 @@ void MxSources::_loop_th_untilPurge()
 
         printf("MxSources: Sleeping for up to %ju secs until next job\n", mintime / 1000);
         _waiter.wait_for(lock, std::chrono::milliseconds(mintime));
-
     }
 }
 
-void MxSources::_ingestData(VarRef where, const Config::InputEntry& entry)
+void MxSources::_ingestData(const Config::InputEntry& entry)
 {
-
+    DataTree tmp;
 
     // TODO load data
 
+    if(tmp.root().type() == Var::TYPE_MAP)
+        _store.merge3pid(tmp.root());
+    else
+        printf("MxSources: WARNING: Ignored [%s], result type is not map\n", entry.fn.c_str());
+
+}
+
+std::future<void> MxSources::_ingestDataAsync(const Config::InputEntry& entry)
+{
+    return std::async(std::launch::async, &MxSources::_ingestData, this, entry);
+}
+
+void MxSources::_rebuildTree()
+{
+    DataTree::LockedRoot lockroot = _store.get3pidRoot();
+    lockroot.ref.clear();
+    const size_t N = _cfg.list.size();
+    std::vector<std::future<void> > futs;
+    futs.reserve(N);
+    for(size_t i = 0; i < N; ++i)
+        futs.push_back(std::move(_ingestDataAsync(_cfg.list[i])));
+    for(size_t i = 0; i < N; ++i)
+        futs[i].wait();
 }
 
 
 void MxSources::_loop_th()
 {
+    goto begin; // initial tree is constructed in init(), skip this here
+
     while(!_quit)
     {
         // construct initial tree
-        {
-            DataTree::LockedRoot lockroot = _store.get3pidRoot();
-            lockroot.ref.clear();
-            const size_t N = _cfg.list.size();
-            for(size_t i = 0; i < N; ++i)
-            {
-                // TODO: do all in parallel
-                _ingestData(lockroot.ref, _cfg.list[i]);
-            }
-        }
+        _rebuildTree();
 
-
+        begin:
         // do incremental updates
         _loop_th_untilPurge();
     }

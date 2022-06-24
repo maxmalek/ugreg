@@ -8,6 +8,7 @@
 #include <vector>
 #include <condition_variable>
 #include <mutex>
+#include <future>
 
 class MxStore;
 
@@ -39,7 +40,9 @@ public:
 private:
     void _loop_th();
     void _loop_th_untilPurge();
-    void _ingestData(VarRef where, const Config::InputEntry& entry);
+    void _ingestData(const Config::InputEntry& entry);
+    std::future<void> _ingestDataAsync(const Config::InputEntry& entry);
+    void _rebuildTree();
     static void _Loop_th(MxSources *self);
     MxStore& _store;
     Config _cfg;
