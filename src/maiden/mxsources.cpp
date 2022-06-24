@@ -1,7 +1,9 @@
 #include "mxsources.h"
 #include "util.h"
 #include "mxstore.h"
-
+#include "json_in.h"
+#include "subproc.h"
+#include <assert.h>
 
 MxSources::MxSources(MxStore& mxs)
     : _store(mxs)
@@ -17,18 +19,60 @@ MxSources::~MxSources()
         _th.join();
 }
 
-static MxSources::Config::InputEntry parseInputEntry(VarCRef x)
+static const char *addString(VarCRef x, std::vector<const char *>& ptrs, std::vector<std::string>& strtab)
+{
+    const char* p = x.asCString();
+    if (p)
+    {
+        ptrs.push_back((const char*)(uintptr_t)strtab.size()); // rel index; to be fixed up later
+        strtab.push_back(p);
+    }
+    return p;
+}
+
+static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std::string>& strtab)
 {
     MxSources::Config::InputEntry entry;
     entry.every = 0;
 
     VarCRef xwhat = x.lookup("exec");
     if(xwhat)
+    {
         entry.how = MxSources::Config::IN_EXEC;
+        if(!addString(xwhat, entry.args, strtab))
+            return entry;
+    }
     else
     {
         xwhat = x.lookup("load");
         entry.how = MxSources::Config::IN_LOAD;
+        switch(xwhat.type())
+        {
+            case Var::TYPE_STRING:
+                addString(xwhat, entry.args, strtab);
+                break;
+            case Var::TYPE_ARRAY:
+            {
+                bool ok = false;
+                if(size_t n = xwhat.size())
+                {
+                    ok = true;
+                    for(size_t i = 0; i < n; ++i)
+                        if(VarCRef xx = xwhat.at(i))
+                        {
+                            ok = !!addString(xx, entry.args, strtab);
+                            if(!ok)
+                                break;
+                        }
+                }
+                if(!ok)
+                {
+                    entry.args.clear();
+                    return entry;
+                }
+            }
+            break;
+        }
     }
 
     if(VarCRef xevery = x.lookup("every"))
@@ -39,9 +83,6 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x)
                 return entry; // still invalid here and will be skipped by caller
             }
 
-    if(xwhat)
-        if(const char *w = xwhat.asCString())
-            entry.fn = w;
 
     return entry;
 }
@@ -54,8 +95,8 @@ bool MxSources::init(VarCRef src)
         const size_t N = xlist.size();
         for(size_t i = 0; i < N; ++i)
         {
-            Config::InputEntry e = parseInputEntry(xlist.at(i));
-            if(!e.fn.empty())
+            Config::InputEntry e = parseInputEntry(xlist.at(i), _argstrs);
+            if(!e.args.empty())
                 _cfg.list.push_back(std::move(e));
         }
     }
@@ -64,6 +105,15 @@ bool MxSources::init(VarCRef src)
     {
         printf("MxSources: Source list is empty\n");
         return false;
+    }
+
+    // fixup all pointers
+    for(size_t i = 0; i < _cfg.list.size(); ++i)
+    {
+        auto& a = _cfg.list[i].args;
+        for(size_t k = 0; k < a.size(); ++k)
+            a[k] = _argstrs[(uintptr_t)a[k]].c_str();
+        a.push_back(NULL); // terminator
     }
 
     _cfg.purgeEvery = 0;
@@ -124,12 +174,9 @@ void MxSources::_loop_th_untilPurge()
             }
             else
             {
-                // TODO do this async
-
                 futs.push_back(std::move(_ingestDataAsync(_cfg.list[i])));
                 whens[i] = now + every;
                 mintime = std::min(mintime, every);
-
             }
         }
 
@@ -140,15 +187,40 @@ void MxSources::_loop_th_untilPurge()
 
 void MxSources::_ingestData(const Config::InputEntry& entry)
 {
+    assert(entry.args.size());
     DataTree tmp;
 
-    // TODO load data
+    bool ok = false;
+    switch(entry.how)
+    {
+        case Config::IN_LOAD:
+        if(const char *fn = entry.args[0])
+            if(FILE *fh = fopen(fn, "rb"))
+            {
+                char buf[1024*4];
+                BufferedFILEReadStream sm(fh, buf, sizeof(buf));
+                ok = loadJsonDestructive(tmp.root(), sm);
+                fclose(fh);
+            }
+        break;
 
-    if(tmp.root().type() == Var::TYPE_MAP)
+        case Config::IN_EXEC:
+            ok = loadJsonFromProcess(tmp.root(), &entry.args[0], NULL); // TODO: env
+        break;
+    }
+
+    // for error reporting
+    const char *str = entry.args[0];
+
+    if(!ok)
+        printf("MxSources: ERROR: Failed to ingest '%s'\n", str);
+    else if(tmp.root().type() == Var::TYPE_MAP)
+    {
+        printf("MxSources: Merging '%s'\n", str);
         _store.merge3pid(tmp.root());
+    }
     else
-        printf("MxSources: WARNING: Ignored [%s], result type is not map\n", entry.fn.c_str());
-
+        printf("MxSources: WARNING: Ignored [%s], result type is not map\n", str);
 }
 
 std::future<void> MxSources::_ingestDataAsync(const Config::InputEntry& entry)
@@ -158,6 +230,8 @@ std::future<void> MxSources::_ingestDataAsync(const Config::InputEntry& entry)
 
 void MxSources::_rebuildTree()
 {
+    // TODO: merge all to tmp and then swap in atomically?
+
     DataTree::LockedRoot lockroot = _store.get3pidRoot();
     lockroot.ref.clear();
     const size_t N = _cfg.list.size();

@@ -19,13 +19,13 @@ public:
     VarRef  root();
     VarCRef root() const;
 
+    // Used to keep the tree locked while it's accessed. Intended for writing.
     struct LockedRoot
     {
         friend class DataTree;
         const VarRef ref;
-        inline VarRef operator->() const { return ref; }
     private:
-        std::unique_lock<acme::upgrade_mutex> _lock;
+        std::unique_lock<acme::upgrade_mutex> _lock; // lock R+W
         LockedRoot(DataTree& tree)
             :_lock(tree.mutex), ref(tree.root()) {}
     };

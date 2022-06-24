@@ -43,6 +43,8 @@
         
         /* Fetching sources happens as follows:
         exec: Executes this file/script/program and parses its stdout as JSON.
+              - Can either use a string to exec that file without parameters
+              - Can also use an array to specify file name and parameters
         load: Load this file as JSON.
         every: takes a time delay to do this action repeatly
                (If not present, this is done only once on startup)

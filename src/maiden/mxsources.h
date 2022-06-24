@@ -1,7 +1,5 @@
 #pragma once
 
-
-
 #include "variant.h"
 #include <thread>
 #include <atomic>
@@ -30,7 +28,7 @@ public:
         struct InputEntry
         {
             InputType how;
-            std::string fn; // entry is valid if this is not empty
+            std::vector<const char*> args; // actual strings are stored in _argstrs[]
             u64 every;
         };
         u64 purgeEvery;
@@ -38,6 +36,7 @@ public:
     };
 
 private:
+    std::vector<std::string> _argstrs;
     void _loop_th();
     void _loop_th_untilPurge();
     void _ingestData(const Config::InputEntry& entry);

@@ -497,7 +497,7 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
         }
     }
 
-    // TODO: call external 3pid providers?
+    // TODO: call uncached external 3pid providers?
     // Would be better to keep a cache for their results too
     // and only do an external call if uncached or too old
 

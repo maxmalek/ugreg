@@ -24,8 +24,11 @@ static void procfail(ProcessReadStream& ps, const char *procname)
             procname, unsigned(pos), os.str().c_str());
 }
 
-bool createProcess(subprocess_s* proc, const char** args, const char** env, int options)
+bool createProcess(subprocess_s* proc, const char* const * args, const char** env, int options)
 {
+    if(!args || !args[0])
+        return false;
+
     if (!env)
         options |= subprocess_option_inherit_environment;
 
@@ -36,12 +39,14 @@ bool createProcess(subprocess_s* proc, const char** args, const char** env, int 
     {
         // Aside from .exe, .bat is the only natively executable file on windows.
         // So to ease testing, we support using .bat stubs to start the actual scripts.
-        const char* const oldarg0 = args[0];
+        std::vector<const char*> winargs;
+        for(const char * const *p = args; *p; ++p)
+            winargs.push_back(*p);
+        winargs.push_back(NULL);
         std::string arg0 = args[0];
         arg0 += ".bat";
-        args[0] = arg0.c_str();
-        err = subprocess_create_ex(args, options, env, proc);
-        args[0] = oldarg0;
+        winargs[0] = arg0.c_str();
+        err = subprocess_create_ex(&winargs[0], options, env, proc);
     }
 #endif
 
@@ -51,12 +56,12 @@ bool createProcess(subprocess_s* proc, const char** args, const char** env, int 
     return err == 0;
 }
 
-bool loadJsonFromProcess(VarRef root, const char** args, const char **env)
+bool loadJsonFromProcess(VarRef root, const char* const * args, const char **env)
 {
     return loadJsonFromProcess(root, args, env, subprocess_option_enable_async | subprocess_option_no_window);
 }
 
-bool loadJsonFromProcess(VarRef root, const char** args, const char **env, int options)
+bool loadJsonFromProcess(VarRef root, const char* const * args, const char **env, int options)
 {
     subprocess_s proc;
     if(!createProcess(&proc, args, env, options))
@@ -117,6 +122,52 @@ bool loadJsonFromProcess(VarRef root, subprocess_s* proc, const char* procname)
             printf("---- [%s] end stderr dump ----\n", procname);
     }
 
+    return ok;
+}
+
+bool loadJsonFromProcess_StrOrArray(VarRef root, VarCRef param, const char **env)
+{
+    size_t n = 0;
+    const char **args = NULL;
+    switch(param.type())
+    {
+        case Var::TYPE_STRING:
+        {
+            n = 1;
+            const size_t sz = (n + 1) * sizeof(const char*);
+            args = (const char**)_malloca(sz);
+            if(args)
+                args[0] = param.asCString();
+        }
+        break;
+
+        case Var::TYPE_ARRAY:
+        n = param.size();
+        if(n)
+        {
+            const size_t sz = (n + 1) * sizeof(const char*);
+            args = (const char**)_malloca(sz);
+            if(args)
+                for(size_t i = 0; i < n; ++i)
+                {
+                    const char *p = NULL;
+                    if(VarCRef xarg = param.at(i))
+                        p = xarg.asCString();
+                    args[i] = p;
+                    if(!p)
+                        return false;
+                }
+        }
+        break;
+    }
+
+    if(!n || !args)
+        return false;
+
+    args[n] = NULL;
+
+    bool ok = loadJsonFromProcess(root, args, env);
+    _freea(args);
     return ok;
 }
 
