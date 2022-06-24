@@ -452,7 +452,7 @@ public:
     // TODO: also optimize related code paths for this->mem == o.mem
 
     // value assignment
-    void clear() { v->clear(*mem); }
+    void clear() const { v->clear(*mem); }
     inline VarRef& operator=(std::nullptr_t){ v->clear(*mem);       return *this; }
     inline VarRef& operator=(bool x)        { v->setBool(*mem, x);  return *this; }
     inline VarRef& operator=(s64 x)         { v->setInt(*mem, x);   return *this; }

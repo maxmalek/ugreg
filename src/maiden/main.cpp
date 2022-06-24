@@ -18,6 +18,7 @@
 #include <civetweb/civetweb.h>
 #include "subproc.h"
 #include "subprocess.h"
+#include "mxsources.h"
 
 std::atomic<bool> s_quit;
 
@@ -97,6 +98,7 @@ int main(int argc, char** argv)
     handlesigs(sigquit);
 
     MxStore mxs;
+    MxSources sources(mxs);
     ServerConfig cfg;
     {
         DataTree cfgtree;
@@ -109,14 +111,20 @@ int main(int argc, char** argv)
                 dumpjson(cfgtree.root(), true).c_str()
             );
         }
+
+        // TODO: move env to sources
+        updateEnv(cfgtree.subtree("/env"));
+
         if(!mxs.apply(cfgtree.subtree("/matrix")))
             bail("Invalid matrix config. Exiting.", "");
 
-        updateEnv(cfgtree.subtree("/env"));
+        if(!sources.init(cfgtree.subtree("/sources")))
+            bail("Invalid sources config. Exiting.", "");
+
 
         // FIXME TESTING ONLY
-        runAndMerge(mxs, "3pid\\fakeusers.bat");
-        runAndMerge(mxs, "3pid\\fakestud.bat");
+        //runAndMerge(mxs, "3pid\\fakeusers.bat");
+        //runAndMerge(mxs, "3pid\\fakestud.bat");
 
         mxs.rotateHashPepper();
     }
