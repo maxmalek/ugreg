@@ -5,6 +5,7 @@
 #include "subproc.h"
 #include <assert.h>
 #include "scopetimer.h"
+#include "env.h"
 
 MxSources::MxSources(MxStore& mxs)
     : _store(mxs)
@@ -40,14 +41,7 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std:
     if(xwhat)
     {
         entry.how = MxSources::Config::IN_EXEC;
-        if(!addString(xwhat, entry.args, strtab))
-            return entry;
-    }
-    else
-    {
-        xwhat = x.lookup("load");
-        entry.how = MxSources::Config::IN_LOAD;
-        switch(xwhat.type())
+        switch (xwhat.type())
         {
             case Var::TYPE_STRING:
                 addString(xwhat, entry.args, strtab);
@@ -55,18 +49,18 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std:
             case Var::TYPE_ARRAY:
             {
                 bool ok = false;
-                if(size_t n = xwhat.size())
+                if (size_t n = xwhat.size())
                 {
                     ok = true;
-                    for(size_t i = 0; i < n; ++i)
-                        if(VarCRef xx = xwhat.at(i))
+                    for (size_t i = 0; i < n; ++i)
+                        if (VarCRef xx = xwhat.at(i))
                         {
                             ok = !!addString(xx, entry.args, strtab);
-                            if(!ok)
+                            if (!ok)
                                 break;
                         }
                 }
-                if(!ok)
+                if (!ok)
                 {
                     entry.args.clear();
                     return entry;
@@ -74,6 +68,13 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std:
             }
             break;
         }
+    }
+    else
+    {
+        xwhat = x.lookup("load");
+        entry.how = MxSources::Config::IN_LOAD;
+        if(!addString(xwhat, entry.args, strtab))
+            return entry;
     }
 
     if(VarCRef xevery = x.lookup("every"))
@@ -84,12 +85,16 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std:
                 return entry; // still invalid here and will be skipped by caller
             }
 
+    // TODO: --check
+
 
     return entry;
 }
 
-bool MxSources::init(VarCRef src)
+bool MxSources::init(VarCRef src, VarCRef env)
 {
+    _updateEnv(env);
+
     VarCRef xlist = src.lookup("list");
     if(xlist && xlist.type() == Var::TYPE_ARRAY)
     {
@@ -99,6 +104,8 @@ bool MxSources::init(VarCRef src)
             Config::InputEntry e = parseInputEntry(xlist.at(i), _argstrs);
             if(!e.args.empty())
                 _cfg.list.push_back(std::move(e));
+            else
+                printf("MxSources: Failed to parse entry[%u] in sources list\n", unsigned(N));
         }
     }
 
@@ -230,7 +237,7 @@ DataTree *MxSources::_ingestData(const Config::InputEntry& entry) const
         break;
 
         case Config::IN_EXEC:
-            ok = loadJsonFromProcess(ret->root(), &entry.args[0], NULL); // TODO: env
+            ok = loadJsonFromProcess(ret->root(), &entry.args[0], _envPtrs.data()); // TODO: env
         break;
     }
 
@@ -288,6 +295,8 @@ void MxSources::_rebuildTree()
     ScopeTimer timer;
 
     // get subtrees in parallel
+    // DO NOT lock anything just yet -- the ingest might take quite some time!
+    // While we're still here and ingesting, continue serving the old tree
     const size_t N = _cfg.list.size();
     std::vector<std::future<DataTree*> > futs;
     futs.reserve(N);
@@ -295,6 +304,7 @@ void MxSources::_rebuildTree()
         futs.push_back(std::move(_ingestDataAsync(_cfg.list[i])));
     for(size_t i = 0; i < N; ++i)
         futs[i].wait();
+    // --------------
 
     const u64 loadedMS = timer.ms();
     printf("MxSources: Done loading %u subtrees after %ju ms\n", (unsigned)N, loadedMS);
@@ -320,6 +330,41 @@ void MxSources::_rebuildTree()
     printf("MxSources: Tree rebuilt, merged in %ju ms\n", mergedMS - loadedMS);
 }
 
+void MxSources::_updateEnv(VarCRef xenv)
+{
+    _envStrings = enumerateEnvVars();
+    _envPtrs.clear();
+
+    const Var::Map* m = xenv.v->map();
+    if (m)
+    {
+        std::string tmp;
+        for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+        {
+            const char* k = xenv.mem->getS(it.key());
+            const char* v = it.value().asCString(*xenv.mem);
+            if (k && v)
+            {
+                tmp = k;
+                tmp += '=';
+                tmp += v;
+#ifdef _DEBUG
+                printf("ENV: %s\n", tmp.c_str());
+#else
+                printf("ENV: %s\n", k);
+#endif
+                _envStrings.push_back(std::move(tmp));
+            }
+        }
+    }
+
+    const size_t n = _envStrings.size();
+    _envPtrs.reserve(n + 1);
+    for (size_t i = 0; i < n; ++i)
+        _envPtrs.push_back(_envStrings[i].c_str());
+    _envPtrs.push_back(NULL); // terminator
+}
+
 
 void MxSources::_loop_th()
 {
@@ -335,7 +380,6 @@ void MxSources::_loop_th()
         _loop_th_untilPurge();
     }
 }
-
 
 void MxSources::_Loop_th(MxSources* self)
 {

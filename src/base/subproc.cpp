@@ -24,7 +24,7 @@ static void procfail(ProcessReadStream& ps, const char *procname)
             procname, unsigned(pos), os.str().c_str());
 }
 
-bool createProcess(subprocess_s* proc, const char* const * args, const char** env, int options)
+bool createProcess(subprocess_s* proc, const char* const * args, const char* const * env, int options)
 {
     if(!args || !args[0])
         return false;
@@ -59,12 +59,12 @@ bool createProcess(subprocess_s* proc, const char* const * args, const char** en
     return err == 0;
 }
 
-bool loadJsonFromProcess(VarRef root, const char* const * args, const char **env)
+bool loadJsonFromProcess(VarRef root, const char* const * args, const char * const *env)
 {
     return loadJsonFromProcess(root, args, env, subprocess_option_enable_async | subprocess_option_no_window);
 }
 
-bool loadJsonFromProcess(VarRef root, const char* const * args, const char **env, int options)
+bool loadJsonFromProcess(VarRef root, const char* const * args, const char * const *env, int options)
 {
     subprocess_s proc;
     if(!createProcess(&proc, args, env, options))

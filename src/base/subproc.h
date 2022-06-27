@@ -11,8 +11,8 @@ class DataTree;
 
 // args[0] is the executable, args[1...] the params. args[] is terminated by a NULL entry.
 // output from process is parsed into json tree
-bool loadJsonFromProcess(VarRef root, const char * const *args, const char **env);
-bool loadJsonFromProcess(VarRef root, const char * const *args, const char **env, int options);
+bool loadJsonFromProcess(VarRef root, const char * const *args, const char *const*env);
+bool loadJsonFromProcess(VarRef root, const char * const *args, const char *const*env, int options);
 bool loadJsonFromProcess(VarRef root, subprocess_s *proc, const char *procname);
 
 // param can be either a string or an array
@@ -20,7 +20,7 @@ bool loadJsonFromProcess(VarRef root, subprocess_s *proc, const char *procname);
 // if it's an array, index 0 is the file name and the rest are params
 //bool loadJsonFromProcess_StrOrArray(VarRef root, VarCRef param, const char ** env);
 
-bool createProcess(subprocess_s *proc, const char* const * args, const char** env, int options);
+bool createProcess(subprocess_s *proc, const char* const * args, const char* const * env, int options);
 
 struct AsyncLaunchConfig
 {

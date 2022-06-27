@@ -39,7 +39,7 @@
         /* Completely purge & reload the entire 3pid tree every now and then.
            Fetches all sources as if on program startup, then atomically replaces the tree once everything is loaded.
            Gets rid of stale entries. Comment out to never purge (not recommended). */
-        "purgeEvery": "2m",
+        "purgeEvery": "3h",
         
         /* Fetching sources happens as follows:
         exec: Executes this file/script/program and parses its stdout as JSON.
@@ -48,19 +48,23 @@
         load: Load this file as JSON.
         every: takes a time delay to do this action repeatly
                (If not present, this is done only once on startup)
+        check: By default, each exec'd source is checked during startup to ensure the process will execute cleanly.
+               External scripts can use this to eg. check that all required dependencies are available on the system.
+               For the check, the process is run with --check as its only parameter. If it exits with status 0,
+               the check is considered successful.
+               (default: true. Set to false to skip the check.)
         ----
         Each resulting json tree is kept separately. Whenever the 3pid database is updated,
         ie. one source has been loaded or executed, all trees are merged to the final 3pid tree.
         (This is to make sure no deleted entries linger in the 3pid tree)
         */
         "list": [
-            { "exec": "3pid/fakestud.sh", "every": "1m" },
-            { "exec": "3pid/fakeusers.sh", "every": "1m" },
+            //{ "exec": "3pid/fakestud.sh", "every": "30m", "check": false },
+            //{ "exec": "3pid/fakeusers.sh", "every": "30m", "check": false },
         ],
     },
     
     // environment variables passed to external processes. Put passwords and stuff here.
     "env": {
-        "KEY": "VAL",
     },
 }

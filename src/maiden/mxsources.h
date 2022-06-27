@@ -17,7 +17,7 @@ class MxSources
 public:
     MxSources(MxStore& mxs);
     ~MxSources();
-    bool init(VarCRef cfg);
+    bool init(VarCRef cfg, VarCRef env);
 
     struct Config
     {
@@ -45,6 +45,7 @@ private:
     std::future<DataTree*> _ingestDataAsync(const Config::InputEntry& entry);
     std::future<void> _ingestDataAndMergeAsync(const Config::InputEntry& entry);
     void _rebuildTree();
+    void _updateEnv(VarCRef env);
     static void _Loop_th(MxSources *self);
     MxStore& _store;
     Config _cfg;
@@ -52,5 +53,7 @@ private:
     std::atomic<bool> _quit;
     std::condition_variable _waiter;
     std::mutex _waitlock;
+    std::vector<std::string> _envStrings;
+    std::vector<const char*> _envPtrs;
 };
 
