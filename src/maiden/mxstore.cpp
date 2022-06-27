@@ -184,7 +184,7 @@ bool MxStore::apply(VarCRef config)
     printf("MxStore: wellknown request maxsize = %ju bytes\n", cfg.wellknown.requestMaxSize);
     printf("MxStore: register max time = %ju seconds\n", cfg.register_.maxTime / 1000);
 
-    std::lock_guard lock(hashcache.mutex);
+    std::unique_lock lock(hashcache.mutex);
     // --------------------------------------------------
 
     for(Config::Hashes::const_iterator it = cfg.hashes.begin(); it != cfg.hashes.end(); ++it)
@@ -206,7 +206,7 @@ void MxStore::defrag()
 
 bool MxStore::register_(const char* token, size_t tokenLen, u64 expireInMS, const char *account)
 {
-    std::lock_guard lock(authdata.mutex);
+    std::unique_lock lock(authdata.mutex);
     //---------------------------------------
     u64 expiryTime = timeNowMS() + expireInMS;
     PoolStr tok = { token, tokenLen };
@@ -225,7 +225,7 @@ bool MxStore::register_(const char* token, size_t tokenLen, u64 expireInMS, cons
 
 MxError MxStore::authorize(const char* token) const
 {
-    std::lock_guard lock(authdata.mutex);
+    std::shared_lock lock(authdata.mutex);
     //---------------------------------------
     VarCRef ref = authdata.root().lookup(token);
     if(!ref || ref.isNull())
@@ -243,7 +243,7 @@ MxError MxStore::authorize(const char* token) const
 std::string MxStore::getAccount(const char* token) const
 {
     std::string ret;
-    std::lock_guard lock(authdata.mutex);
+    std::shared_lock lock(authdata.mutex);
     //---------------------------------------
     VarCRef ref = authdata.root().lookup(token);
     if (ref)
@@ -255,7 +255,7 @@ std::string MxStore::getAccount(const char* token) const
 
 void MxStore::logout(const char* token)
 {
-    std::lock_guard lock(authdata.mutex);
+    std::unique_lock lock(authdata.mutex);
     //---------------------------------------
     VarRef ref = authdata.root().lookup(token);
     ref.clear(); // map doesn't support deleting individual keys, so just set to TYPE_NULL for now
@@ -265,7 +265,7 @@ void MxStore::storeHomeserverForHost(const char* host, const char* hs, unsigned 
 {
     assert(hs && *hs && port);
     printf("Cache HS: [%s] -> [%s:%u]\n", host, hs, port);
-    std::lock_guard lock(wellknown.mutex);
+    std::unique_lock lock(wellknown.mutex);
     //---------------------------------------
     VarRef u = wellknown.root()[host];
     u["homeserver"] = hs;
@@ -277,7 +277,7 @@ void MxStore::storeFailForHost(const char* host)
 {
     printf("Cache fail for host: [%s]\n", host);
     // FIXME: might want to use a CacheTable<> instead
-    std::lock_guard lock(wellknown.mutex);
+    std::unique_lock lock(wellknown.mutex);
     //---------------------------------------
     wellknown.root()[host] = timeNowMS();
 }
@@ -286,7 +286,7 @@ MxStore::LookupResult MxStore::getCachedHomeserverForHost(const char* host, std:
 {
     u64 ts;
     {
-        std::lock_guard lock(wellknown.mutex);
+        std::shared_lock lock(wellknown.mutex);
         //---------------------------------------
         VarCRef u = wellknown.root().lookup(host);
         if(!u)
@@ -322,9 +322,9 @@ MxStore::LookupResult MxStore::getCachedHomeserverForHost(const char* host, std:
 
 std::string MxStore::getHashPepper(bool allowUpdate)
 {
-    std::lock_guard lock(hashcache.mutex);
+    std::unique_lock lock(hashcache.mutex); // might rotate // FIXME: use the upgrade_lock properly?
     //---------------------------------------
-    return getHashPepper_nolock(allowUpdate);;
+    return getHashPepper_nolock(allowUpdate);
 }
 
 std::string MxStore::getHashPepper_nolock(bool allowUpdate)
@@ -342,7 +342,7 @@ std::string MxStore::getHashPepper_nolock(bool allowUpdate)
 void MxStore::rotateHashPepper()
 {
     u64 now = timeNowMS();
-    std::lock_guard lock(hashcache.mutex);
+    std::unique_lock lock(hashcache.mutex);
     //---------------------------------------
     rotateHashPepper_nolock(now);
 }
@@ -353,7 +353,7 @@ MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, cons
     const size_t n = in.size();
     assert(a);
 
-    std::lock_guard lock(hashcache.mutex);
+    std::shared_lock lock(hashcache.mutex);
     //---------------------------------------
 
     VarRef cache = hashcache.root().lookup(algo);
@@ -506,10 +506,24 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
 
 bool MxStore::merge3pid(VarCRef root)
 {
-    std::lock_guard lock(threepid.mutex);
+    std::unique_lock lock(threepid.mutex);
     //---------------------------------------
+    return merge3pid_nolock(root);
+}
+
+bool MxStore::replace3pid(VarCRef root)
+{
+    std::unique_lock lock(threepid.mutex);
+    //---------------------------------------
+    threepid.root().clear();
+    return threepid.root().merge(root, MERGE_FLAT);
+}
+
+bool MxStore::merge3pid_nolock(VarCRef root)
+{
     return threepid.root().merge(root, MERGE_RECURSIVE);
 }
+
 
 DataTree::LockedRoot MxStore::get3pidRoot()
 {
@@ -518,14 +532,14 @@ DataTree::LockedRoot MxStore::get3pidRoot()
 
 bool MxStore::save(const char* fn) const
 {
-    std::lock_guard lock(authdata.mutex);
+    std::shared_lock lock(authdata.mutex);
     //---------------------------------------
     return save_nolock(fn);
 }
 
 bool MxStore::load(const char* fn)
 {
-    std::lock_guard lock(authdata.mutex);
+    std::unique_lock lock(authdata.mutex);
     //---------------------------------------
     return load_nolock(fn);
 }
@@ -682,7 +696,7 @@ void MxStore::_clearHashCache_nolock()
     printf("Hash cache cleared\n");
 }
 
-std::string MxStore::GenerateHashPepper(size_t n)
+/*static*/ std::string MxStore::GenerateHashPepper(size_t n)
 {
     static const char alphabet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890";
     std::string s;

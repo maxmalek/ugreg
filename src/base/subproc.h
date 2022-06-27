@@ -18,7 +18,7 @@ bool loadJsonFromProcess(VarRef root, subprocess_s *proc, const char *procname);
 // param can be either a string or an array
 // if it's a string, run that as process without params
 // if it's an array, index 0 is the file name and the rest are params
-bool loadJsonFromProcess_StrOrArray(VarRef root, VarCRef param, const char ** env);
+//bool loadJsonFromProcess_StrOrArray(VarRef root, VarCRef param, const char ** env);
 
 bool createProcess(subprocess_s *proc, const char* const * args, const char** env, int options);
 

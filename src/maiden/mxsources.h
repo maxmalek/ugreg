@@ -9,6 +9,7 @@
 #include <future>
 
 class MxStore;
+class DataTree;
 
 // Periodic loader for external 3pid sources
 class MxSources
@@ -39,8 +40,10 @@ private:
     std::vector<std::string> _argstrs;
     void _loop_th();
     void _loop_th_untilPurge();
-    void _ingestData(const Config::InputEntry& entry);
-    std::future<void> _ingestDataAsync(const Config::InputEntry& entry);
+    DataTree *_ingestData(const Config::InputEntry& entry) const; // must delete returned ptr
+    void _ingestDataAndMerge(const Config::InputEntry& entry);
+    std::future<DataTree*> _ingestDataAsync(const Config::InputEntry& entry);
+    std::future<void> _ingestDataAndMergeAsync(const Config::InputEntry& entry);
     void _rebuildTree();
     static void _Loop_th(MxSources *self);
     MxStore& _store;

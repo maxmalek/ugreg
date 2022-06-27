@@ -44,7 +44,9 @@ public:
 
     // -- update --
     bool merge3pid(VarCRef root); // expects { medium => { something => mxid } }
-    DataTree::LockedRoot get3pidRoot(); // for replacing the entire tree
+    bool merge3pid_nolock(VarCRef root);
+    bool replace3pid(VarCRef root); // for replacing the entire tree
+    DataTree::LockedRoot get3pidRoot();
 
 
     bool save(const char *fn) const;

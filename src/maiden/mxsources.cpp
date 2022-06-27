@@ -4,6 +4,7 @@
 #include "json_in.h"
 #include "subproc.h"
 #include <assert.h>
+#include "scopetimer.h"
 
 MxSources::MxSources(MxStore& mxs)
     : _store(mxs)
@@ -174,7 +175,7 @@ void MxSources::_loop_th_untilPurge()
             }
             else
             {
-                futs.push_back(std::move(_ingestDataAsync(_cfg.list[i])));
+                futs.push_back(std::move(_ingestDataAndMergeAsync(_cfg.list[i])));
                 whens[i] = now + every;
                 mintime = std::min(mintime, every);
             }
@@ -185,10 +186,12 @@ void MxSources::_loop_th_untilPurge()
     }
 }
 
-void MxSources::_ingestData(const Config::InputEntry& entry)
+DataTree *MxSources::_ingestData(const Config::InputEntry& entry) const
 {
     assert(entry.args.size());
-    DataTree tmp;
+    DataTree *ret = new DataTree;
+
+    ScopeTimer timer;
 
     bool ok = false;
     switch(entry.how)
@@ -199,48 +202,95 @@ void MxSources::_ingestData(const Config::InputEntry& entry)
             {
                 char buf[1024*4];
                 BufferedFILEReadStream sm(fh, buf, sizeof(buf));
-                ok = loadJsonDestructive(tmp.root(), sm);
+                ok = loadJsonDestructive(ret->root(), sm);
                 fclose(fh);
             }
         break;
 
         case Config::IN_EXEC:
-            ok = loadJsonFromProcess(tmp.root(), &entry.args[0], NULL); // TODO: env
+            ok = loadJsonFromProcess(ret->root(), &entry.args[0], NULL); // TODO: env
         break;
     }
+
+    const u64 loadedMS = timer.ms();
 
     // for error reporting
     const char *str = entry.args[0];
 
     if(!ok)
         printf("MxSources: ERROR: Failed to ingest '%s'\n", str);
-    else if(tmp.root().type() == Var::TYPE_MAP)
-    {
-        printf("MxSources: Merging '%s'\n", str);
-        _store.merge3pid(tmp.root());
-    }
+    else if(ret->root().type() == Var::TYPE_MAP)
+        printf("MxSources: Ingested '%s' in %ju ms\n", str, loadedMS);
     else
+    {
         printf("MxSources: WARNING: Ignored [%s], result type is not map\n", str);
+        ok = false;
+    }
+
+    if(!ok)
+    {
+        delete ret;
+        ret = NULL;
+    }
+
+    return ret;
 }
 
-std::future<void> MxSources::_ingestDataAsync(const Config::InputEntry& entry)
+void MxSources::_ingestDataAndMerge(const Config::InputEntry& entry)
+{
+    if(DataTree *tre = _ingestData(entry))
+    {
+        ScopeTimer timer;
+        _store.merge3pid(tre->root());
+        printf("MxSources: ... and merged '%s' in %ju ms\n", entry.args[0], timer.ms());
+        delete tre;
+    }
+}
+
+std::future<DataTree*> MxSources::_ingestDataAsync(const Config::InputEntry& entry)
 {
     return std::async(std::launch::async, &MxSources::_ingestData, this, entry);
 }
 
+std::future<void> MxSources::_ingestDataAndMergeAsync(const Config::InputEntry& entry)
+{
+    return std::async(std::launch::async, &MxSources::_ingestDataAndMerge, this, entry);
+}
+
 void MxSources::_rebuildTree()
 {
-    // TODO: merge all to tmp and then swap in atomically?
+    ScopeTimer timer;
 
-    DataTree::LockedRoot lockroot = _store.get3pidRoot();
-    lockroot.ref.clear();
+    // get subtrees in parallel
     const size_t N = _cfg.list.size();
-    std::vector<std::future<void> > futs;
+    std::vector<std::future<DataTree*> > futs;
     futs.reserve(N);
     for(size_t i = 0; i < N; ++i)
         futs.push_back(std::move(_ingestDataAsync(_cfg.list[i])));
     for(size_t i = 0; i < N; ++i)
         futs[i].wait();
+
+    const u64 loadedMS = timer.ms();
+    printf("MxSources: Done loading %u subtrees after %ju ms\n", (unsigned)N, loadedMS);
+
+    // swap in atomically
+    {
+        DataTree::LockedRoot lockroot = _store.get3pidRoot();
+        // -------------------------------------
+        lockroot.ref.clear();
+        for (size_t i = 0; i < N; ++i)
+        {
+            if(DataTree *tre = futs[i].get())
+            {
+                _store.merge3pid_nolock(tre->root()); // we're already holding the lock
+                delete tre;
+            }
+        }
+    }
+
+    const u64 mergedMS = timer.ms();
+
+    printf("MxSources: Tree rebuilt, merged in %ju ms\n", mergedMS - loadedMS);
 }
 
 

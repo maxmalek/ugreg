@@ -44,6 +44,9 @@ bool createProcess(subprocess_s* proc, const char* const * args, const char** en
             winargs.push_back(*p);
         winargs.push_back(NULL);
         std::string arg0 = args[0];
+        for(size_t i = 0; i < arg0.length(); ++i) // .bat is too dumb to work with '/' as path separator
+            if(arg0[i] == '/')
+                arg0[i] = '\\';
         arg0 += ".bat";
         winargs[0] = arg0.c_str();
         err = subprocess_create_ex(&winargs[0], options, env, proc);
@@ -125,6 +128,8 @@ bool loadJsonFromProcess(VarRef root, subprocess_s* proc, const char* procname)
     return ok;
 }
 
+/*
+// unused
 bool loadJsonFromProcess_StrOrArray(VarRef root, VarCRef param, const char **env)
 {
     size_t n = 0;
@@ -170,6 +175,7 @@ bool loadJsonFromProcess_StrOrArray(VarRef root, VarCRef param, const char **env
     _freea(args);
     return ok;
 }
+*/
 
 DataTree * loadJsonFromProcessSync(AsyncLaunchConfig&& cfg)
 {
