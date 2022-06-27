@@ -146,28 +146,41 @@ void MxSources::_loop_th_untilPurge()
     for(size_t i = 0; i < N; ++i)
         whens[i] = now + _cfg.list[i].every;
 
-    u64 purgeWhen = _cfg.purgeEvery ? now + _cfg.purgeEvery : 0;
+    const u64 purgeWhen = _cfg.purgeEvery ? now + _cfg.purgeEvery : 0;
 
     std::vector<std::future<void> > futs;
     futs.reserve(N);
 
     while(!_quit && (!purgeWhen || now < purgeWhen))
     {
+        // finish up any remaining background jobs
         for(size_t i = 0; i < futs.size(); ++i)
             futs[i].wait();
         futs.clear();
 
-        std::unique_lock lock(_waitlock);
-
+        // sync time; exit when it's time to purge
         now = timeNowMS();
-        u64 mintime = _cfg.purgeEvery ? _cfg.purgeEvery : u64(-1);
+        u64 mintime = u64(-1);
+
+        u64 timeUntilPurge = 0;
+        if(now < purgeWhen)
+        {
+            timeUntilPurge = purgeWhen - now;
+            mintime = std::min(mintime, timeUntilPurge);
+        }
+        else if(purgeWhen)
+            break;
+
+        std::unique_lock lock(_waitlock); // this is just to make _waiter below work
+
+        // spawn async jobs that will auto-merge themselves when done
         for(size_t i = 0; i < N; ++i)
         {
-            u64 every = _cfg.list[i].every;
+            const u64 every = _cfg.list[i].every;
             if(!every) // don't repeat once-only loads
                 continue;
 
-            u64 when = whens[i];
+            const u64 when = whens[i];
             if(now < when)
             {
                 // not yet time... wait some more
@@ -181,19 +194,28 @@ void MxSources::_loop_th_untilPurge()
             }
         }
 
-        printf("MxSources: Sleeping for up to %ju secs until next job\n", mintime / 1000);
-        _waiter.wait_for(lock, std::chrono::milliseconds(mintime));
+        if(mintime)
+        {
+            printf("MxSources: Sleeping for up to %ju ms until next job (%ju ms until purge)\n",
+                mintime, timeUntilPurge);
+            // this wait can get interrupted to exit early
+            _waiter.wait_for(lock, std::chrono::milliseconds(mintime));
+        }
     }
 }
 
 DataTree *MxSources::_ingestData(const Config::InputEntry& entry) const
 {
     assert(entry.args.size());
+
+    // for error reporting
+    const char *str = entry.args[0];
+
+    printf("MxSources: * Starting ingest '%s' ...\n", str);
     DataTree *ret = new DataTree;
-
     ScopeTimer timer;
-
     bool ok = false;
+
     switch(entry.how)
     {
         case Config::IN_LOAD:
@@ -214,16 +236,13 @@ DataTree *MxSources::_ingestData(const Config::InputEntry& entry) const
 
     const u64 loadedMS = timer.ms();
 
-    // for error reporting
-    const char *str = entry.args[0];
-
     if(!ok)
-        printf("MxSources: ERROR: Failed to ingest '%s'\n", str);
+        printf("MxSources: * ERROR: Failed to ingest '%s'\n", str);
     else if(ret->root().type() == Var::TYPE_MAP)
-        printf("MxSources: Ingested '%s' in %ju ms\n", str, loadedMS);
+        printf("MxSources: * ... Ingested '%s' in %ju ms\n", str, loadedMS);
     else
     {
-        printf("MxSources: WARNING: Ignored [%s], result type is not map\n", str);
+        printf("MxSources: * WARNING: Ignored [%s], result type is not map\n", str);
         ok = false;
     }
 
@@ -249,7 +268,7 @@ void MxSources::_ingestDataAndMerge(const Config::InputEntry& entry)
             lockroot.ref.mem->defrag();
             ms = timer.ms();
         }
-        printf("MxSources: ... and merged '%s' in %ju ms\n", entry.args[0], ms);
+        printf("MxSources: * ... and merged '%s' in %ju ms\n", entry.args[0], ms);
         delete tre;
     }
 }
