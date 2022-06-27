@@ -160,7 +160,7 @@ void MxSources::_loop_th_untilPurge()
         std::unique_lock lock(_waitlock);
 
         now = timeNowMS();
-        u64 mintime = u64(-1);
+        u64 mintime = _cfg.purgeEvery ? _cfg.purgeEvery : u64(-1);
         for(size_t i = 0; i < N; ++i)
         {
             u64 every = _cfg.list[i].every;
@@ -240,9 +240,16 @@ void MxSources::_ingestDataAndMerge(const Config::InputEntry& entry)
 {
     if(DataTree *tre = _ingestData(entry))
     {
-        ScopeTimer timer;
-        _store.merge3pid(tre->root());
-        printf("MxSources: ... and merged '%s' in %ju ms\n", entry.args[0], timer.ms());
+        //_store.merge3pid(tre->root()); // could do this, but below is better -- defrag goes a long way to keep up perf
+        u64 ms;
+        {
+            DataTree::LockedRoot lockroot = _store.get3pidRoot();
+            ScopeTimer timer;
+            _store.merge3pid_nolock(tre->root());
+            lockroot.ref.mem->defrag();
+            ms = timer.ms();
+        }
+        printf("MxSources: ... and merged '%s' in %ju ms\n", entry.args[0], ms);
         delete tre;
     }
 }
@@ -286,6 +293,7 @@ void MxSources::_rebuildTree()
                 delete tre;
             }
         }
+        lockroot.ref.mem->defrag();
     }
 
     const u64 mergedMS = timer.ms();

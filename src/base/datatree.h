@@ -23,7 +23,7 @@ public:
     struct LockedRoot
     {
         friend class DataTree;
-        const VarRef ref;
+        VarRef ref;
     private:
         std::unique_lock<acme::upgrade_mutex> _lock; // lock R+W
         LockedRoot(DataTree& tree)
