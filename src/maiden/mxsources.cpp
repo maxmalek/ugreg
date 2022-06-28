@@ -277,6 +277,9 @@ void MxSources::_ingestDataAndMerge(const Config::InputEntry& entry)
         }
         printf("MxSources: * ... and merged '%s' in %ju ms\n", entry.args[0], ms);
         delete tre;
+
+        // FIXME: mark mxstore to rehash on next lookup? don't trigger this here because
+        // we might have started >1 ingests at the same time and here we don't know how many others there are
     }
 }
 
@@ -323,6 +326,7 @@ void MxSources::_rebuildTree()
             }
         }
         lockroot.ref.mem->defrag();
+        _store._clearHashCache_nolock();
     }
 
     const u64 mergedMS = timer.ms();

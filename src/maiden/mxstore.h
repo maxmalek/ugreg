@@ -45,8 +45,8 @@ public:
     // -- update --
     bool merge3pid(VarCRef root); // expects { medium => { something => mxid } }
     bool merge3pid_nolock(VarCRef root);
-    bool replace3pid(VarCRef root); // for replacing the entire tree
     DataTree::LockedRoot get3pidRoot();
+    void _clearHashCache_nolock();
 
 
     bool save(const char *fn) const;
@@ -58,7 +58,6 @@ private:
     std::string getHashPepper_nolock(bool allowUpdate);
     void rotateHashPepper_nolock(u64 now);
     MxError _generateHashCache_nolock(VarRef cache, const char *algo);
-    void _clearHashCache_nolock();
     MxError unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in); // only for algo == "none"
 
 

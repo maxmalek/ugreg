@@ -511,19 +511,10 @@ bool MxStore::merge3pid(VarCRef root)
     return merge3pid_nolock(root);
 }
 
-bool MxStore::replace3pid(VarCRef root)
-{
-    std::unique_lock lock(threepid.mutex);
-    //---------------------------------------
-    threepid.root().clear();
-    return threepid.root().merge(root, MERGE_FLAT);
-}
-
 bool MxStore::merge3pid_nolock(VarCRef root)
 {
     return threepid.root().merge(root, MERGE_RECURSIVE);
 }
-
 
 DataTree::LockedRoot MxStore::get3pidRoot()
 {
