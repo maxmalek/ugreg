@@ -36,7 +36,7 @@ for e in gen:
     x = infmt.format(**e)
     m = rx.match(x)
     if m:
-        mxid = outfmt.format(*(m.groups()))
+        mxid = outfmt.format(*(m.groups()), **e)
         
         # Apply basic escaping in case users have funny names
         x = esc.sub(r'\\\1', x)

@@ -6,7 +6,8 @@
 #include <atomic>
 #include <signal.h>
 #include <stdio.h>
-#include "argh.h"
+#include <assert.h>
+#include <sstream>
 
 #include "datatree.h"
 #include "util.h"
@@ -53,7 +54,19 @@ static bool loadcfg(DataTree& base, const char* fn)
     fclose(f);
 
     if (!ok)
-        bail("Error loading config file (bad json?): ", fn);
+    {
+        printf("Error loading config file (bad json?): %s\n", fn);
+        printf("Stream pos right now is %zu, buffer follows:\n", fs.Tell());
+        char buf[100];
+        unsigned i = 0;
+        char c;
+        std::ostringstream os;
+        while (((c = fs.Take())) && i++ < 100)
+            os << c;
+        puts(os.str().c_str());
+
+        bail("Exiting.", "");
+    }
 
     if (!tree.root() || tree.root().type() != Var::TYPE_MAP)
         bail("Config file did not result in useful data, something is wrong: ", fn);
@@ -61,16 +74,40 @@ static bool loadcfg(DataTree& base, const char* fn)
     return base.root().merge(tree.root(), MERGE_RECURSIVE | MERGE_APPEND_ARRAYS);
 }
 
-bool doargs(DataTree& tree, int argc, char** argv)
+bool doargs(DataTree& tree, int argc, char** argv, ArgsCallback cb, void *ud)
 {
-    argh::parser cmd;
-    cmd.parse(argc, argv);
-
-    for (size_t i = 1; i < cmd.size(); ++i)
+    bool parseSwitches = true;
+    for (int i = 1; i < argc; )
     {
-        printf("Loading config file: %s\n", cmd[i].c_str());
-        loadcfg(tree, cmd[i].c_str());
-    }
+        const char *arg = argv[i];
+        if(parseSwitches && arg[0] == '-')
+        {
+            if(arg[1] == '-')
+            {
+                if(!arg[2])
+                {
+                    parseSwitches = false;
+                    ++i;
+                    continue;
+                }
+            }
 
-    return true;
+            size_t fwd = cb ? cb(argv, i, ud) : 0;
+
+            if(!fwd)
+            {
+                printf("Error: Unhandled switch: %s\n", arg);
+                return false;
+            }
+            assert(i + fwd <= argc && "You sure you handled this many args?");
+            i += fwd;
+        }
+        else
+        {
+            printf("Loading config file: %s\n", arg);
+            if(!loadcfg(tree, arg))
+                return false;
+            ++i;
+        }
+    }
 }

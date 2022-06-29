@@ -61,7 +61,6 @@ int main(int argc, char** argv)
 
     srv.stop();
     WebServer::StaticShutdown();
-    //mxs.save();
 
     return 0;
 }

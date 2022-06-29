@@ -33,12 +33,11 @@
         },
         "minSearchLen": 2, // any search term must be at least this long; else it's ignored
     },
-    
 
     "sources": {
         /* Completely purge & reload the entire 3pid tree every now and then.
            Fetches all sources as if on program startup, then atomically replaces the tree once everything is loaded.
-           Gets rid of stale entries. Comment out to never purge (not recommended). */
+           Gets rid of stale entries. Clears hash caches. Comment out to never purge (not recommended). */
         "purgeEvery": "3h",
         
         /* Fetching sources happens as follows:
@@ -52,6 +51,7 @@
                External scripts can use this to eg. check that all required dependencies are available on the system.
                For the check, the process is run with --check as its only parameter. If it exits with status 0,
                the check is considered successful.
+               If one check fails the process will terminate on startup and display a big honking error.
                (default: true. Set to false to skip the check.)
         ----
         Each resulting json tree is kept separately. Whenever the 3pid database is updated,
@@ -59,12 +59,24 @@
         (This is to make sure no deleted entries linger in the 3pid tree)
         */
         "list": [
-            //{ "exec": "3pid/fakestud.sh", "every": "30m", "check": false },
-            //{ "exec": "3pid/fakeusers.sh", "every": "30m", "check": false },
+            // Some examples:
+            // Load a JSON file from disk
+            //{ "load": "example_users.json" },
+            
+            // Call a script that outputs JSON
+            //{ "exec": "example_users.sh", "every": "30m", "check": true },
+            
+            // Feel free to write your own data importer and call it here.
+            // The format is:
+            // { "medium": {"3pid": "mxid", "3pid": "mxid", .... }, "medium2": {...} }
+            // Where medium is something like phone or email, 3pid is your identifier and mxid is the associated matrix account name.
+            // (Yes you can have multiple 3pids of the same medium map to a single mxid!)
+            // You can also provide multiple media in one go.
         ],
     },
     
     // environment variables passed to external processes. Put passwords and stuff here.
     "env": {
+        // "MY_ENV_VAR": "whatever",
     },
 }

@@ -19,6 +19,7 @@
 #include "subproc.h"
 #include "subprocess.h"
 #include "mxsources.h"
+#include <argh.h>
 
 std::atomic<bool> s_quit;
 
@@ -26,6 +27,74 @@ static void sigquit(int)
 {
     s_quit = true;
     handlesigs(NULL);
+}
+
+static std::string sDumpFn;
+static bool sDump;
+static bool sExit;
+
+static const char *usage =
+"Usage: ./maiden <switches> config1.json configN.json <switches> ...\n"
+"Supported switches:\n"
+"-h --help    This help\n"
+"--dump       Dump 3pid storage to stdout after populating it\n"
+"--dump=file  Dump 3pid storage to file instead\n"
+"--exit       Exit successfully after loading instead of starting webserver\n"
+"--           Stop parsing switches"
+"";
+
+static size_t argsCallback(char **argv, size_t idx, void* ud)
+{
+    const char* sw = argv[idx];
+    while (*sw && *sw == '-')
+        ++sw;
+    if (!strcmp(sw, "help") || !strcmp(sw, "h"))
+    {
+        puts(usage);
+        exit(0);
+    }
+    else if (!strncmp(sw, "dump", 4))
+    {
+        sDump = true;
+        sw += 4;
+        if (*sw == '=')
+            sDumpFn = sw + 1;
+        return 1;
+    }
+    else if (!strcmp(sw, "exit"))
+    {
+        sExit = true;
+        return 1;
+    }
+    return 0;
+}
+
+static void dump(MxStore& mxs)
+{
+    FILE* out = stdout;
+    bool close = false;
+    if (sDumpFn.empty())
+        puts("--- BEGIN 3PID DUMP ---");
+    else
+    {
+        out = fopen(sDumpFn.c_str(), "w");
+        close = true;
+    }
+    if (!out)
+        bail("Failed to open --dump file: ", sDumpFn.c_str());
+
+    {
+        char buf[4 * 1024];
+        BufferedFILEWriteStream ws(out, buf, sizeof(buf));
+        DataTree::LockedRoot lockroot = mxs.get3pidRoot();
+        writeJson(ws, lockroot.ref, true);
+        ws.Flush();
+    }
+
+    if(close)
+        fclose(out);
+    else
+        puts("--- END 3PID DUMP ---");
 }
 
 // mg_request_handler
@@ -40,7 +109,6 @@ int handler_versions(struct mg_connection* conn, void*)
 
 int main(int argc, char** argv)
 {
-    hash_testall();
     srand(unsigned(time(NULL)));
     handlesigs(sigquit);
 
@@ -49,12 +117,12 @@ int main(int argc, char** argv)
     ServerConfig cfg;
     {
         DataTree cfgtree;
-        if (!doargs(cfgtree, argc, argv))
+        if (!doargs(cfgtree, argc, argv, argsCallback, NULL))
             bail("Failed to handle cmdline. Exiting.", "");
 
         if (!cfg.apply(cfgtree.subtree("/config")))
         {
-            bail("Invalid config after processing options. Fix your config file(s).\nCurrent config:\n",
+            bail("Invalid config after processing options. Fix your config file(s). Try --help.\nCurrent config:\n",
                 dumpjson(cfgtree.root(), true).c_str()
             );
         }
@@ -62,11 +130,19 @@ int main(int argc, char** argv)
         if(!mxs.apply(cfgtree.subtree("/matrix")))
             bail("Invalid matrix config. Exiting.", "");
 
+        // This may take a while to populate the initial 3pid tree
         if(!sources.init(cfgtree.subtree("/sources"), cfgtree.subtree("/env")))
             bail("Invalid sources config. Exiting.", "");
 
-        mxs.rotateHashPepper();
+        if(sDump)
+            dump(mxs);
+
+        if(sExit)
+            return 0;
     }
+
+    hash_testall();
+    mxs.rotateHashPepper();
 
     WebServer::StaticInit();
     WebServer srv;

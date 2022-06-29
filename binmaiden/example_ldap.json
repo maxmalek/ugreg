@@ -1,0 +1,36 @@
+/*
+Example config to pull mxids from LDAP.
+Adapt to your needs, then include during startup:
+$ ./maiden maiden.json my_ldap.json
+
+Note that this uses scripts/ldap.py. If you need anything more fancy, modify that script or make your own.
+*/
+{
+    "sources": {
+        "list": [
+            { "exec": [ "scripts/ldap.py",
+                "email", // mxid medium under which to register the following data
+                "OU=Users,DC=example,DC=org", // LDAP Base DN
+                "{mail}", // Python formatting expression to build a string from the LDAP fields that come in. Uses str.format() with the LDAP keys
+                "(.+)@example.com", // Regex to select parts of the previously built string. Can capture groups for later. Captures start at index 0.
+                "@{0}:example.com" // Python formatting expression for the final output, capture groups can be accessed numerically. LDAP keys are also available.
+            ]},
+            // Second config for a different group of users
+            { "exec": [ "scripts/ldap.py",
+                "email",
+                "OU=Students,DC=example,DC=org", // Different LDAP base DN
+                "{mail}",
+                "(.+)@stud.example.com", // In this example, Students have different emails
+                "@{0}_stud:example.com" // ... and thus we want different mxids, too
+            ]},
+        ],
+    },
+
+    "env": {
+        "LDAP_HOST": "ldaps://example.com:3269",
+        "LDAP_PASS": "secret",
+        "LDAP_BIND_DN": "CN=My User,OU=Users,DC=example,DC=org",
+        "LDAP_SEARCH_FILTER": "(&(mail=*@*)(!(mail=*.DISABLED))))",
+        "LDAP_SEARCH_FIELDS": "mail", // Space-separated list of LDAP fields to fetch. For use in formatting expressions above.
+    },
+}
