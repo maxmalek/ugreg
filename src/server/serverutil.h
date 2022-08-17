@@ -1,5 +1,7 @@
 #pragma once
 
+#include "types.h"
+
 class DataTree;
 
 void handlesigs(void (*f)(int));

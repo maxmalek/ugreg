@@ -57,7 +57,6 @@ static bool loadcfg(DataTree& base, const char* fn)
     {
         printf("Error loading config file (bad json?): %s\n", fn);
         printf("Stream pos right now is %zu, buffer follows:\n", fs.Tell());
-        char buf[100];
         unsigned i = 0;
         char c;
         std::ostringstream os;
@@ -110,4 +109,6 @@ bool doargs(DataTree& tree, int argc, char** argv, ArgsCallback cb, void *ud)
             ++i;
         }
     }
+
+    return true;
 }
