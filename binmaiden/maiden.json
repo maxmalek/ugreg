@@ -3,9 +3,9 @@
         // Interfaces to listen on. If host is not given, listen on all network adapters on that port.
         "listen": [
             { "host": "0.0.0.0", "port": 8088, "ssl": false },
-            { "host": "0.0.0.0", "port": 8089, "ssl": true },
+            { "host": "0.0.0.0", "port": 8090, "ssl": true },
         ],
-        "cert": "fullchain.pem",
+        "cert": "localhost.pem",
         "listen_threads": 0,
     },
     "matrix": {

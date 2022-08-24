@@ -5,7 +5,7 @@
         "listen": [
             { "host": "0.0.0.0", "port": 443, "ssl": true },
         ],
-        "cert": "fullchain.pem",
+        "cert": "localhost.pem",
         "listen_threads": 1, // this does no work, don't need more than 1 thread
 
         // JSON data served under /.well-known/matrix/client

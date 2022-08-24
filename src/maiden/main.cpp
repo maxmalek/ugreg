@@ -124,7 +124,6 @@ int main(int argc, char** argv)
     MxStore mxs;
     MxSources sources(mxs);
     ServerConfig cfg, wellknownCfg;
-    bool serveWellknown = false;
     std::string wkServer, wkClient;
     WebServer wksrv;
     {
@@ -146,12 +145,15 @@ int main(int argc, char** argv)
 
             if(client && server && wellknownCfg.apply(sub))
             {
-                serveWellknown = true;
                 wkServer = dumpjson(server);
                 wkClient = dumpjson(client);
+
+                if (!wksrv.start(wellknownCfg))
+                    bail("Failed to start .well-known server!", "");
+                wksrv.registerHandler("/.well-known/matrix/server", handler_wellknown, &wkServer);
+                wksrv.registerHandler("/.well-known/matrix/client", handler_wellknown, &wkClient);
             }
             else
-
                 bail("Invalid wellknown config. Exiting.", "");
         }
 
@@ -167,14 +169,6 @@ int main(int argc, char** argv)
 
         if(sExit)
             return 0;
-    }
-
-    if(serveWellknown)
-    {
-        if(!wksrv.start(wellknownCfg))
-            bail("Failed to start .well-known server!", "");
-        wksrv.registerHandler("/.well-known/matrix/server", handler_wellknown, &wkServer);
-        wksrv.registerHandler("/.well-known/matrix/client", handler_wellknown, &wkClient);
     }
 
     hash_testall();
