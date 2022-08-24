@@ -47,6 +47,7 @@ public:
     bool merge3pid_nolock(VarCRef root);
     DataTree::LockedRoot get3pidRoot();
     void _clearHashCache_nolock();
+    void markForRehash_nolock();
 
 
     bool save(const char *fn) const;

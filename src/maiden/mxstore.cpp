@@ -687,6 +687,11 @@ void MxStore::_clearHashCache_nolock()
     printf("Hash cache cleared\n");
 }
 
+void MxStore::markForRehash_nolock()
+{
+    hashPepperTS = 0;
+}
+
 /*static*/ std::string MxStore::GenerateHashPepper(size_t n)
 {
     static const char alphabet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890";

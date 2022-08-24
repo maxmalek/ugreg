@@ -273,13 +273,15 @@ void MxSources::_ingestDataAndMerge(const Config::InputEntry& entry)
             ScopeTimer timer;
             _store.merge3pid_nolock(tre->root());
             lockroot.ref.mem->defrag();
+
+            // mark mxstore to rehash on next lookup
+            // don't trigger this here because we might have started >1 ingests at the same time
+            // and here we don't know how many others there are
+            _store.markForRehash_nolock();
             ms = timer.ms();
         }
         printf("MxSources: * ... and merged '%s' in %ju ms\n", entry.args[0], ms);
         delete tre;
-
-        // FIXME: mark mxstore to rehash on next lookup? don't trigger this here because
-        // we might have started >1 ingests at the same time and here we don't know how many others there are
     }
 }
 
