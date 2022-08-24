@@ -107,6 +107,15 @@ int handler_versions(struct mg_connection* conn, void*)
     return 200;
 }
 
+int handler_wellknown(struct mg_connection *conn, void *ud)
+{
+    const std::string& s = *(const std::string*)ud;
+    mg_send_http_ok(conn, "application/json", s.length());
+    mg_response_header_add(conn, "Access-Control-Allow-Origin", "*", 1);
+    mg_write(conn, s.c_str(), s.length());
+    return 200;
+}
+
 int main(int argc, char** argv)
 {
     srand(unsigned(time(NULL)));
@@ -114,7 +123,10 @@ int main(int argc, char** argv)
 
     MxStore mxs;
     MxSources sources(mxs);
-    ServerConfig cfg;
+    ServerConfig cfg, wellknownCfg;
+    bool serveWellknown = false;
+    std::string wkServer, wkClient;
+    WebServer wksrv;
     {
         DataTree cfgtree;
         if (!doargs(cfgtree, argc, argv, argsCallback, NULL))
@@ -125,6 +137,22 @@ int main(int argc, char** argv)
             bail("Invalid config after processing options. Fix your config file(s). Try --help.\nCurrent config:\n",
                 dumpjson(cfgtree.root(), true).c_str()
             );
+        }
+
+        if(VarCRef sub = cfgtree.subtree("/wellknown"))
+        {
+            VarCRef server = sub.lookup("server");
+            VarCRef client = sub.lookup("client");
+
+            if(client && server && wellknownCfg.apply(sub))
+            {
+                serveWellknown = true;
+                wkServer = dumpjson(server);
+                wkClient = dumpjson(client);
+            }
+            else
+
+                bail("Invalid wellknown config. Exiting.", "");
         }
 
         if(!mxs.apply(cfgtree.subtree("/matrix")))
@@ -139,6 +167,14 @@ int main(int argc, char** argv)
 
         if(sExit)
             return 0;
+    }
+
+    if(serveWellknown)
+    {
+        if(!wksrv.start(wellknownCfg))
+            bail("Failed to start .well-known server!", "");
+        wksrv.registerHandler("/.well-known/matrix/server", handler_wellknown, &wkServer);
+        wksrv.registerHandler("/.well-known/matrix/client", handler_wellknown, &wkClient);
     }
 
     hash_testall();
@@ -159,7 +195,9 @@ int main(int argc, char** argv)
     while (!s_quit)
         sleepMS(200);
 
+    wksrv.stop();
     srv.stop();
+
     WebServer::StaticShutdown();
     //mxs.save();
 
