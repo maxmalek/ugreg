@@ -109,6 +109,8 @@ int handler_versions(struct mg_connection* conn, void*)
 
 int handler_wellknown(struct mg_connection *conn, void *ud)
 {
+    const mg_request_info *info = mg_get_request_info(conn);
+    printf("wellknown:%s: %s\n", info->request_method, info->local_uri_raw);
     const std::string& s = *(const std::string*)ud;
     mg_send_http_ok(conn, "application/json", s.length());
     mg_response_header_add(conn, "Access-Control-Allow-Origin", "*", 1);
@@ -183,6 +185,9 @@ int main(int argc, char** argv)
 
     MxidHandler_v2 v2(mxs, "/_matrix/identity/v2");
     srv.registerHandler(v2);
+
+    MxidHandler_v2 v1(mxs, "/_matrix/identity/api/v1");
+    srv.registerHandler(v1);
 
     puts("Ready!");
 

@@ -74,6 +74,7 @@ bool WebServer::start(const ServerConfig& cfg)
     {
         "listening_ports", listenbuf.c_str(),
         "num_threads", threadsbuf.c_str(),
+        "additional_header", "Access-Control-Allow-Origin: *",
         NULL, NULL,
         NULL
     };
@@ -81,8 +82,8 @@ bool WebServer::start(const ServerConfig& cfg)
     if(cfg.cert.length())
     {
         printf("WS: ssl_certificate = '%s'\n", cfg.cert.c_str());
-        options[4] = "ssl_certificate";
-        options[5] = cfg.cert.c_str();
+        options[6] = "ssl_certificate";
+        options[7] = cfg.cert.c_str();
     }
 
     mg_context *ctx = mg_start(&cb, NULL, options);
