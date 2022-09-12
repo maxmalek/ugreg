@@ -45,7 +45,6 @@ bool MxResolvResult::validate()
     return !host.empty();
 }
 
-// FIXME: finish this.
 static void srvLookup(MxResolvList &dst, const char *host)
 {
     const size_t oldsize = dst.size();

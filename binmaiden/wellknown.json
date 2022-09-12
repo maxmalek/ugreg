@@ -20,6 +20,6 @@
 
         // JSON data served under /.well-known/matrix/server
         "server": {
-            "m.server": "localhost:8008"
+            "m.server": "http://localhost:8008"
         }
 }}

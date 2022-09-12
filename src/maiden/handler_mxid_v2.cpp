@@ -45,6 +45,10 @@ const MxidHandler_v2::Endpoint MxidHandler_v2::s_endpoints[] =
     { RQ_POST, AUTHED, "/3pid/unbind",                   &MxidHandler_v2::post_3pid_unbind  },
     { RQ_POST, AUTHED, "/store-invite",                  &MxidHandler_v2::post_store_invite  },
     { RQ_POST, AUTHED, "/sign-ed25519",                  &MxidHandler_v2::post_sign_ed25519  },
+
+    // TODO: extension for https://github.com/ma1uta/matrix-synapse-rest-password-provider
+    // (should probably make this a different endpoint/service)
+
     { RQ_UNKNOWN, NOAUTH, NULL, NULL }
 };
 

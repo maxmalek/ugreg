@@ -118,6 +118,27 @@ int handler_wellknown(struct mg_connection *conn, void *ud)
     return 200;
 }
 
+class ServerAndConfig
+{
+    static ServerAndConfig *New(VarCRef json)
+    {
+        ServerAndConfig *ret = new ServerAndConfig;
+        if(ret->cfg.apply(json))
+            ret->srv.start(ret->cfg);
+        else
+        {
+            delete ret;
+            ret = NULL;
+        }
+        return ret;
+    }
+    WebServer srv;
+    ServerConfig cfg;
+
+private:
+    ServerAndConfig();
+};
+
 int main(int argc, char** argv)
 {
     srand(unsigned(time(NULL)));

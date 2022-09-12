@@ -22,6 +22,8 @@ MxGetJsonResult mxGetJson(VarRef dst, const char * host, unsigned port, const ch
 
     MxGetJsonResult ret = MXGJ_CONNECT_FAILED;
 
+    // FIXME: handle plain http, too (and strip "http://", "https://" if necessary)
+
     printf("mxGetJson: %s:%u GET %s\n", host, port, res);
     if (mg_connection* c = mg_connect_client_secure(&opt, errbuf, sizeof(errbuf)))
     {
