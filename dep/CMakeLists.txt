@@ -73,6 +73,7 @@ set(src
     upgrade_mutex.h
     minicoro.h
     ascon-sponge.h
+    fts_fuzzy_match.h
 )
 
 add_library(alldeps ${src})

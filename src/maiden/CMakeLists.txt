@@ -14,6 +14,8 @@ set(src
     mxtoken.h
     mxsources.cpp
     mxsources.h
+    mxservices.cpp
+    mxservices.h
 )
 
 set(extra_libs)

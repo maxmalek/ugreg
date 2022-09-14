@@ -53,6 +53,29 @@ public:
     bool save(const char *fn) const;
     bool load(const char *fn);
 
+    struct SearchConfig
+    {
+        std::vector<std::string> media;
+        bool fuzzy = false;
+
+        // -- below here is not used by mxstore --
+        std::string avatar_url;
+    };
+
+    struct SearchResult
+    {
+        std::string str;
+        int score;
+
+        // highest score first, then alphabetically
+        inline bool operator<(const SearchResult& o) const
+        {
+            return score > o.score || (score == o.score && str < o.str);
+        }
+    };
+
+    MxError search(std::vector<SearchResult>& results, const SearchConfig& scfg, const char *term);
+
 private:
     bool save_nolock(const char *fn) const;
     bool load_nolock(const char *fn);
@@ -60,6 +83,7 @@ private:
     void rotateHashPepper_nolock(u64 now);
     MxError _generateHashCache_nolock(VarRef cache, const char *algo);
     MxError unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in); // only for algo == "none"
+    void _search_inner(std::vector<SearchResult>& results, const TreeMem& mem, const Var::Map *store, const char *term);
 
 
     DataTree authdata;

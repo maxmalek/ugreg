@@ -97,7 +97,7 @@ static void dump(MxStore& mxs)
         puts("--- END 3PID DUMP ---");
 }
 
-// mg_request_handler
+// mg_request_handler, part of "identity_v2"
 int handler_versions(struct mg_connection* conn, void*)
 {
     // we only support v2 so this can be hardcoded for now
@@ -107,29 +107,36 @@ int handler_versions(struct mg_connection* conn, void*)
     return 200;
 }
 
-int handler_wellknown(struct mg_connection *conn, void *ud)
+// mg_request_handler, part of "identity_v1_min"
+int handler_apicheck_v1(struct mg_connection *conn, void *ud)
 {
-    const mg_request_info *info = mg_get_request_info(conn);
-    printf("wellknown:%s: %s\n", info->request_method, info->local_uri_raw);
-    const std::string& s = *(const std::string*)ud;
-    mg_send_http_ok(conn, "application/json", s.length());
+    static const char resp[] = "{}";
+    mg_send_http_ok(conn, "application/json", sizeof(resp) - 1);
     mg_response_header_add(conn, "Access-Control-Allow-Origin", "*", 1);
-    mg_write(conn, s.c_str(), s.length());
+    mg_write(conn, resp, sizeof(resp) - 1); // don't include trailing \0
     return 200;
 }
 
 class ServerAndConfig
 {
+public:
     static ServerAndConfig *New(VarCRef json)
     {
         ServerAndConfig *ret = new ServerAndConfig;
+        bool ok = false;
         if(ret->cfg.apply(json))
-            ret->srv.start(ret->cfg);
-        else
+        {
+            VarCRef servicesRef = json.lookup("services");
+
+
+        }
+        if(!ok)
         {
             delete ret;
             ret = NULL;
         }
+        if(ret)
+            ret->srv.start(ret->cfg);
         return ret;
     }
     WebServer srv;
@@ -146,20 +153,33 @@ int main(int argc, char** argv)
 
     MxStore mxs;
     MxSources sources(mxs);
-    ServerConfig cfg, wellknownCfg;
-    std::string wkServer, wkClient;
-    WebServer wksrv;
+
+    std::vector<ServerAndConfig*> servers;
+    //std::string wkServer, wkClient;
+
+
     {
         DataTree cfgtree;
         if (!doargs(cfgtree, argc, argv, argsCallback, NULL))
             bail("Failed to handle cmdline. Exiting.", "");
 
-        if (!cfg.apply(cfgtree.subtree("/config")))
+        VarCRef serversRef = cfgtree.subtree("/servers");
+        if(serversRef.type() != Var::TYPE_ARRAY)
+            bail("Config->servers should be array, but is: ", serversRef ? serversRef.typestr() : "(not-existent)");
+
+        for(size_t i = 0; i < serversRef.size(); ++i)
         {
-            bail("Invalid config after processing options. Fix your config file(s). Try --help.\nCurrent config:\n",
-                dumpjson(cfgtree.root(), true).c_str()
-            );
-        }
+            VarCRef serv = serversRef.at(i);
+            if(serv.type() != Var::TYPE_MAP)
+                bail("Entry in Config->servers[] is not map, exiting", "");
+
+            ServerAndConfig *sc = ServerAndConfig::New(serv);
+            if(!sc)
+                bail("Invalid config after processing options. Fix your config file(s). Try --help.\nCurrent config:\n",
+                    dumpjson(cfgtree.root(), true).c_str()
+                );
+
+            servers.push_back(sc);
 
         if(VarCRef sub = cfgtree.subtree("/wellknown"))
         {

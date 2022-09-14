@@ -28,7 +28,12 @@
             "cert": "localhost.pem",
             "listen_threads": 0,
             "services": {
-                "search": true,
+                "search": {
+                    "media": [ "email" ],
+                    "fuzzy": true, // TODO: respect this
+                    //"avatar_url": "mxc://...",
+                    
+                }
                 "hsproxy": { "target": { "host": "localhost", "port": 8008, "ssl": false } },
             }
         },
@@ -126,6 +131,8 @@
             // Where medium is something like phone or email, 3pid is your identifier and mxid is the associated matrix account name.
             // (Yes you can have multiple 3pids of the same medium map to a single mxid!)
             // You can also provide multiple media in one go.
+            
+            { "exec": "3pid/fakeusers", "every": "30m", "check": false },
         ],
     },
     

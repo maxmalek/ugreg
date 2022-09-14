@@ -6,6 +6,8 @@
 #include "rng.h"
 #include "tomcrypt.h"
 #include "scopetimer.h"
+#include "fts_fuzzy_match.h"
+#include <algorithm>
 
 // Yes, the entries in authdata are stringly typed.
 // But this way saving/restoring the entire structure is very simple if we ever need it
@@ -167,12 +169,14 @@ bool MxStore::apply(VarCRef config)
         else
             ok = false;
     }
+
     ok = ok && cfg.hashcache.pepperLenMin <= cfg.hashcache.pepperLenMax;
     if(!ok)
     {
         printf("MxStore::apply(): Failed to apply config\n");
         return false;
     }
+
 
     // config looks good, apply
     printf("MxStore: minSearchLen = %zu\n", cfg.minSearchLen);
@@ -500,6 +504,60 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
     // TODO: call uncached external 3pid providers?
     // Would be better to keep a cache for their results too
     // and only do an external call if uncached or too old
+
+    return M_OK;
+}
+
+void MxStore::_search_inner(std::vector<SearchResult>& results, const TreeMem& mem, const Var::Map* store, const char* term)
+{
+    for(Var::Map::Iterator it = store->begin(); it != store->end(); ++it)
+    {
+        PoolStr thpid = mem.getSL(it.key());
+        PoolStr mxid = it.value().asString(mem);
+        assert(thpid.s); // known to be strings
+        assert(mxid.s);
+
+        int score1 = 0, score2 = 0;
+        // always eval both sides
+        // FIXME: really?
+        if(fts::fuzzy_match(term, thpid.s, score1) | fts::fuzzy_match(term, mxid.s, score2))
+        {
+            SearchResult res;
+            res.score = score1 + score2;
+            res.str = mxid.s;
+            results.push_back(std::move(res));
+        }
+    }
+}
+
+MxError MxStore::search(std::vector<SearchResult>& results, const SearchConfig& scfg, const char* term)
+{
+    const size_t len = strlen(term);
+    if(len < config.minSearchLen)
+        return M_OK;
+
+    size_t oldsize = results.size();
+    u64 timeMS = 0;
+    {
+        std::shared_lock lock(threepid.mutex);
+        //---------------------------------------
+        ScopeTimer timer;
+        for(size_t k = 0; k < scfg.media.size(); ++k)
+        {
+            const std::string& medium = scfg.media[k];
+            if(VarCRef store = threepid.root().lookup(medium.c_str(), medium.length()))
+            {
+                if(const Var::Map *m = store.v->map())
+                {
+                    _search_inner(results, threepid, m, term);
+                }
+            }
+        }
+        timeMS = timer.ms();
+    }
+
+    printf("MxStore::search[%s]: %u results in %u ms\n",
+        term, unsigned(results.size() - oldsize), unsigned(timeMS));
 
     return M_OK;
 }

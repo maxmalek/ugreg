@@ -28,3 +28,6 @@ static void strpool_LA_free(void* ctx, void *ptr)
 
 #define MINICORO_IMPL
 #include "minicoro.h"
+
+#define FTS_FUZZY_MATCH_IMPLEMENTATION
+#include "fts_fuzzy_match.h"
