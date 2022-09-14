@@ -39,9 +39,9 @@
 
 // Public interface
 namespace fts {
-    static bool fuzzy_match_simple(char const * pattern, char const * str);
-    static bool fuzzy_match(char const * pattern, char const * str, int & outScore);
-    static bool fuzzy_match(char const * pattern, char const * str, int & outScore, uint8_t * matches, int maxMatches);
+    bool fuzzy_match_simple(char const * pattern, char const * str);
+    bool fuzzy_match(char const * pattern, char const * str, int & outScore);
+    bool fuzzy_match(char const * pattern, char const * str, int & outScore, uint8_t * matches, int maxMatches);
 }
 
 
@@ -56,7 +56,7 @@ namespace fts {
     }
 
     // Public interface
-    static bool fuzzy_match_simple(char const * pattern, char const * str) {
+    bool fuzzy_match_simple(char const * pattern, char const * str) {
         while (*pattern != '\0' && *str != '\0')  {
             if (tolower(*pattern) == tolower(*str))
                 ++pattern;
@@ -66,13 +66,13 @@ namespace fts {
         return *pattern == '\0' ? true : false;
     }
 
-    static bool fuzzy_match(char const * pattern, char const * str, int & outScore) {
+    bool fuzzy_match(char const * pattern, char const * str, int & outScore) {
 
         uint8_t matches[256];
         return fuzzy_match(pattern, str, outScore, matches, sizeof(matches));
     }
 
-    static bool fuzzy_match(char const * pattern, char const * str, int & outScore, uint8_t * matches, int maxMatches) {
+    bool fuzzy_match(char const * pattern, char const * str, int & outScore, uint8_t * matches, int maxMatches) {
         int recursionCount = 0;
         int recursionLimit = 10;
 
