@@ -18,6 +18,8 @@ WebServer::WebServer()
 WebServer::~WebServer()
 {
     stop();
+    for(size_t i = 0; i < _ownedHandlers.size(); ++i)
+        delete _ownedHandlers[i];
 }
 
 void WebServer::stop()
@@ -32,13 +34,38 @@ void WebServer::stop()
 void WebServer::registerHandler(const char *entrypoint, mg_request_handler h, void *ud)
 {
     printf("WS: Register handler %s\n", entrypoint);
-    assert(_ctx && entrypoint && entrypoint[0] == '/');
-    mg_set_request_handler(_ctx, entrypoint, h, ud);
+    assert(entrypoint && entrypoint[0] == '/');
+    if(_ctx)
+        mg_set_request_handler(_ctx, entrypoint, h, ud);
+    else
+    {
+        StoredHandler sh;
+        sh.func = h;
+        sh.ep = entrypoint;
+        sh.ud = ud;
+    }
 }
 
 void WebServer::registerHandler(const RequestHandler& h)
 {
     registerHandler(h.prefix(), h.Handler, (void*)&h);
+}
+
+void WebServer::registerHandler(RequestHandler* h, bool own)
+{
+    registerHandler(h->prefix(), h->Handler, (void*)h);
+    if(own)
+    {
+        bool add = true;
+        for (size_t i = 0; i < _ownedHandlers.size(); ++i)
+            if(_ownedHandlers[i] == h)
+            {
+                add = false;
+                break;
+            }
+        if(add)
+            _ownedHandlers.push_back(h);
+    }
 }
 
 bool WebServer::start(const ServerConfig& cfg)
@@ -94,6 +121,14 @@ bool WebServer::start(const ServerConfig& cfg)
     }
 
     _ctx = ctx;
+
+    for(size_t i = 0; i < _storedHandlers.size(); ++i)
+    {
+        const StoredHandler& sh = _storedHandlers[i];
+        mg_set_request_handler(ctx, sh.ep.c_str(), sh.func, sh.ud);
+    }
+    _storedHandlers.clear();
+
     puts("WS: Started.");
     return true;
 }

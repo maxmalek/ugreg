@@ -11,9 +11,10 @@
             "cert": "localhost.pem",
             "listen_threads": 0,
             "services": {
+                "versions": true,
                 "identity_v2": true,
                 "identity_v1_min": true, // Element checks for the v1 API only; enable this to suppress warnings about a non-functional identity server
-            }
+            },
         },
         
         // Enable an interface to provide certain endpoints of interest that a matrix homeserver would serve.
@@ -33,9 +34,9 @@
                     "fuzzy": true, // TODO: respect this
                     //"avatar_url": "mxc://...",
                     
-                }
+                },
                 "hsproxy": { "target": { "host": "localhost", "port": 8008, "ssl": false } },
-            }
+            },
         },
         // Optionally, serve .well-known if no other service is serving it already
         // Clients espect this on https (port 443) with a valid cert.
@@ -54,16 +55,16 @@
                         },
                         "m.identity_server": {
                             "base_url": "http://localhost:8090"
-                        }
+                        },
                     },
 
                     // JSON data served under /.well-known/matrix/server
                     "server": {
                         "m.server": "http://localhost:8008"
                     },
-                }
-            }
-        }
+                },
+            },
+        },
     ],
     
     // -- Global database ---

@@ -64,7 +64,17 @@ public:
     void registerHandler(const char *entrypoint, mg_request_handler h, void *ud);
 
     void registerHandler(const RequestHandler& h);
+    void registerHandler(RequestHandler *h, bool own); // if own == true, delete upon destruction
 
 private:
     mg_context *_ctx;
+
+    struct StoredHandler
+    {
+        mg_request_handler func;
+        void* ud;
+        std::string ep;
+    };
+    std::vector<StoredHandler> _storedHandlers;
+    std::vector<RequestHandler*> _ownedHandlers;
 };

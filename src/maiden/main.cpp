@@ -19,7 +19,7 @@
 #include "subproc.h"
 #include "subprocess.h"
 #include "mxsources.h"
-#include <argh.h>
+#include "mxservices.h"
 
 std::atomic<bool> s_quit;
 
@@ -98,7 +98,8 @@ static void dump(MxStore& mxs)
 }
 
 // mg_request_handler, part of "identity_v2"
-int handler_versions(struct mg_connection* conn, void*)
+static const char * const URL_versions = "/_matrix/identity/versions";
+static int handler_versions(struct mg_connection* conn, void*)
 {
     // we only support v2 so this can be hardcoded for now
     static const char ver[] = "{\"versions\":[\"v1.2\"]}";
@@ -108,7 +109,8 @@ int handler_versions(struct mg_connection* conn, void*)
 }
 
 // mg_request_handler, part of "identity_v1_min"
-int handler_apicheck_v1(struct mg_connection *conn, void *ud)
+static const char * const URL_identity_v1_min = "/_matrix/identity/api/v1";
+static int handler_identity_v1_min(struct mg_connection *conn, void *ud)
 {
     static const char resp[] = "{}";
     mg_send_http_ok(conn, "application/json", sizeof(resp) - 1);
@@ -117,37 +119,94 @@ int handler_apicheck_v1(struct mg_connection *conn, void *ud)
     return 200;
 }
 
+static bool attachService(WebServer& srv, const char *name, MxStore& mxs, VarCRef serviceConfig)
+{
+    printf("attach service [%s]\n", name);
+
+    RequestHandler *h = NULL;
+
+    if(!strcmp(name, "versions"))
+    {
+        srv.registerHandler(URL_versions, handler_versions, NULL);
+    }
+    else if(!strcmp(name, "identity_v2"))
+    {
+        h = new MxidHandler_v2(mxs, "/_matrix/identity/v2");
+    }
+    else if(!strcmp(name, "identity_v1_min"))
+    {
+        srv.registerHandler(URL_identity_v1_min, handler_identity_v1_min, NULL);
+    }
+    else if(!strcmp(name, "search"))
+    {
+        h = new MxSearchHandler(mxs, serviceConfig);
+    }
+    else if(!strcmp(name, "wellknown"))
+    {
+        h = new MxWellknownHandler(serviceConfig);
+    }
+    else if(!strcmp(name, "hsproxy"))
+    {
+        //h = new MxReverseProxyHandler;
+    }
+    else
+        bail("Unkown service: ", name);
+
+    if(h)
+        srv.registerHandler(h, true);
+
+    return true;
+}
+
 class ServerAndConfig
 {
 public:
-    static ServerAndConfig *New(VarCRef json)
+    static ServerAndConfig *New(VarCRef json, MxStore& mxs)
     {
         ServerAndConfig *ret = new ServerAndConfig;
-        bool ok = false;
+        bool ok = true;
         if(ret->cfg.apply(json))
         {
             VarCRef servicesRef = json.lookup("services");
-
-
+            const Var::Map *m = servicesRef.v->map();
+            for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+            {
+                const char *serviceName = servicesRef.mem->getS(it.key());
+                VarCRef serviceConfig(servicesRef.mem, &it.value());
+                if(!attachService(ret->srv, serviceName, mxs, serviceConfig))
+                {
+                    ok = false;
+                    break;
+                }
+            }
         }
         if(!ok)
         {
             delete ret;
             ret = NULL;
         }
-        if(ret)
-            ret->srv.start(ret->cfg);
         return ret;
     }
     WebServer srv;
     ServerConfig cfg;
 
+    bool start()
+    {
+        return srv.start(cfg);
+    }
+
+    void stop()
+    {
+        srv.stop();
+    }
+
 private:
-    ServerAndConfig();
+    ServerAndConfig() {}
 };
 
 int main(int argc, char** argv)
 {
+    hash_testall();
     srand(unsigned(time(NULL)));
     handlesigs(sigquit);
 
@@ -163,6 +222,11 @@ int main(int argc, char** argv)
         if (!doargs(cfgtree, argc, argv, argsCallback, NULL))
             bail("Failed to handle cmdline. Exiting.", "");
 
+        // matrix/storage global config, populate this first
+        if(!mxs.apply(cfgtree.subtree("/matrix")))
+            bail("Invalid matrix config. Exiting.", "");
+
+        // ... then init all servers, but don't start them...
         VarCRef serversRef = cfgtree.subtree("/servers");
         if(serversRef.type() != Var::TYPE_ARRAY)
             bail("Config->servers should be array, but is: ", serversRef ? serversRef.typestr() : "(not-existent)");
@@ -173,35 +237,15 @@ int main(int argc, char** argv)
             if(serv.type() != Var::TYPE_MAP)
                 bail("Entry in Config->servers[] is not map, exiting", "");
 
-            ServerAndConfig *sc = ServerAndConfig::New(serv);
+            printf("Create new server, index %u\n", (unsigned)i);
+            ServerAndConfig *sc = ServerAndConfig::New(serv, mxs);
             if(!sc)
                 bail("Invalid config after processing options. Fix your config file(s). Try --help.\nCurrent config:\n",
                     dumpjson(cfgtree.root(), true).c_str()
                 );
 
             servers.push_back(sc);
-
-        if(VarCRef sub = cfgtree.subtree("/wellknown"))
-        {
-            VarCRef server = sub.lookup("server");
-            VarCRef client = sub.lookup("client");
-
-            if(client && server && wellknownCfg.apply(sub))
-            {
-                wkServer = dumpjson(server);
-                wkClient = dumpjson(client);
-
-                if (!wksrv.start(wellknownCfg))
-                    bail("Failed to start .well-known server!", "");
-                wksrv.registerHandler("/.well-known/matrix/server", handler_wellknown, &wkServer);
-                wksrv.registerHandler("/.well-known/matrix/client", handler_wellknown, &wkClient);
-            }
-            else
-                bail("Invalid wellknown config. Exiting.", "");
         }
-
-        if(!mxs.apply(cfgtree.subtree("/matrix")))
-            bail("Invalid matrix config. Exiting.", "");
 
         // This may take a while to populate the initial 3pid tree
         if(!sources.init(cfgtree.subtree("/sources"), cfgtree.subtree("/env")))
@@ -214,29 +258,21 @@ int main(int argc, char** argv)
             return 0;
     }
 
-    hash_testall();
     mxs.rotateHashPepper();
 
     WebServer::StaticInit();
-    WebServer srv;
-    if (!srv.start(cfg))
-        bail("Failed to start server!", "");
 
-    srv.registerHandler("/_matrix/identity/versions", handler_versions, NULL);
-
-    MxidHandler_v2 v2(mxs, "/_matrix/identity/v2");
-    srv.registerHandler(v2);
-
-    MxidHandler_v2 v1(mxs, "/_matrix/identity/api/v1");
-    srv.registerHandler(v1);
+    for(size_t i = 0; i < servers.size(); ++i)
+        if(!servers[i]->start())
+            bail("Failed to start a server component, exiting", "");
 
     puts("Ready!");
 
     while (!s_quit)
         sleepMS(200);
 
-    wksrv.stop();
-    srv.stop();
+    for (size_t i = 0; i < servers.size(); ++i)
+        servers[i]->stop();
 
     WebServer::StaticShutdown();
     //mxs.save();

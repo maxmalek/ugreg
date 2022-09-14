@@ -53,6 +53,7 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
     mg_send_http_ok(conn, "application/json", resp->length());
     mg_response_header_add(conn, "Access-Control-Allow-Origin", "*", 1);
     mg_write(conn, resp->c_str(), resp->length());
+    return 200;
 }
 
 MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg)

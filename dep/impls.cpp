@@ -1,6 +1,6 @@
 // All implementations for single-file libs go here
 
-#include "luaalloc.h"
+//#include "luaalloc.h"
 
 // Since strpool.h does its own memory management this is not necessary and has no benefit.
 
