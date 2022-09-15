@@ -7,7 +7,6 @@
 #include "tomcrypt.h"
 #include "scopetimer.h"
 #include "fts_fuzzy_match.h"
-#include <algorithm>
 
 // Yes, the entries in authdata are stringly typed.
 // But this way saving/restoring the entire structure is very simple if we ever need it
@@ -195,7 +194,7 @@ bool MxStore::apply(VarCRef config)
     {
         printf("MxStore: Use hash [%s], lazy = %u\n", it->first.c_str(), it->second.lazy);
         VarRef cache = hashcache.root()[it->first.c_str()];
-        if(!cache.type() != Var::TYPE_MAP)
+        if(cache.type() != Var::TYPE_MAP)
             cache = false; // create dummy entry to signify the cache has to be generated
     }
 
