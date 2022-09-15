@@ -3,6 +3,9 @@
 #include "civetweb/civetweb.h"
 #include "json_out.h"
 #include "mxstore.h"
+#include <algorithm>
+#include "scopetimer.h"
+
 
 static const char *MimeType = "application/json";
 static const char  WellknownPrefix[] = "/.well-known/matrix";
@@ -121,15 +124,53 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                 DataTree vars(DataTree::TINY);
                 //int rd = rq.AutoReadVars(vars.root(), conn);
                 int rd = rq.ReadJsonBodyVars(vars.root(), conn, true, false, searchcfg.maxsize);
+                if(rd > 0)
+                {
+                    size_t limit = 10;
+                    const char *term = NULL;
 
-                size_t limit = 10;
-                const char *term = "";
+                    if(VarCRef xlimit = vars.root().lookup("limit"))
+                        if(const u64 *plimit = xlimit.asUint())
+                            limit = size_t(*plimit);
 
+                    if(VarCRef xterm = vars.root().lookup("search_term"))
+                        term = xterm.asCString();
 
-                std::vector<MxStore::SearchResult> results;
-                _store.search(results, searchcfg, term);
-                dst.WriteStr("Search TODO");
-                return 0;
+                    if(term)
+                    {
+                        std::vector<MxStore::SearchResult> results;
+                        _store.search(results, searchcfg, term);
+
+                        std::sort(results.begin(), results.end());
+
+                        size_t N = results.size();
+                        if(limit && limit < N)
+                            N = limit;
+
+                        // re-use the same mem to generate output
+                        // 'term' var will dangle once this is called
+                        Var::Map *m = vars.root().v->map();
+                        assert(m);
+                        m->clear(vars);
+
+                        vars.root()["limited"] = N < results.size();
+                        VarRef ra = vars.root()["results"].makeArray(N);
+
+                        const bool useAvatar = !searchcfg.avatar_url.empty();
+                        for(size_t i = 0; i < N; ++i)
+                        {
+                            VarRef dst = ra.at(i).makeMap();
+                            const MxStore::SearchResult& r = results[i];
+                            if(useAvatar)
+                                dst["avatar_url"] = searchcfg.avatar_url.c_str();
+                            //dst["display_name"] =
+                            dst["user_id"] = r.str.c_str();
+
+                        }
+                        writeJson(dst, vars.root(), false);
+                        return 0;
+                    }
+                }
             }
         }
     }
