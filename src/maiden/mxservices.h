@@ -3,6 +3,7 @@
 #include "webserver.h"
 #include "datatree.h"
 #include "mxstore.h"
+#include <map>
 
 class MxWellknownHandler : public RequestHandler
 {
@@ -11,7 +12,7 @@ public:
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 
 private:
-    std::string client, server;
+    std::map<std::string, std::string> data;
 };
 
 class MxSearchHandler : public RequestHandler

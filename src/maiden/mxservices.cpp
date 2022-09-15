@@ -1,6 +1,4 @@
 #include "mxservices.h"
-#include <map>
-#include <string>
 #include "webserver.h"
 #include "civetweb/civetweb.h"
 #include "json_out.h"
@@ -17,15 +15,16 @@ static const char  ClientSearchPostfix[] = "/user_directory/search";
 //static const char SearchPrefix_v04[] = "/_matrix/client/r0/user_directory/search";
 //static const char SearchPrefix_v3[] = "/_matrix/client/v3/user_directory/search";
 
-MxWellknownHandler::MxWellknownHandler(VarCRef data)
+MxWellknownHandler::MxWellknownHandler(VarCRef cfg)
     : RequestHandler(WellknownPrefix, MimeType)
 {
-    VarCRef serverRef = data.lookup("server");
-    VarCRef clientRef = data.lookup("client");
-    if(clientRef)
-        client = dumpjson(clientRef);
-    if(serverRef)
-        server = dumpjson(serverRef);
+    if(const Var::Map *m = cfg.v->map())
+        for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+        {
+            const char *key = cfg.mem->getS(it.key());
+            VarCRef value(cfg.mem, &it.value());
+            data[key] = dumpjson(value);
+        }
 }
 
 int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
@@ -34,12 +33,14 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
 
     if(rq.type == RQ_GET)
     {
-        const char *tail = rq.query.c_str() + Countof(WellknownPrefix) - 1;
-
-        if(!strcmp(tail, "client"))
-            resp = &client;
-        else if(!strcmp(tail, "server"))
-            resp = &server;
+        const char *tail = rq.query.c_str();
+        if(*tail == '/')
+        {
+            ++tail;
+            auto it = data.find(tail);
+            if(it != data.end())
+                resp = &it->second;
+        }
     }
 
     if(!resp)
@@ -94,7 +95,12 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg)
         if(const char *url = xurl.asCString())
             searchcfg.avatar_url = url;
 
+    if(VarCRef xmaxsize = cfg.lookup("maxsize"))
+        if(const u64 *pmaxsize = xmaxsize.asUint())
+            searchcfg.maxsize = size_t(*pmaxsize);
+
     printf("MxSearchHandler: fuzzy = %d\n", searchcfg.fuzzy);
+    printf("MxSearchHandler: maxsize = %u\n", (unsigned)searchcfg.maxsize);
     printf("MxSearchHandler: avatar_url = %s\n", searchcfg.avatar_url.c_str());
     printf("MxSearchHandler: searching in %u media:\n", (unsigned)searchcfg.media.size());
     for(size_t i = 0; i < searchcfg.media.size(); ++i)
@@ -103,20 +109,32 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg)
 
 int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
-    const char *q = rq.query.c_str();
-    const char *ver = q + Countof(ClientPrefix) - 1;
-    if(*ver == '/')
+    if(rq.type == RQ_POST)
     {
-        const char *tail = strchr(ver, '/');
-        if(!strcmp(tail, ClientSearchPostfix))
+        const char *q = rq.query.c_str();
+        if(*q == '/')
         {
-            DataTree::LockedRoot lut = _store.get3pidRoot();
-            dst.WriteStr("Search TODO");
-            return 200;
+            ++q;
+            const char *tail = strchr(q, '/'); // skip 1 path component
+            if(tail && !strcmp(tail, ClientSearchPostfix))
+            {
+                DataTree vars(DataTree::TINY);
+                //int rd = rq.AutoReadVars(vars.root(), conn);
+                int rd = rq.ReadJsonBodyVars(vars.root(), conn, true, false, searchcfg.maxsize);
+
+                size_t limit = 10;
+                const char *term = "";
+
+
+                std::vector<MxStore::SearchResult> results;
+                _store.search(results, searchcfg, term);
+                dst.WriteStr("Search TODO");
+                return 0;
+            }
         }
     }
 
-    return 404;
+    return HANDLER_FALLTHROUGH;
 }
 
 MxReverseProxyHandler::MxReverseProxyHandler()

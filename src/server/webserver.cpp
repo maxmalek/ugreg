@@ -43,6 +43,7 @@ void WebServer::registerHandler(const char *entrypoint, mg_request_handler h, vo
         sh.func = h;
         sh.ep = entrypoint;
         sh.ud = ud;
+        _storedHandlers.push_back(std::move(sh));
     }
 }
 
@@ -250,6 +251,8 @@ int RequestHandler::_onRequest(mg_connection* conn) const
                 mg_send_chunk(conn, "", 0); // terminating chunk
                 status = 200; // all good
             }
+            else if(status == HANDLER_FALLTHROUGH)
+                status = 0; // on 0 return, civetweb falls through to the next handler
         }
         catch (ThrowingSocketWriteStream::WriteFail ex)
         {
