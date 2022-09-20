@@ -23,18 +23,19 @@ if len(sys.argv) > 1 and sys.argv[1] == "--check":
 ap = argparse.ArgumentParser()
 
 ap.add_argument("--base", type=str, required=True, metavar="LDAP_BASE")
-ap.add_argument("--medium", type=str, required=True, action="append", metavar="MEDIUM=EXPR")
+ap.add_argument("--medium", type=str, action="append", metavar="MEDIUM=EXPR")
 ap.add_argument("--field", type=str, action="append", metavar="FIELD=EXPR")
 ap.add_argument("--regex", nargs=3, type=str, metavar=("FIELD=EXPR", "match", "replace"), action="append")
 ap.add_argument("--fetch", type=str, required=True, metavar="list,of,ldap,fields")
-ap.add_argument("--key", type=str, metavar="FIELD", default="mxid")
+ap.add_argument("--mxid", type=str, metavar="FIELD", default="mxid")
 ap.add_argument("--test", type=str, metavar="JSON-file")
+ap.add_argument("--extra", type=str, action="append", metavar="FIELD=EXPR")
 
 args = ap.parse_args()
 del ap
-print(args)
+#print(args)
 
-KEY = args.key
+MXID = args.mxid
 
 # Support supplying a json file with an "env" key for easy testing
 if args.test:
@@ -56,13 +57,15 @@ def genRegexLookup(expr:str, match:str, replace:str):
     rx = re.compile(match)
     def f(kv):
         m = rx.match(expr.format_map(kv))
+        #print(expr.format_map(kv), "->", m)
         if m:
-            return expr.format(*(m.groups()), **kv) # FIXME: this can't create new keys when evaluating the replacement
+            return replace.format(*(m.groups()), **kv) # FIXME: this can't create new keys when evaluating the replacement
     return f
 
 FIELDGEN = {} # generators for field names
 
 MEDIA = set()
+EXTRA = set()
 for m in args.medium:
     (medium, fmt) = splitexpr(m)
     MEDIA.add(medium)
@@ -77,6 +80,11 @@ for (expr, match, replace) in args.regex:
     rx = re.compile(match)
     FIELDGEN[k] = genRegexLookup(fmt, match, replace)
 
+for m in args.extra:
+    (k, fmt) = splitexpr(m)
+    EXTRA.add(k)
+    FIELDGEN[k] = genFieldLookup(fmt)
+
 FETCH = args.fetch.split(sep=",") # fields to fetch from LDAP
 
 # behaves like a dict but generates values that don't exist yet
@@ -87,7 +95,7 @@ class Accessor(Mapping):
     def __getitem__(self, k):
         v = self._kv.get(k)
         if v == None:
-            v = self._gen[k].format_map(self) # recursive resolve keys
+            v = self._gen[k](self) # recursive resolve keys
             self._kv[k] = v
         return v
     def __iter__(self):
@@ -97,8 +105,44 @@ class Accessor(Mapping):
         
 
 f = LDAPFetcher(env)
-db = f.fetch(args.base) # produces LDAP rows
+db = f.fetch(args.base, FETCH) # produces LDAP rows
 
+OUT = {}
+X = None
+addextra = False
+if EXTRA:
+    X = {}
+    addextra = True
+for medium in MEDIA:
+    OUT[medium] = {}
+
+n = 0
+for e in db:
+    a = Accessor(e, FIELDGEN)
+    mxid = a[MXID]
+    if mxid:
+        n += 1
+        #for medium in MEDIA:
+        #    val = a[medium]
+        #    if val != None:
+        #        OUT[medium][val] = mxid
+        if addextra:
+            ex = {}
+            for k in EXTRA:
+                val = a[k]
+                if val != None:
+                    ex[k] = val
+            if ex:
+                X[mxid] = ex
+
+if X:
+    OUT["_extra"] = X
+
+json.dump(OUT, sys.stdout)
+
+print("\n\nN = ", n)
+
+"""
 print("{")
 for medium, mfmt in MEDIA:
     print('"' + medium + '":{')
@@ -107,7 +151,7 @@ for medium, mfmt in MEDIA:
         key = a[KEY]
         val = a[medium]
         if val:
-        
+            
             # TODO: print immediately or serialize?
             
             # Apply basic escaping in case users have funny names
@@ -118,3 +162,30 @@ for medium, mfmt in MEDIA:
             #print('"' + x + '":"' + mxid + '",')
     print("},")
 print("}")
+"""
+
+"""
+{
+    "email": { "user@bla.foo": "mxid@matrix.org", ...}
+    "msisdn": { "1234": "mxid@matrix.org", ...}
+    
+    "_extra": {
+        "@mxid:matrix.org": {
+            "displayname": "Hello",
+            ...
+        }
+    }
+}
+
+
+{
+    "media": { "email": "mail" }
+    "data": {
+        "@mxid:matrix.org": {
+            "email": "user@bla.foo",
+            "displayname": "Hello",
+            "msisdn": "1234"
+        }
+    }
+}
+"""
