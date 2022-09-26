@@ -63,51 +63,62 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
 MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg)
     : RequestHandler(ClientPrefix, MimeType), _store(store)
 {
-    // the default
-    searchcfg.media.push_back("email");
-
-    if(VarCRef xmedia = cfg.lookup("media"))
+    if(VarCRef xfields = cfg.lookup("fields"))
     {
-        const Var *a = xmedia.v->array();
-        if(a)
+        if(const Var::Map *m = xfields.v->map())
         {
-            searchcfg.media.clear();
-            for(size_t i = 0; i < xmedia.size(); ++i)
+            for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             {
-                PoolStr ps = xmedia.at(i).asString();
+                PoolStr ps = xfields.mem->getSL(it.key());
+                const Var& val = it.value();
                 if(ps.s)
                 {
-                    searchcfg.media.push_back(ps.s);
+                    MxStore::SearchConfig::Field &fcfg = searchcfg.fields[ps.s];
+                    if(val.asBool())
+                    {
+                        // use defaults, nothing else to do
+                    }
+                    else if(const Var::Map *fm = val.map())
+                    {
+                        VarCRef f(xfields.mem, &val);
+                        VarCRef xfuzzy = f.lookup("fuzzy");
+                        fcfg.fuzzy = xfuzzy && xfuzzy.asBool();
+                    }
+                    else
+                    {
+                        printf("search->fields->%s has unhandled type, ignoring\n", ps.s);
+                    }
                 }
                 else
                 {
-                    printf("search->media has non-string element\n");
+                    printf("search->fields has non-string element\n");
                 }
             }
         }
         else
         {
-            printf("search->media is present but not array, ignoring\n");
+            printf("search->fields is present but not map, ignoring\n");
         }
     }
-
-    VarCRef xfuzzy = cfg.lookup("fuzzy");
-    searchcfg.fuzzy = xfuzzy && xfuzzy.asBool();
 
     if(VarCRef xurl = cfg.lookup("avatar_url"))
         if(const char *url = xurl.asCString())
             searchcfg.avatar_url = url;
 
+    if (VarCRef xdn = cfg.lookup("displayname"))
+        if (const char* dn = xdn.asCString())
+            searchcfg.displaynameField = dn;
+
     if(VarCRef xmaxsize = cfg.lookup("maxsize"))
         if(const u64 *pmaxsize = xmaxsize.asUint())
             searchcfg.maxsize = size_t(*pmaxsize);
 
-    printf("MxSearchHandler: fuzzy = %d\n", searchcfg.fuzzy);
     printf("MxSearchHandler: maxsize = %u\n", (unsigned)searchcfg.maxsize);
     printf("MxSearchHandler: avatar_url = %s\n", searchcfg.avatar_url.c_str());
-    printf("MxSearchHandler: searching in %u media:\n", (unsigned)searchcfg.media.size());
-    for(size_t i = 0; i < searchcfg.media.size(); ++i)
-        printf("MxSearchHandler: + %s\n", searchcfg.media[i].c_str());
+    printf("MxSearchHandler: displayname = %s\n", searchcfg.displaynameField.c_str());
+    printf("MxSearchHandler: searching %u fields:\n", (unsigned)searchcfg.fields.size());
+    for(MxStore::SearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
+        printf(" + %s [fuzzy = %u]\n", it->first.c_str(), it->second.fuzzy);
 }
 
 int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
@@ -163,7 +174,8 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                             const MxStore::SearchResult& r = results[i];
                             if(useAvatar)
                                 dst["avatar_url"] = searchcfg.avatar_url.c_str();
-                            //dst["display_name"] =
+                            if(!r.displayname.empty())
+                                dst["display_name"] = r.displayname.c_str();
                             dst["user_id"] = r.str.c_str();
 
                         }

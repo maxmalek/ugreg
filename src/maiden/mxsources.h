@@ -44,10 +44,11 @@ private:
     void _ingestDataAndMerge(const Config::InputEntry& entry);
     std::future<DataTree*> _ingestDataAsync(const Config::InputEntry& entry);
     std::future<void> _ingestDataAndMergeAsync(const Config::InputEntry& entry);
+
     void _rebuildTree();
     void _updateEnv(VarCRef env);
     static void _Loop_th(MxSources *self);
-    MxStore& _store;
+    MxStore& _store; // this lives in MxStore
     Config _cfg;
     std::thread _th;
     std::atomic<bool> _quit;

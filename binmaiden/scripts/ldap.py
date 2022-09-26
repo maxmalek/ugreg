@@ -35,7 +35,6 @@ if len(sys.argv) > 1 and sys.argv[1] == "--check":
 ap = argparse.ArgumentParser()
 
 ap.add_argument("--base", type=str, required=True, metavar="LDAP_BASE")
-ap.add_argument("--medium", type=str, action="append", metavar="MEDIUM or MEDIUM=FIELD")
 ap.add_argument("--format", type=str, action="append", metavar="FIELD=EXPR")
 ap.add_argument("--regex", nargs=3, type=str, metavar=("FIELD=EXPR", "match", "replace"), action="append")
 ap.add_argument("--output", type=str, action="append", metavar="list,of,extra,fields,returnas=oldname")
@@ -86,7 +85,6 @@ def genRegexLookup(expr:str, match:str, replace:str):
 
 FIELDGEN = {} # generators for field names, in case a key isn't present
 
-MEDIA = {} # medium => field
 FIELDS = {} # fields to include in the output. key is the key used in the output, value is the name in our work dict
 
 
@@ -100,16 +98,9 @@ for (expr, match, replace) in args.regex:
     FIELDGEN[k] = genRegexLookup(fmt, match, replace)
 
 for m in args.output:
-    for part in fieldlist(m):
-        (k, saveas) = splitfield(m)
+    for (k, saveas) in fieldlist(m):
         FIELDS[k] = saveas
 
-for m in args.medium:
-    for part in m.split(","):
-        (medium, field) = splitfield(part)
-        if field not in FIELDS:
-            FIELDS[field] = field
-        MEDIA[medium] = field
 
 # behaves like a dict but generates values that don't exist yet
 class Accessor(Mapping):
@@ -152,13 +143,14 @@ used = UsedFields(FIELDGEN)
 dummy = Accessor({}, used)
 for k, f in FIELDS.items():
     _ = dummy[f]  # Just drop it on the floor
+_ = dummy[MXID] # this is always required
 
 # Iterates over LDAP entries and outputs (mxid, data) as key-value pair,
 # where data is formatted according to the selected FIELDS.
 def outputRows(db):
     for e in db:
         a = Accessor(e, FIELDGEN)
-        yield a[MXID], { k: a[f] for k,f in FIELDS.items() }
+        yield a[MXID], { k: val for k,f in FIELDS.items() if (val := a[f]) is not None}
 
 # This is a "fake dict" used for JSON serialization.
 # The idea is that the json module thinks this is a complete object
@@ -190,13 +182,9 @@ sys.stdout.write(",\n\"## [debug] fields included in output\": ")
 json.dump(FIELDS, sys.stdout)
 # -- end debug infos
 
-if MEDIA:
-    sys.stdout.write(",\n\"media\": ")
-    json.dump(MEDIA, sys.stdout)
-
 # -- begin actual data
 sys.stdout.write(",\n\"data\":\n")
-json.dump(OutputFakeDict(LDAPFetcher(env).fetch(args.base, used.missing)), sys.stdout)
+json.dump(OutputFakeDict(LDAPFetcher(env).fetch(args.base, used.missing)), sys.stdout, separators=(",",":"), check_circular=False)
 # -- end actual data
 
 sys.stdout.write("\n}\n")

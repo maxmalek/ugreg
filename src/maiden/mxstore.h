@@ -43,8 +43,8 @@ public:
     MxError hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper); // dst is made a map, in is an array
 
     // -- update --
-    bool merge3pid(VarCRef root); // expects { medium => { something => mxid } }
-    bool merge3pid_nolock(VarCRef root);
+    void merge3pid(VarCRef root);
+    void merge3pid_nolock(VarCRef root);
     DataTree::LockedRoot get3pidRoot();
     void _clearHashCache_nolock();
     void markForRehash_nolock();
@@ -55,8 +55,13 @@ public:
 
     struct SearchConfig
     {
-        std::vector<std::string> media;
-        bool fuzzy = false;
+        struct Field
+        {
+            bool fuzzy = false;
+        };
+        typedef std::unordered_map<std::string, Field> Fields;
+        Fields fields;
+        std::string displaynameField;
 
         // -- below here is not used by mxstore --
         std::string avatar_url;
@@ -65,7 +70,7 @@ public:
 
     struct SearchResult
     {
-        std::string str;
+        std::string str, displayname;
         int score;
 
         // highest score first, then alphabetically
@@ -84,7 +89,11 @@ private:
     void rotateHashPepper_nolock(u64 now);
     MxError _generateHashCache_nolock(VarRef cache, const char *algo);
     MxError unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in); // only for algo == "none"
-    void _search_inner(std::vector<SearchResult>& results, const TreeMem& mem, const Var::Map *store, const char *term);
+
+    // dst becomes { 3pid => mxid }, where src is a list of { mxid => { ..., <fromkey>=3pid, ... }
+    // Actually src is the large user-to-data table returned by an import script, and ffromkey is the key under which to look up
+    // and entry that is to be used as a medium; so dst is likely some map stored under <medium> as a key, but the caller has to take care of that
+    static void _Rebuild3pidMap(VarRef dst, VarCRef src, const char* fromkey);
 
 
     DataTree authdata;
@@ -131,6 +140,9 @@ public:
 
         typedef std::unordered_map<std::string, Hash> Hashes;
         Hashes hashes;
+
+        typedef std::unordered_map<std::string, std::string> Media;
+        Media media; // field => medium
 
     };
     const Config& getConfig() const { return this->config; }

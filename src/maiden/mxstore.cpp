@@ -47,7 +47,7 @@ MxStore::MxStore()
     load("debug.mxstore");
 #endif
     authdata.root().makeMap();
-    threepid.root().makeMap();
+    threepid.root().makeMap()["_data"].clear(); // { _data = None }
 
     // TODO: enable hashcache entries from config
 }
@@ -108,6 +108,7 @@ bool MxStore::apply(VarCRef config)
     VarCRef xwellknown = config.lookup("wellknown");
     VarCRef xregister = config.lookup("register");
     VarCRef xhashes = config.lookup("hashes");
+    VarCRef xmedia = config.lookup("media");
 
     bool ok =
            readTimeKey(cfg.hashcache.pepperTime, xhashcache, "pepperTime")
@@ -169,6 +170,12 @@ bool MxStore::apply(VarCRef config)
             ok = false;
     }
 
+    if(ok && xmedia)
+        if(const Var::Map *m = xmedia.v->map())
+            for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+                if(const char *v = it.value().asCString(*xmedia.mem))
+                    cfg.media[xmedia.mem->getS(it.key())] = v;
+
     ok = ok && cfg.hashcache.pepperLenMin <= cfg.hashcache.pepperLenMax;
     if(!ok)
     {
@@ -186,6 +193,9 @@ bool MxStore::apply(VarCRef config)
     printf("MxStore: wellknown request timeout = %ju ms\n", cfg.wellknown.requestTimeout);
     printf("MxStore: wellknown request maxsize = %ju bytes\n", cfg.wellknown.requestMaxSize);
     printf("MxStore: register max time = %ju seconds\n", cfg.register_.maxTime / 1000);
+
+    for(Config::Media::iterator it = cfg.media.begin(); it != cfg.media.end(); ++it)
+        printf("MxStore: Using field [%s] as medium [%s]\n", it->first.c_str(), it->second.c_str());
 
     std::unique_lock lock(hashcache.mutex);
     // --------------------------------------------------
@@ -507,28 +517,6 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
     return M_OK;
 }
 
-void MxStore::_search_inner(std::vector<SearchResult>& results, const TreeMem& mem, const Var::Map* store, const char* term)
-{
-    for(Var::Map::Iterator it = store->begin(); it != store->end(); ++it)
-    {
-        PoolStr thpid = mem.getSL(it.key());
-        PoolStr mxid = it.value().asString(mem);
-        assert(thpid.s); // known to be strings
-        assert(mxid.s);
-
-        int score1 = 0, score2 = 0;
-        // always eval both sides
-        // FIXME: really?
-        if(fts::fuzzy_match(term, thpid.s, score1) | fts::fuzzy_match(term, mxid.s, score2))
-        {
-            SearchResult res;
-            res.score = score1 + score2;
-            res.str = mxid.s;
-            results.push_back(std::move(res));
-        }
-    }
-}
-
 MxError MxStore::search(std::vector<SearchResult>& results, const SearchConfig& scfg, const char* term)
 {
     const size_t len = strlen(term);
@@ -537,21 +525,60 @@ MxError MxStore::search(std::vector<SearchResult>& results, const SearchConfig& 
 
     size_t oldsize = results.size();
     u64 timeMS = 0;
+
+    struct SearchKeyCache
+    {
+        StrRef ref;
+        SearchConfig::Field f;
+    };
+    std::vector<SearchKeyCache> keys;
+
     {
         std::shared_lock lock(threepid.mutex);
         //---------------------------------------
-        ScopeTimer timer;
-        for(size_t k = 0; k < scfg.media.size(); ++k)
+
+        // cache the keys so we don't need to do string->StrRef lookups all the time
+        for (SearchConfig::Fields::const_iterator it = scfg.fields.begin(); it != scfg.fields.end(); ++it)
         {
-            const std::string& medium = scfg.media[k];
-            if(VarCRef store = threepid.root().lookup(medium.c_str(), medium.length()))
+            SearchKeyCache kc;
+            kc.ref = threepid.lookup(it->first.c_str(), it->first.length());
+            if(kc.ref)
             {
-                if(const Var::Map *m = store.v->map())
-                {
-                    _search_inner(results, threepid, m, term);
-                }
+                kc.f = it->second;
+                keys.push_back(kc);
             }
         }
+        const StrRef displaynameRef = threepid.lookup(scfg.displaynameField.c_str(), scfg.displaynameField.length());
+
+        ScopeTimer timer;
+        VarCRef data = threepid.root().lookup("_data");
+        const Var::Map *m = data.v->map();
+        size_t N = keys.size();
+
+        // TODO: this could be parallelized over all keys[]
+
+        for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+            if(const Var::Map *user = it.value().map())
+                for(size_t i = 0; i < N; ++i)
+                    if(const Var *v =  user->get(keys[i].ref))
+                        if(const char *s = v->asCString(threepid))
+                        {
+                            // TODO: search modes, fuzzy on/off
+                            int score = 0;
+                            if (fts::fuzzy_match(term, s, score))
+                            {
+                                std::string d = dumpjson(VarCRef(threepid, &it.value()));
+                                SearchResult res;
+                                res.score = score;
+                                res.str = threepid.getS(it.key());
+                                if(const Var *xdn = user->get(displaynameRef))
+                                    if(const char *dn = xdn->asCString(threepid))
+                                        res.displayname = dn;
+                                results.push_back(std::move(res));
+                                // FIXME: make sure list entries are unique
+                            }
+                        }
+
         timeMS = timer.ms();
     }
 
@@ -561,16 +588,28 @@ MxError MxStore::search(std::vector<SearchResult>& results, const SearchConfig& 
     return M_OK;
 }
 
-bool MxStore::merge3pid(VarCRef root)
+void MxStore::merge3pid(VarCRef root)
 {
     std::unique_lock lock(threepid.mutex);
     //---------------------------------------
     return merge3pid_nolock(root);
 }
 
-bool MxStore::merge3pid_nolock(VarCRef root)
+void MxStore::merge3pid_nolock(VarCRef root)
 {
-    return threepid.root().merge(root, MERGE_RECURSIVE);
+    VarRef mergedst = threepid.root()["_data"].makeMap();
+    if(VarCRef src = root.lookup("data"))
+        mergedst.merge(src, MERGE_RECURSIVE);
+    else
+        printf("MxStore: WARNING: merge3pid got map without 'data' key, using stale values");
+
+    for(Config::Media::iterator it = config.media.begin(); it != config.media.end(); ++it)
+    {
+        const char *nameOfField = it->first.c_str();
+        const char *nameOf3pid = it->second.c_str();
+        VarRef dst = threepid.root()[nameOf3pid].makeMap();
+        _Rebuild3pidMap(dst, mergedst, nameOfField);
+    }
 }
 
 DataTree::LockedRoot MxStore::get3pidRoot()
@@ -756,4 +795,33 @@ void MxStore::markForRehash_nolock()
     s.resize(n);
     mxGenerateToken(s.data(), n, alphabet, sizeof(alphabet) - 1, false);
     return s;
+}
+
+void MxStore::_Rebuild3pidMap(VarRef dst, VarCRef src, const char* fromkey)
+{
+    assert(dst.mem == src.mem); // this simplifies things a lot and makes it really fast, too
+    const Var::Map* m = src.v->map();
+    Var::Map* dm = dst.v->map();
+
+    assert(m && dm);
+
+    StrRef keyref = src.mem->lookup(fromkey, strlen(fromkey));
+    if (!keyref || !m || !dm)
+        return; // string isn't present -> can't possibly have this as key
+
+    ScopeTimer timer;
+    size_t n = 0;
+
+    for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+    {
+        StrRef mxidRef = it.key();
+        const Var* val = it.value().lookup(keyref); // val = d[fromkey]
+        if (val && val->type() == Var::TYPE_STRING)
+        {
+            dm->getOrCreate(*dst.mem, mxidRef).setStrRef(*dst.mem, val->asStrRef()); // dst[mxid] = val
+            ++n;
+        }
+    }
+
+    printf("MxStore: Rebuilt 3pid from [%s], %zu entries in %llu ms\n", fromkey, n, timer.ms());
 }
