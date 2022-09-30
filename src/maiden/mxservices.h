@@ -1,9 +1,12 @@
 #pragma once
 
+#include <map>
 #include "webserver.h"
 #include "datatree.h"
 #include "mxstore.h"
-#include <map>
+#include "webstuff.h"
+
+
 
 class MxWellknownHandler : public RequestHandler
 {
@@ -15,19 +18,25 @@ private:
     std::map<std::string, std::string> data;
 };
 
-class MxSearchHandler : public RequestHandler
+class MxReverseProxyHandler : public RequestHandler
+{
+public:
+    MxReverseProxyHandler(VarCRef cfg);
+    virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
+
+protected:
+    URLTarget homeserver;
+};
+
+
+class MxSearchHandler : public MxReverseProxyHandler
 {
 public:
     MxSearchHandler(MxStore& store, VarCRef cfg);
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 
     MxStore& _store;
+    bool reverseproxy;
     MxStore::SearchConfig searchcfg;
 };
 
-class MxReverseProxyHandler : public RequestHandler
-{
-    MxReverseProxyHandler();
-    virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
-
-};

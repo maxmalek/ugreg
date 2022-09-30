@@ -42,9 +42,9 @@
                     },
                     "displayname": "displayname",
                     //"avatar_url": "mxc://...",
-                    
+                    "homeserver": { "host": "localhost", "port": 8008, "ssl": false },
+                    "reverseproxy": true,
                 },
-                "hsproxy": { "target": { "host": "localhost", "port": 8008, "ssl": false } },
             },
         },
         // Optionally, serve .well-known if no other service is serving it already

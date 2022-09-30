@@ -7,6 +7,7 @@
 #include "json_out.h"
 #include "accessor.h"
 #include "pathiter.h"
+#include "webstuff.h"
 
 // Misc things to test for functionality, breakage, and to make sure everything compiles as it should
 
@@ -77,9 +78,20 @@ static void testtree()
     puts("---- test stuff end -----");
 }
 
+static void testweb()
+{
+    URLTarget t;
+    bool ok = t.parse("https://example.com:8080/page.html");
+    assert(ok);
+    assert(t.port == 8080);
+    assert(t.host == "example.com");
+    assert(t.path == "/page.html");
+}
+
 int main(int argc, char **argv)
 {
     testpathiter();
     testtree();
+    testweb();
     return 0;
 }

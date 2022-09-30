@@ -1,6 +1,10 @@
 #pragma once
 
 #include "variant.h"
+#include "webstuff.h"
+#include "request.h"
+
+struct mg_connection;
 
 enum MxGetJsonResult
 {
@@ -9,4 +13,5 @@ enum MxGetJsonResult
     MXGJ_PARSE_ERROR
 };
 
-MxGetJsonResult mxGetJson(VarRef dst, const char *host, unsigned port, const char *res, int timeoutMS = -1, size_t maxsize = 0);
+mg_connection* mxConnectTo(const URLTarget& target);
+MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& target, const VarCRef& data = VarCRef(), int timeoutMS = -1, size_t maxsize = 0);

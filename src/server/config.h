@@ -3,17 +3,13 @@
 #include <string>
 #include <vector>
 
-#include "variant.h"
+#include "types.h"
+#include "webstuff.h"
 
 
 struct ServerConfig
 {
-    struct Listen
-    {
-        std::string host;
-        unsigned port;
-        bool ssl;
-    };
+    typedef URLTarget Listen;
 
    // --- begin fields ---
     std::vector<Listen> listen;
@@ -31,5 +27,5 @@ struct ServerConfig
 
     ServerConfig();
 
-    bool apply(VarCRef root); // Apply values from root to above fields and returns true if the config looks good
+    bool apply(const VarCRef& root); // Apply values from root to above fields and returns true if the config looks good
 };

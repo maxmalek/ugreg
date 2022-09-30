@@ -5,7 +5,8 @@
 #include "mxstore.h"
 #include <algorithm>
 #include "scopetimer.h"
-
+#include "webstuff.h"
+#include "mxhttprequest.h"
 
 static const char *MimeType = "application/json";
 static const char  WellknownPrefix[] = "/.well-known/matrix";
@@ -61,7 +62,7 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
 }
 
 MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg)
-    : RequestHandler(ClientPrefix, MimeType), _store(store)
+    : MxReverseProxyHandler(cfg), _store(store)
 {
     if(VarCRef xfields = cfg.lookup("fields"))
     {
@@ -113,12 +114,16 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg)
         if(const u64 *pmaxsize = xmaxsize.asUint())
             searchcfg.maxsize = size_t(*pmaxsize);
 
+    if (VarCRef xproxy = cfg.lookup("reverseproxy"))
+        reverseproxy = xproxy && xproxy.asBool();
+
     printf("MxSearchHandler: maxsize = %u\n", (unsigned)searchcfg.maxsize);
     printf("MxSearchHandler: avatar_url = %s\n", searchcfg.avatar_url.c_str());
     printf("MxSearchHandler: displayname = %s\n", searchcfg.displaynameField.c_str());
     printf("MxSearchHandler: searching %u fields:\n", (unsigned)searchcfg.fields.size());
     for(MxStore::SearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
         printf(" + %s [fuzzy = %u]\n", it->first.c_str(), it->second.fuzzy);
+    printf("MxSearchHandler: Reverse proxy enabled: %s\n", reverseproxy ? "yes" : "no");
 }
 
 int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
@@ -146,6 +151,9 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 
                     if(VarCRef xterm = vars.root().lookup("search_term"))
                         term = xterm.asCString();
+
+                    DataTree hsdata(DataTree::TINY);
+                    MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), this->homeserver, vars.root()); // FIXME: timeout
 
                     if(term)
                     {
@@ -187,16 +195,21 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
         }
     }
 
+    if(reverseproxy)
+        return MxReverseProxyHandler::onRequest(dst, conn, rq);
+
     return HANDLER_FALLTHROUGH;
 }
 
-MxReverseProxyHandler::MxReverseProxyHandler()
-    : RequestHandler("/_matrix", MimeType)
+MxReverseProxyHandler::MxReverseProxyHandler(VarCRef cfg)
+    : RequestHandler(ClientPrefix, MimeType)
 {
 
 }
 
 int MxReverseProxyHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
-    return 0;
+    printf("ReverseProxy: %s\n", rq.query.c_str());
+    mg_send_http_error(conn, 404, "");
+    return 404;
 }

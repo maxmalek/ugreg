@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "config.h"
 #include "util.h"
+#include "variant.h"
 
 // make the default values sane for testing and not a security issue.
 // We're not MongoDB.
@@ -16,7 +17,7 @@ ServerConfig::ServerConfig()
     reply_cache.maxtime = 0;
 }
 
-bool ServerConfig::apply(VarCRef root)
+bool ServerConfig::apply(const VarCRef& root)
 {
     listen.clear();
 

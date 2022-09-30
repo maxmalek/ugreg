@@ -155,7 +155,13 @@ MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t max
     printf("MxResolv/GET: Looking up %s%s ...\n", host, what);
 
     DataTree tmp(DataTree::TINY);
-    MxGetJsonResult err = mxGetJson(tmp.root(), host, 443, what, (int)timeoutMS, maxsize);
+    URLTarget target;
+    target.host = host;
+    target.port = 443;
+    target.path = what;
+    target.ssl = true;
+
+    MxGetJsonResult err = mxRequestJson(RQ_GET, tmp.root(),target, VarCRef(), (int)timeoutMS, maxsize);
     if(err == MXGJ_OK)
     {
         MxResolvResult res;

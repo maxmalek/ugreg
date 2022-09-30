@@ -304,7 +304,13 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
         DataTree tmp(DataTree::TINY);
         std::ostringstream uri;
         uri << "/_matrix/federation/v1/openid/userinfo?access_token=" << tok; // FIXME: quote
-        MxGetJsonResult jr = mxGetJson(tmp.root(), resolv.host.c_str(), resolv.port, uri.str().c_str(), 5000, 4*1024);
+        URLTarget target;
+        target.host = resolv.host;
+        target.path = uri.str();
+        target.port = resolv.port;
+        target.ssl = true; // FIXME: autodetect based on port or can we deduce this from something else?
+
+        MxGetJsonResult jr = mxRequestJson(RQ_GET, tmp.root(), target, VarCRef(), 5000, 4*1024);
         switch(jr)
         {
             case MXGJ_OK:

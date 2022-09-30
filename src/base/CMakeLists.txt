@@ -55,6 +55,8 @@ set(src
     rng.cpp
     rng.h
     scopetimer.h
+    webstuff.cpp
+    webstuff.h
 )
 
 add_library(base ${src})
