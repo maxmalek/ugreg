@@ -37,6 +37,12 @@ public:
 
     MxStore& _store;
     bool reverseproxy;
+    bool checkHS;
+    bool askHS;
+    int hsTimeout;
     MxStore::SearchConfig searchcfg;
+
+protected:
+    void doSearch(VarRef dst, const char* term, size_t limit) const;
 };
 

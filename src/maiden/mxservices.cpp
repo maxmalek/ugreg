@@ -7,6 +7,8 @@
 #include "scopetimer.h"
 #include "webstuff.h"
 #include "mxhttprequest.h"
+#include <future>
+#include "util.h"
 
 static const char *MimeType = "application/json";
 static const char  WellknownPrefix[] = "/.well-known/matrix";
@@ -117,13 +119,66 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg)
     if (VarCRef xproxy = cfg.lookup("reverseproxy"))
         reverseproxy = xproxy && xproxy.asBool();
 
-    printf("MxSearchHandler: maxsize = %u\n", (unsigned)searchcfg.maxsize);
+    if (VarCRef xproxy = cfg.lookup("check_homeserver"))
+        checkHS = xproxy && xproxy.asBool();
+
+    if (VarCRef xproxy = cfg.lookup("ask_homeserver"))
+        askHS = xproxy && xproxy.asBool();
+
+    hsTimeout = -1;
+    if(VarCRef xtm = cfg.lookup("ask_homeserver_timeout"))
+        if(const char *stm = xtm.asCString())
+        {
+            u64 tmp;
+            if(strToDurationMS_Safe(&tmp, stm))
+                hsTimeout = int(tmp);
+        }
+
+    if(!this->homeserver.isValid())
+    {
+        checkHS = false;
+        askHS = false;
+    }
+
+    printf("MxSearchHandler: max. client request size = %u\n", (unsigned)searchcfg.maxsize);
     printf("MxSearchHandler: avatar_url = %s\n", searchcfg.avatar_url.c_str());
     printf("MxSearchHandler: displayname = %s\n", searchcfg.displaynameField.c_str());
     printf("MxSearchHandler: searching %u fields:\n", (unsigned)searchcfg.fields.size());
     for(MxStore::SearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
         printf(" + %s [fuzzy = %u]\n", it->first.c_str(), it->second.fuzzy);
     printf("MxSearchHandler: Reverse proxy enabled: %s\n", reverseproxy ? "yes" : "no");
+    printf("MxSearchHandler: Ask homeserver: %s\n", askHS ? "yes" : "no");
+    printf("MxSearchHandler: Ask homeserver timeout: %d ms\n", hsTimeout);
+    printf("MxSearchHandler: Check homeserver: %s\n", checkHS ? "yes" : "no");
+}
+
+void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
+{
+    std::vector<MxStore::SearchResult> results;
+    _store.search(results, searchcfg, term);
+
+    std::sort(results.begin(), results.end());
+
+    size_t N = results.size();
+    if (limit && limit < N)
+        N = limit;
+
+    dst.makeMap().v->map()->clear(*dst.mem); // make sure it's an empty map
+
+    dst["limited"] = N < results.size();
+    VarRef ra = dst["results"].makeArray(N);
+
+    const bool useAvatar = !searchcfg.avatar_url.empty();
+    for (size_t i = 0; i < N; ++i)
+    {
+        VarRef d = ra.at(i).makeMap();
+        const MxStore::SearchResult& r = results[i];
+        if (useAvatar)
+            d["avatar_url"] = searchcfg.avatar_url.c_str();
+        if (!r.displayname.empty())
+            d["display_name"] = r.displayname.c_str();
+        d["user_id"] = r.str.c_str();
+    }
 }
 
 int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
@@ -143,53 +198,60 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                 if(rd > 0)
                 {
                     size_t limit = 10;
-                    const char *term = NULL;
+                    std::string term; // not const char * on purpose!
 
                     if(VarCRef xlimit = vars.root().lookup("limit"))
                         if(const u64 *plimit = xlimit.asUint())
                             limit = size_t(*plimit);
 
                     if(VarCRef xterm = vars.root().lookup("search_term"))
-                        term = xterm.asCString();
+                        if(const char *pterm = xterm.asCString())
+                            term = pterm;
 
-                    DataTree hsdata(DataTree::TINY);
-                    MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), this->homeserver, vars.root()); // FIXME: timeout
-
-                    if(term)
+                    if(!term.length())
                     {
-                        std::vector<MxStore::SearchResult> results;
-                        _store.search(results, searchcfg, term);
-
-                        std::sort(results.begin(), results.end());
-
-                        size_t N = results.size();
-                        if(limit && limit < N)
-                            N = limit;
-
-                        // re-use the same mem to generate output
-                        // 'term' var will dangle once this is called
-                        Var::Map *m = vars.root().v->map();
-                        assert(m);
-                        m->clear(vars);
-
-                        vars.root()["limited"] = N < results.size();
-                        VarRef ra = vars.root()["results"].makeArray(N);
-
-                        const bool useAvatar = !searchcfg.avatar_url.empty();
-                        for(size_t i = 0; i < N; ++i)
-                        {
-                            VarRef dst = ra.at(i).makeMap();
-                            const MxStore::SearchResult& r = results[i];
-                            if(useAvatar)
-                                dst["avatar_url"] = searchcfg.avatar_url.c_str();
-                            if(!r.displayname.empty())
-                                dst["display_name"] = r.displayname.c_str();
-                            dst["user_id"] = r.str.c_str();
-
-                        }
-                        writeJson(dst, vars.root(), false);
-                        return 0;
+                        mg_send_http_error(conn, 400, "search_term not provided");
+                        return 400;
                     }
+
+                    DataTree out(DataTree::TINY);
+
+                    if(askHS)
+                    {
+                        // kick off search in background + re-use vars 
+                        // (this invalidates all strings, that's why term is std::string)
+                        vars.root().v->map()->clear(vars);
+                        auto fut = std::async(&MxSearchHandler::doSearch, this, vars.root(), term.c_str(), limit);
+
+                        // forward client request as-is
+                        MxGetJsonResult jr = mxRequestJson(RQ_POST, out.root(), this->homeserver, vars.root(), hsTimeout);
+                        bool useHS = jr.code == MXGJ_OK && !out.root().lookup("error");
+                        if(checkHS)
+                        {
+                            if(jr.code != MXGJ_OK)
+                            {
+                                mg_send_http_error(conn, 500, "Homeserver did not send usable JSON. Interally reported error:\n%d %s", jr.httpstatus, jr.errmsg.c_str());
+                                return 500;
+                            }
+                            if(!useHS)
+                            {
+                                std::string jsonerr = dumpjson(out.root());
+                                mg_send_http_error(conn, jr.httpstatus, "%s", jsonerr.c_str());
+                                return jr.httpstatus;
+                            }
+                        }
+
+                        if(!useHS)
+                            out.root().makeMap().v->map()->clear(out);
+
+                        fut.wait();
+                        out.root().merge(vars.root(), MERGE_APPEND_ARRAYS | MERGE_RECURSIVE);
+                    }
+                    else
+                        doSearch(out.root(), term.c_str(), limit);
+
+                    writeJson(dst, out.root(), false);
+                    return 0;
                 }
             }
         }
@@ -204,7 +266,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 MxReverseProxyHandler::MxReverseProxyHandler(VarCRef cfg)
     : RequestHandler(ClientPrefix, MimeType)
 {
-
+    homeserver.load(cfg.lookup("homeserver"));
 }
 
 int MxReverseProxyHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const

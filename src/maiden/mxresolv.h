@@ -3,15 +3,15 @@
 #include <string>
 #include <vector>
 #include "types.h"
+#include "webstuff.h"
 
 struct MxResolvResult
 {
-    void parse(const char *s); // "host:port"
+    bool parse(const char *s);
     bool operator<(const MxResolvResult& o) const;
     bool validate();
 
-    std::string host;
-    unsigned port;
+    URLTarget target;
 
     // only for sorting; can be ignored otherwise
     int priority;

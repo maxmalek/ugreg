@@ -275,7 +275,7 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
     // get matrix server name from host's .well-known
     MxResolvResult resolv;
     std::string account;
-    MxStore::LookupResult res = _store.getCachedHomeserverForHost(sn, resolv.host, resolv.port);
+    MxStore::LookupResult res = _store.getCachedHomeserverForHost(sn, resolv.target.host, resolv.target.port);
     if(res == MxStore::FAILED)
         return sendError(conn, 502, M_NOT_FOUND, "No homeserver exists for this host (cached)");
 
@@ -300,18 +300,18 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
     {
         resolv = list[i];
         printf("Contacting homeserver %s for host %s [%u/%u] ...\n",
-            resolv.host.c_str(), sn, unsigned(i+1), unsigned(list.size()));
+            resolv.target.host.c_str(), sn, unsigned(i+1), unsigned(list.size()));
         DataTree tmp(DataTree::TINY);
         std::ostringstream uri;
         uri << "/_matrix/federation/v1/openid/userinfo?access_token=" << tok; // FIXME: quote
         URLTarget target;
-        target.host = resolv.host;
+        target.host = resolv.target.host;
         target.path = uri.str();
-        target.port = resolv.port;
+        target.port = resolv.target.port;
         target.ssl = true; // FIXME: autodetect based on port or can we deduce this from something else?
 
         MxGetJsonResult jr = mxRequestJson(RQ_GET, tmp.root(), target, VarCRef(), 5000, 4*1024);
-        switch(jr)
+        switch(jr.code)
         {
             case MXGJ_OK:
                 res = MxStore::VALID; // the host is good
@@ -323,12 +323,12 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
 
             case MXGJ_PARSE_ERROR:
                 // don't consider this a good host; maybe the webserver config is messed up?
-                errors << resolv.host << ": Federation API sent malformed reply\n";
+                errors << resolv.target.host << ": Federation API sent malformed reply\n";
                 break; // try next
 
             case MXGJ_CONNECT_FAILED:
                 // unable to connect is what we'd expect from a downed server
-                errors << resolv.host << ": Server looks down from here\n";
+                errors << resolv.target.host << ": Server looks down from here\n";
                 break; // try next
         }
     }
@@ -339,13 +339,13 @@ out:
     if(res == MxStore::VALID)
     {
         if(storeHS)
-            _store.storeHomeserverForHost(sn, resolv.host.c_str(), resolv.port);
+            _store.storeHomeserverForHost(sn, resolv.target.host.c_str(), resolv.target.port);
     }
     else
         return sendError(conn, 502, M_NOT_FOUND, ("Failed to resolve good homeserver, errors:\n" + errors.str()).c_str());
 
     if(account.empty())
-        return sendError(conn, 500, M_NOT_FOUND, (resolv.host + ": Access token does not belong to a known user").c_str());
+        return sendError(conn, 500, M_NOT_FOUND, (resolv.target.host + ": Access token does not belong to a known user").c_str());
 
 
     // Keep trying until we get un unused token (the chance that this actually loops is pretty much zero)
@@ -354,7 +354,7 @@ out:
         mxGenerateToken(thetoken, sizeof(thetoken), false);
     while(!_store.register_(thetoken, sizeof(thetoken), expMS, account.c_str()));
 
-    // Same thing as sydent does: Supply both keys to make older clients happy
+    // Same thing as sydent does: Supply both 'token' and 'access_token' to make older clients happy
     dst.WriteStr("{\"token\": \"" TOKEN_PREFIX);
     dst.Write(thetoken, sizeof(thetoken));
     dst.WriteStr("\", \"access_token\": \"" TOKEN_PREFIX);

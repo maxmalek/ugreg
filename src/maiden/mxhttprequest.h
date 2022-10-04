@@ -6,11 +6,19 @@
 
 struct mg_connection;
 
-enum MxGetJsonResult
+enum MxGetJsonCode
 {
     MXGJ_OK,
     MXGJ_CONNECT_FAILED,
-    MXGJ_PARSE_ERROR
+    MXGJ_PARSE_ERROR,
+    MXGJ_HTTP_ERROR
+};
+
+struct MxGetJsonResult
+{
+    MxGetJsonCode code;
+    int httpstatus;
+    std::string errmsg;
 };
 
 mg_connection* mxConnectTo(const URLTarget& target);

@@ -17,19 +17,13 @@
 #include <resolv.h>
 #endif
 
-void MxResolvResult::parse(const char* s)
+bool MxResolvResult::parse(const char* s)
 {
-    const char* colon = strrchr(s, ':');
-    if (colon)
-    {
-        port = atoi(colon + 1);
-        host.assign(s, colon);
-    }
-    else
-        host = s;
+    bool ok = target.parse(s, 8448);
 
     priority = -1; // .well-known should be preferred (for SRV records this is >= 0)
     weight = 1;
+    return ok;
 }
 
 bool MxResolvResult::operator<(const MxResolvResult& o) const
@@ -40,9 +34,9 @@ bool MxResolvResult::operator<(const MxResolvResult& o) const
 
 bool MxResolvResult::validate()
 {
-    if(!port)
-        port = 8448; // default matrix port
-    return !host.empty();
+    if(!target.port)
+        target.port = 8448; // default matrix port
+    return !target.host.empty();
 }
 
 static void srvLookup(MxResolvList &dst, const char *host)
@@ -65,8 +59,8 @@ static void srvLookup(MxResolvList &dst, const char *host)
                 printf("SRV: %s:%u (prio=%d, weight=%d)\n",
                     p->Data.Srv.pNameTarget, p->Data.Srv.wPort, p->Data.Srv.wPriority, p->Data.Srv.wWeight);
                 MxResolvResult res;
-                res.host = p->Data.Srv.pNameTarget;
-                res.port = p->Data.Srv.wPort;
+                res.target.host = p->Data.Srv.pNameTarget;
+                res.target.port = p->Data.Srv.wPort;
                 res.priority = p->Data.Srv.wPriority;
                 res.weight = p->Data.Srv.wWeight;
                 // TODO: handle TTL?
@@ -161,11 +155,11 @@ MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t max
     target.path = what;
     target.ssl = true;
 
-    MxGetJsonResult err = mxRequestJson(RQ_GET, tmp.root(),target, VarCRef(), (int)timeoutMS, maxsize);
-    if(err == MXGJ_OK)
+    MxGetJsonResult jr = mxRequestJson(RQ_GET, tmp.root(),target, VarCRef(), (int)timeoutMS, maxsize);
+    if(jr.code == MXGJ_OK)
     {
         MxResolvResult res;
-        res.port = 0;
+        res.target.port = 0;
         // root is now known to be a map with at least 1 element
         if(VarCRef ref = tmp.root().lookup("m.server"))
         {
@@ -174,7 +168,7 @@ MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t max
                 res.parse(s);
                 if(res.validate())
                 {
-                    printf("MxResolv/GET: Got %s:%u\n", res.host.c_str(), res.port);
+                    printf("MxResolv/GET: Got %s:%u\n", res.target.host.c_str(), res.target.port);
                     ret.push_back(res);
                 }
             }
