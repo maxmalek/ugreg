@@ -734,6 +734,126 @@ Var::CompareResult Var::compare(CompareMode cmp, const TreeMem& mymem, const Var
     return CMP_RES_NA;
 }
 
+bool Var::compareExact(const TreeMem& mymem, const Var& o, const TreeMem& othermem) const
+{
+    return &mymem == &othermem ? compareExactSameMem(o) : _compareExactDifferentMem(mymem, o, othermem);
+}
+
+bool Var::compareExactSameMem(const Var& o) const
+{
+    // must be same type, same length
+    if(meta != o.meta)
+        return false;
+
+    // value comparison (includes strings, which must have the same ref)
+    if(!isContainer())
+        return o.u.ui == o.u.ui;
+
+    // now we know it's a container of the same type and the same length
+    // (unless it's a map, that we we don't know yet)
+    const Type ty = this->type();
+    switch(ty)
+    {
+        case TYPE_ARRAY:
+        {
+            const Var *a = this->array_unsafe();
+            const Var *b = o.array_unsafe();
+            if(a != b)
+            {
+                const size_t N = this->_size(); // already know that sizes are equal
+                for(size_t i = 0; i < N; ++i)
+                    if(!a[i].compareExactSameMem(b[i]))
+                        return false;
+            }
+            return true;
+        }
+
+        case TYPE_MAP:
+        {
+            const Var::Map * const a = this->map_unsafe();
+            const Var::Map * const b = o.map_unsafe();
+            if(a != b)
+            {
+                const size_t N = a->size();
+                if(N != b->size())
+                    return false;
+                for(Var::Map::Iterator it = a->begin(); it != a->end(); ++it)
+                {
+                    StrRef k = it.key();
+                    const Var *bo = b->getNoFetch(k);
+                    if(!bo || !it.value().compareExactSameMem(*bo))
+                        return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    assert(false);
+    return false;
+}
+
+bool Var::_compareExactDifferentMem(const TreeMem& mymem, const Var& o, const TreeMem& othermem) const
+{
+    // must be same type, same length
+    if (meta != o.meta)
+        return false;
+
+    // value comparison
+    if (!isContainer())
+    {
+        if(const char* a = asCString(mymem)) // compare string contents separately
+        {
+            const char *b = o.asCString(othermem);
+            return !strcmp(a, b);
+        }
+        return o.u.ui == o.u.ui;
+    }
+
+    // now we know it's a container of the same type and the same length
+    // (unless it's a map, that we we don't know yet)
+    const Type ty = this->type();
+    switch (ty)
+    {
+        case TYPE_ARRAY:
+        {
+            const Var* a = this->array_unsafe();
+            const Var* b = o.array_unsafe();
+            if (a != b)
+            {
+                const size_t N = this->_size(); // already know that sizes are equal
+                for (size_t i = 0; i < N; ++i)
+                    if (!a[i]._compareExactDifferentMem(mymem, b[i], othermem))
+                        return false;
+            }
+            return true;
+        }
+
+        case TYPE_MAP:
+        {
+            const Var::Map* const a = this->map_unsafe();
+            const Var::Map* const b = o.map_unsafe();
+            if (a != b)
+            {
+                const size_t N = a->size();
+                if (N != b->size())
+                    return false;
+                for (Var::Map::Iterator it = a->begin(); it != a->end(); ++it)
+                {
+                    StrRef k = it.key();
+                    const Var* bo = b->getNoFetch(k);
+                    if (!bo || !it.value()._compareExactDifferentMem(mymem, *bo, othermem))
+                        return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    assert(false);
+    return false;
+}
+
 size_t Var::size() const
 {
     switch(_topbits())
@@ -893,8 +1013,8 @@ void _VarMap::_checkmem(const TreeMem& m) const
 #endif
 }
 
-_VarMap::_VarMap(TreeMem& mem)
-    : _storage(mem)
+_VarMap::_VarMap(TreeMem& mem, size_t prealloc)
+    : _storage(mem, prealloc)
     , _extra(NULL)
 #ifdef _DEBUG
     , _mymem(&mem)

@@ -47,7 +47,7 @@ void strpool_discard( strpool_t* pool, STRPOOL_U64 handle );
 
 int strpool_incref( strpool_t* pool, STRPOOL_U64 handle );
 int strpool_decref( strpool_t* pool, STRPOOL_U64 handle );
-int strpool_getref( strpool_t* pool, STRPOOL_U64 handle );
+int strpool_getref( strpool_t const* pool, STRPOOL_U64 handle );
 
 int strpool_isvalid( strpool_t const* pool, STRPOOL_U64 handle );
 
@@ -1229,7 +1229,7 @@ int strpool_decref( strpool_t* pool, STRPOOL_U64 handle )
     }
 
 
-int strpool_getref( strpool_t* pool, STRPOOL_U64 handle )
+int strpool_getref( strpool_t const* pool, STRPOOL_U64 handle )
     {
     strpool_internal_entry_t* entry = strpool_internal_get_entry( pool, handle );
     if( entry ) return entry->refcount;

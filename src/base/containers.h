@@ -28,6 +28,9 @@ public:
     typedef T value_type;
     typedef SZ size_type;
 
+    struct ReserveTag {}; // just reserve space but don't init
+    struct InitTag {}; // resize+init behavior
+
     // this is the most lazy thing and should suffice
     typedef T* iterator;
     typedef const T* const_iterator;
@@ -37,8 +40,14 @@ public:
     {
         assert(!_ptr && "LVector not dealloc'd!");
     }
-    LVector(Allocator& mem, SZ sz)
-        : _ptr((T*)mem.Alloc(sz * sizeof(T)))
+    LVector(Allocator& mem, SZ sz, ReserveTag)
+        : _ptr((T*)(sz ? mem.Alloc(sz * sizeof(T)) : NULL))
+        , _sz(0), _cap(sz)
+    {
+    }
+
+    LVector(Allocator& mem, SZ sz, InitTag)
+        : _ptr((T*)(sz ? mem.Alloc(sz * sizeof(T)) : NULL))
         , _sz(sz), _cap(sz)
     {
         mem_construct_default(_ptr, _ptr + sz);

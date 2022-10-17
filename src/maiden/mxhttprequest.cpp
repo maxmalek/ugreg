@@ -69,7 +69,7 @@ MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& targ
         std::ostringstream os;
         switch(rqt)
         {
-            default: assert(false); [[fall_through]];
+            default: assert(false); [[fallthrough]];
             case RQ_GET: formatGet(os, target); break;
             case RQ_POST: formatPost(os, target); break; // TODO: data?
         }

@@ -44,7 +44,7 @@
                     //"avatar_url": "mxc://...",
                     "homeserver": { "host": "localhost", "port": 8008, "ssl": false },
                     "reverseproxy": true,
-                    "ask_homeserver": true, // forward search requests to homeserver
+                    "ask_homeserver": false, // forward search requests to homeserver
                     "check_homeserver": false, // require homeserver to return a valid search result before we merge in our own
                     "ask_homeserver_timeout": "3s",
                 },

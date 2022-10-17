@@ -38,30 +38,21 @@ DebugStrpoolHandler::~DebugStrpoolHandler()
 
 int DebugStrpoolHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
-    char *coll = NULL;
-    size_t n = 0;
+    StringPool::StrColl coll;
 
     {
         std::shared_lock lock(_tree.mutex);
-        coll = _tree.collate(&n);
+        coll = _tree.collate();
     }
 
     char buf[64];
-    sprintf(buf, "--- %u strings in pool ---\n", (unsigned)n);
+    sprintf(buf, "--- %u strings in pool ---\n", (unsigned)coll.size());
     dst.WriteStr(buf);
 
-    if(coll)
+    for(size_t i = 0; i < coll.size(); ++i)
     {
-        const char *s = coll;
-        for(size_t i = 0; i < n; ++i)
-        {
-            for(char c; (c = *s++); )
-                dst.Put(c);
-            dst.Put('\n');
-        }
-
-        std::shared_lock lock(_tree.mutex);
-        _tree.collateFree(coll);
+        dst.Write(coll[i].s.c_str(), coll[i].s.length());
+        dst.Put('\n');
     }
 
     return 0;

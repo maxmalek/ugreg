@@ -79,7 +79,7 @@ public:
 
     enum Type
     {
-        TYPE_NULL, // Important that this is 0
+        TYPE_NULL = 0, // Important that this is 0
         TYPE_BOOL,
         // numeric types
         TYPE_INT,
@@ -180,7 +180,8 @@ public:
 
     bool equals(const TreeMem& mymem, const Var& o, const TreeMem& othermem) const;
     CompareResult compare(CompareMode cmp, const TreeMem& mymem, const Var& o, const TreeMem& othermem) const;
-
+    bool compareExact(const TreeMem& mymem, const Var& o, const TreeMem& othermem) const;
+    bool compareExactSameMem(const Var& o) const;
     // transmute into type (does not lose data if the type is not changed)
     bool setBool(TreeMem& mem, bool x);
     s64 setInt(TreeMem& mem, s64 x);
@@ -263,6 +264,7 @@ public:
 
 private:
     int numericCompare(const Var& b) const; // -1 if less, 0 if eq, +1 if greater
+    bool _compareExactDifferentMem(const TreeMem& mymem, const Var& o, const TreeMem& othermem) const;
 };
 
 // -------------------------------------------------
@@ -321,7 +323,7 @@ public:
     typedef _VarExtra Extra;
 
     void destroy(TreeMem& mem); // deletes self
-    _VarMap(TreeMem& mem);
+    _VarMap(TreeMem& mem, size_t prealloc = 0);
     _VarMap(_VarMap&&) noexcept;
 
     void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags);

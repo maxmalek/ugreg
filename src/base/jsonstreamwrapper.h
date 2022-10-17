@@ -63,6 +63,9 @@ public:
 
     void setEOF();
 
+    //const void *ptr() const { return _cur; }
+    //size_t avail() const { return _last - _cur; }
+
     // ----- DO NOT TOUCH ------------
     void _Refill();
 

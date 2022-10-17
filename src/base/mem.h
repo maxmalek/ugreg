@@ -5,6 +5,8 @@
 #include "types.h"
 #include "strpool.h"
 #include <assert.h>
+#include <vector>
+#include <string>
 
 // operator new() without #include <new>
 // Unfortunately the standard mandates the use of size_t, so we need stddef.h the very least.
@@ -105,8 +107,15 @@ public:
     // decrease refcount and drop if no longer referenced
     void freeS(StrRef s);
 
-    char *collate(size_t *n) const;
-    void collateFree(char *coll) const;
+    struct StrAndCount
+    {
+        std::string s;
+        size_t count;
+        StrRef ref;
+    };
+    typedef std::vector<StrAndCount> StrColl;
+
+    StrColl collate() const; // quite expensive to call
     void defrag();
 
     // translate one foreign StrRef to own memory space. Does not add or incref in own pool.

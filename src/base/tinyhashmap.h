@@ -523,7 +523,8 @@ public:
     TinyHashMap()
     {
     }
-    TinyHashMap(Allocator& mem, size_t = 0)
+    TinyHashMap(Allocator& mem, size_t prealloc)
+        : _vec(mem, prealloc, TVec::ReserveTag{} )
     {
     }
     ~TinyHashMap()

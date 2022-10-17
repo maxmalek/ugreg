@@ -143,17 +143,23 @@ void StringPool::freeS(StrRef s)
         strpool_discard(&_sp, s);
 }
 
-char* StringPool::collate(size_t *n) const
+StringPool::StrColl StringPool::collate() const
 {
-    int i = 0;
-    char *c = strpool_collate(&_sp, &i);
-    *n = i;
-    return c;
-}
+    int n = 0;
+    char * const coll = strpool_collate(&_sp, &n);
+    StrColl v(n);
+    const char *p = coll;
+    for(int i = 0; i < n; ++i)
+    {
+        std::string& s = v[i].s;
+        s = p;
+        p += s.length() + 1;
+        v[i].ref = strpool_lookup(&_sp, s.c_str(), (int)s.length());
+        v[i].count = strpool_getref(&_sp, v[i].ref);
+    }
 
-void StringPool::collateFree(char* coll) const
-{
     strpool_free_collated(&_sp, coll);
+    return v;
 }
 
 void StringPool::defrag()
