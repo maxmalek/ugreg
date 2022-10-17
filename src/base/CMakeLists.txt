@@ -57,6 +57,8 @@ set(src
     scopetimer.h
     webstuff.cpp
     webstuff.h
+    bj.cpp
+    bj.h
 )
 
 add_library(base ${src})
