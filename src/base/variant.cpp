@@ -18,9 +18,8 @@ const Var Var::Null;
 
 static _VarMap*_NewMap(TreeMem& mem, size_t prealloc)
 {
-    (void)prealloc; // TODO: use this
     void *p = mem.Alloc(sizeof(_VarMap));
-    return _X_PLACEMENT_NEW(p) _VarMap(mem);
+    return _X_PLACEMENT_NEW(p) _VarMap(mem, prealloc);
 }
 // ... use m->destroy(mem) to delete it
 
@@ -223,8 +222,16 @@ Var Var::clone(TreeMem &dstmem, const TreeMem& srcmem) const
     {
     case BITS_STRING:
     {
-        PoolStr ps = srcmem.getSL(u.s);
-        dst.u.s = dstmem.put(ps.s, ps.len);
+        if(&srcmem == &dstmem)
+        {
+            dst.u.s = this->u.s;
+            dstmem.increfS(this->u.s);
+        }
+        else
+        {
+            PoolStr ps = srcmem.getSL(u.s);
+            dst.u.s = dstmem.put(ps.s, ps.len);
+        }
         break;
     }
     case BITS_ARRAY:

@@ -110,8 +110,8 @@ public:
     struct StrAndCount
     {
         std::string s;
-        size_t count;
-        StrRef ref;
+        size_t count = 0;
+        StrRef ref = 0;
     };
     typedef std::vector<StrAndCount> StrColl;
 
