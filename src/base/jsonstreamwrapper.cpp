@@ -6,10 +6,10 @@
 #include <algorithm>
 
 BufferedReadStream::BufferedReadStream(InitFunc initf, ReadFunc rf, char* buf, size_t bufsz)
-    : _cur(0), _buf(buf), _last(0), _dst(0), _bufsz(bufsz), _lastread(0), _count(0)
+    : _cur(0), _buf(buf), _end(0), _dst(0), _bufsz(bufsz), _lastread(0), _count(0)
     , _readf(rf), _initf(initf), _eof(false), _autoEOF(true)
 {
-    assert(rf && buf && bufsz > 4);
+    assert(rf && buf && bufsz);
 }
 
 BufferedReadStream::~BufferedReadStream()
@@ -28,7 +28,7 @@ void BufferedReadStream::init()
 
 const BufferedReadStream::Ch* BufferedReadStream::Peek4() const
 {
-    return (_cur + 4 - !_eof <= _last) ? _cur : 0;
+    return availBuffered() >= 4 ? _cur : 0;
 }
 
 void BufferedReadStream::setEOF()
@@ -36,9 +36,18 @@ void BufferedReadStream::setEOF()
     if(!_eof)
     {
         _buf[0] = '\0';
+        _buf[1] = '\0';
         _eof = true;
-        ++_last;
+        _end = _buf;
     }
+}
+
+void BufferedReadStream::advanceBuffered(size_t n)
+{
+    assert(_cur + n <= _end);
+    _cur += n;
+    if(_cur == _end)
+        _Refill();
 }
 
 void BufferedReadStream::_Refill()
@@ -48,7 +57,7 @@ void BufferedReadStream::_Refill()
         _count += _lastread;
         const size_t rd = _readf(_buf, _bufsz, this);
         _lastread = rd;
-        _last = _buf + rd - 1;
+        _end = _buf + rd;
         _cur = _buf;
 
         if(!rd && _autoEOF)
@@ -96,11 +105,12 @@ void BufferedWriteStream::Write(const char* buf, size_t n)
     {
         const size_t space = _last - _dst;
         const size_t copy = std::min(space, n);
-        n -= copy;
         memcpy(_dst, buf, copy);
         _dst += copy;
         if(_dst == _last)
             Flush();
+        n -= copy;
+        buf += copy;
     }
 }
 
@@ -156,9 +166,9 @@ BufferedFILEWriteStream::BufferedFILEWriteStream(void* FILEp, char* buf, size_t 
 {
 }
 
-size_t BufferedFILEWriteStream::_Write(const void* dst, size_t bytes, BufferedWriteStream* self)
+size_t BufferedFILEWriteStream::_Write(const void* src, size_t bytes, BufferedWriteStream* self)
 {
     BufferedFILEWriteStream* me = static_cast<BufferedFILEWriteStream*>(self);
     FILE* fh = static_cast<FILE*>(me->_fh);
-    return fwrite(dst, 1, bytes, fh);
+    return fwrite(src, 1, bytes, fh);
 }

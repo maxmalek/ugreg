@@ -28,10 +28,14 @@ public:
     inline Ch Take()
     {
         Ch c = *_cur; // If this crashes: Did you forget to call init()?
-        if(_cur < _last)
+
+        if(_cur < _end)
+        {
             ++_cur;
-        else
-            _Refill();
+            if(_cur == _end)
+                _Refill();
+        }
+
         return c;
     }
     inline size_t Tell() const { return _count + static_cast<size_t>(_cur - _buf); }
@@ -45,7 +49,7 @@ public:
     inline size_t PutEnd(Ch* begin) { return static_cast<size_t>(_dst - begin); }
 
     // intentionally not defined so that it can't be used as an output stream by accident
-    //inline void Flush() {} 
+    //inline void Flush() {}
 
 
     // ------------ non-rapidjson-API -----------------
@@ -58,20 +62,21 @@ public:
     // Check whether all consumable bytes were consumed
     inline bool done() const
     {
-        return _eof && _cur == _last;
+        return _eof;
     }
 
     void setEOF();
 
-    //const void *ptr() const { return _cur; }
-    //size_t avail() const { return _last - _cur; }
+    const void *ptr() const { return _cur; }
+    size_t availBuffered() const { return _end - _cur; }
+    void advanceBuffered(size_t n); // skip up to availBuffered() bytes
 
     // ----- DO NOT TOUCH ------------
     void _Refill();
 
     Ch* _cur;
     Ch* const _buf;
-    Ch* _last;
+    Ch* _end;
     Ch* _dst;
     const size_t _bufsz;
     size_t _lastread;
