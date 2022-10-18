@@ -6,3 +6,6 @@ target_link_libraries(testparser base alldeps)
 
 add_executable(testcontainer testcontainer.cpp)
 target_link_libraries(testcontainer base alldeps)
+
+add_executable(testbj testbj.cpp)
+target_link_libraries(testbj base alldeps)

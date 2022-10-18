@@ -1,12 +1,29 @@
 #include "bj.h"
-#include "jsonstreamwrapper.h"
+
 #include <vector>
 #include <deque>
+#include <map>
 #include <assert.h>
 #include <math.h>
+#include <algorithm>
+
 #include "treemem.h"
+#include "jsonstreamwrapper.h"
+#include "util.h"
 
 namespace bj {
+
+static const size_t MaxSizeBits = sizeof(u64) * CHAR_BIT;
+
+
+template<typename T>
+static T _fail(T val, const char *msg)
+{
+    puts(msg);
+    return val;
+}
+
+#define FAIL(ret, msg) _fail(ret, msg)
 
 static const union {
     int dummy;
@@ -14,7 +31,7 @@ static const union {
 } nativeendian = { 1 };
 
 // must fit in 3 bits
-enum Op
+enum Op : u8
 {
     OP_VALUE,
     OP_INT_POS,
@@ -26,13 +43,18 @@ enum Op
     OP_COPY_CONST,
 };
 
+inline static u8 encodeOp(Op op, u8 bits)
+{
+    return (op << 5) | bits;
+}
+
 struct Window
 {
     Window() : w(0), mask(0) {}
 
     void init(u8 wbits)
     {
-        mask = size_t(1) << wbits;
+        mask = (size_t(1) << wbits) - 1;
         v.clear();
         v.resize(size_t(1) << wbits, NULL);
     }
@@ -42,7 +64,7 @@ struct Window
     const Var *getOffs(size_t offset) const
     {
         assert(offset);
-        return v[(w - offset) & mask];
+        return offset <= mask ? v[(w - offset) & mask] : NULL;
     }
     size_t find(const Var *x) const // 0 when not found
     {
@@ -64,7 +86,7 @@ struct ReadState
     bool init()
     {
         if(src.done())
-            return false;
+            return FAIL(false, "stream end");
         u8 wbits = src.Take();
         win.init(wbits);
         return true;
@@ -74,10 +96,11 @@ struct ReadState
     TreeMem& mem;
 
     //------------------------
-    std::vector<const Var*> constants;
+    std::vector<Var> constants;
     Window win;
+    std::string tmpstr;
 
-    // temporary storage for keys and constants
+    // temporary storage for keys
     // important that this never moves elements because
     // we're keeping pointers to elements in the window!
     // a std::vector is unsuitable, but a std::deque doesn't reallocate so it's fine
@@ -88,26 +111,42 @@ struct ReadState
     {
         for(TmpStorage::iterator it = tmp.begin(); it != tmp.end(); ++it)
             it->clear(mem);
+        for(size_t i = 0; i < constants.size(); ++i)
+            constants[i].clear(mem);
     }
 };
 
-inline static size_t readnum(ReadState& rd)
+inline static bool readnum(u64& dst, ReadState& rd)
 {
-    size_t ret = 0;
+    dst = 0;
+    u64 sh = 0;
     u8 c;
     do
     {
-        ret <<= 7;
+        if(rd.src.done())
+            return FAIL(false, "stream end");
+        if(sh > MaxSizeBits)
+            return FAIL(false, "too many bits");
         c = rd.src.Take();
-        ret |= c & 0x7f;
+        const size_t add = u64(c & 0x7f) << sh;
+        if(add_check_overflow(&dst, dst, add))
+            return FAIL(false, "overflow");
+        sh += 7;
     }
     while((c & 0x80) && !rd.src.done());
-    return ret;
+
+    return true;
 }
 
-inline static size_t smallnum5(ReadState& rd, u8 a)
+inline static bool smallnum5(u64& dst, ReadState& rd, u8 a)
 {
-    return a < 0b11111 ? a : readnum(rd) + a;
+    if(a < 0b11111)
+    {
+        dst = a;
+        return true;
+    }
+
+    return readnum(dst, rd) && !add_check_overflow<u64>(&dst, dst, a);
 }
 
 template<typename T>
@@ -124,7 +163,7 @@ static bool readLE(T& dst, ReadState& rd)
         for(size_t i = 0; i < sizeof(T); ++i)
         {
             if(rd.src.done())
-                return false;
+                return FAIL(false, "stream end");
             u.b[i] = rd.src.Take();
         }
     }
@@ -133,7 +172,7 @@ static bool readLE(T& dst, ReadState& rd)
         for (size_t i = sizeof(T); i --> 0; )
         {
             if (rd.src.done())
-                return false;
+                return FAIL(false, "stream end");
             u.b[i] = rd.src.Take();
         }
     }
@@ -146,7 +185,7 @@ inline static bool readval(Var& dst, ReadState& rd)
 {
 start:
     u8 a = rd.src.Take();
-    const u8 op = a >> 5;
+    const Op op = Op(a >> 5);
     a &= 0b11111;
     switch(op)
     {
@@ -174,18 +213,26 @@ start:
                         if(readLE(ff, rd))
                             f = ff;
                         else
-                            return false;
+                            return FAIL(false, "read float32");
                     }
                     break;
                     case 1: // Double
                         if (!readLE(f, rd))
-                            return false;
+                            return FAIL(false, "read double");
                     break;
                     case 2: // Read +int, cast to f
-                        f = (double)readnum(rd);
+                    {
+                        u64 tmp;
+                        if(!readnum(tmp, rd))
+                            return FAIL(false, "read +int -> f");
+                        f = (double)tmp;
                         break;
+                    }
                     case 3: // Read -int, cast to f
-                        f = -(double)readnum(rd);
+                        u64 tmp;
+                        if(!readnum(tmp, rd))
+                            return FAIL(false, "read -int -> f");
+                        f = -(double)tmp;
                         break;
                 }
                 dst.setFloat(rd.mem, f);
@@ -194,96 +241,145 @@ start:
             }
             if(a == 0b01000) // Define constants
             {
-                size_t i = readnum(rd);
-                const size_t N = readnum(rd);
-                const size_t end = i + N;
+                u64 i, n;
+                if(!readnum(i, rd))
+                    return FAIL(false, "def constants begin idx");
+                if(!readnum(n, rd))
+                    return FAIL(false, "def constants size");
+                const u64 end = i + n;
                 if(rd.constants.size() < end)
                     rd.constants.resize(end);
                 for( ; i < end; ++i)
                 {
-                    Var& k = rd.tmp.emplace_back();
+                    Var& k = rd.constants[i];
                     if(!readval(k, rd))
-                        return false;
-                    rd.constants[i] = &k;
+                        return FAIL(false, "def constants table");
                 }
                 goto start;
             }
 
             assert(false);
-            return false;
+            return FAIL(false, "OP_VALUE unknown bits");
 
         case OP_INT_POS:
-            dst.setUint(rd.mem, smallnum5(rd, a));
+        {
+            u64 n;
+            if(!smallnum5(n, rd, a))
+                return FAIL(false, "OP_INT_POS decode");
+            dst.setUint(rd.mem, n);
             rd.win.emit(&dst);
             return true;
+        }
         case OP_INT_NEG:
-            dst.setInt(rd.mem, -s64(smallnum5(rd, a)));
+        {
+            u64 n;
+            if(!smallnum5(n, rd, a))
+                return FAIL(false, "OP_INT_NEG decode");
+            if((s64(n) < 0) == (-s64(n) < 0))
+                return FAIL(false, "OP_INT_NEG consistency");
+            s64 neg = -s64(n);
+            if(neg >= 0)
+                return FAIL(false, "OP_INT_NEG still negative");
+            dst.setInt(rd.mem, neg);
             rd.win.emit(&dst);
             return true;
+        }
         case OP_STRING:
         {
-            const size_t len = smallnum5(rd, a);
-            std::string s;
-            s.resize(len);
-            for(size_t i = 0; i < len; ++i)
-                s[i] = rd.src.Take();
-            dst.setStr(rd.mem, s.c_str(), len);
+            u64 len;
+            if(!smallnum5(len, rd, a))
+                return FAIL(false, "OP_STRING length");
+            if(rd.src.availBuffered() >= len) // copy directly
+            {
+                dst.setStr(rd.mem, (const char*)rd.src.ptr(), len);
+                rd.src.advanceBuffered(len);
+            }
+            else // slow path
+            {
+                std::string& s = rd.tmpstr; // is a member to avoid repeated (re-)allocation
+                s.resize(len);
+                for(size_t i = 0; i < len; ++i)
+                {
+                    if(rd.src.done())
+                        return FAIL(false, "stream end while reading string");
+                    s[i] = rd.src.Take();
+                }
+                dst.setStr(rd.mem, s.c_str(), len);
+            }
+            /*u8 zero = rd.src.Take();
+            assert(!zero);
+            if(zero) return FAIL(false, "not zero");*/
             rd.win.emit(&dst);
             return true;
         }
         case OP_ARRAY:
         {
-            const size_t len = smallnum5(rd, a);
+            u64 len;
+            if(!smallnum5(len, rd, a))
+                return FAIL(false, "OP_ARRAY size");
             Var * const arr = dst.makeArray(rd.mem, len);
+            if(!arr)
+                return FAIL(false, "OP_ARRAY alloc");
             for(size_t i = 0; i < len; ++i)
                 if(!readval(arr[i], rd))
-                    return false;
+                    return FAIL(false, "OP_ARRAY value");
             rd.win.emit(&dst);
             return true;
         }
         case OP_MAP:
         {
-            const size_t len = smallnum5(rd, a);
+            u64 len;
+            if(!smallnum5(len, rd, a))
+                return FAIL(false, "OP_MAP size");
+            // It's VERY important here that the map's storage vector is
+            // pre-allocated properly, because we're taking ptrs to elements.
             Var::Map * const m  = dst.makeMap(rd.mem, len);
-            bool ok = true;
-            for(size_t i = 0; i < len && ok; ++i)
+            if(!m)
+                return FAIL(false, "OP_MAP alloc");
+            for(size_t i = 0; i < len; ++i)
             {
                 Var& k = rd.tmp.emplace_back();
-                ok = readval(k, rd)
-                    && (k.type() == Var::TYPE_STRING)
-                    && readval(m->getOrCreate(rd.mem, k.asStrRef()), rd);
+                if(!readval(k, rd))
+                    FAIL(false, "OP_MAP read key");
+                if(k.type() != Var::TYPE_STRING)
+                    FAIL(false, "OP_MAP key is not string");
+                if(!readval(m->getOrCreate(rd.mem, k.asStrRef()), rd))
+                    FAIL(false, "OP_MAP value");
             }
             rd.win.emit(&dst);
-            return ok;
+            return true;
         }
         case OP_COPY_PREV:
         {
-            if(const Var *prev = rd.win.getOffs(smallnum5(rd, a) + 1))
+            u64 off;
+            if(!smallnum5(off, rd, a) || add_check_overflow<u64>(&off, off, 1))
+                return FAIL(false, "OP_COPY_PREV read offset");
+            if(const Var *prev = rd.win.getOffs(off))
             {
                 dst = std::move(prev->clone(rd.mem, rd.mem));
                 rd.win.emit(prev);
                 return true;
             }
-            return false;
+            return FAIL(false, "OP_COPY_PREV get offs");
         }
         case OP_COPY_CONST:
         {
-            const size_t idx = smallnum5(rd, a);
+            size_t idx;
+            if(!smallnum5(idx, rd, a))
+                return FAIL(false, "OP_COPY_CONST read index");
             if(idx < rd.constants.size())
             {
-                if(const Var *c = rd.constants[idx])
-                {
-                    dst = std::move(c->clone(rd.mem, rd.mem));
-                    rd.win.emit(c);
-                    return true;
-                }
+                const Var& c = rd.constants[idx];
+                dst = std::move(c.clone(rd.mem, rd.mem));
+                rd.win.emit(&dst);
+                return true;
             }
-            return false;
+            return FAIL(false, "OP_COPY_CONST index out of bounds");
         }
     }
 
     assert(false);
-    return false;
+    return FAIL(false, "unhandled OP");
 }
 
 bool decode_json(VarRef dst, BufferedReadStream& src)
@@ -297,9 +393,20 @@ bool decode_json(VarRef dst, BufferedReadStream& src)
 
 struct WriteState
 {
+    static bool _RemoveIf(const StringPool::StrAndCount& a)
+    {
+        return a.count < 2;
+    }
+    static bool _Order(const StringPool::StrAndCount& a, const StringPool::StrAndCount& b)
+    {
+        return a.count > b.count // highest count comes first
+            || (a.count == b.count && a.s < b.s);
+    }
     WriteState(BufferedWriteStream& dst, const TreeMem& mem)
-        : dst(dst), mem(mem), strcoll(mem.collate())
+        : dst(dst), mem(mem)
     {}
+
+    size_t poolAndEmitStrings();
 
     BufferedWriteStream& dst;
     const TreeMem& mem;
@@ -307,35 +414,39 @@ struct WriteState
     //------------------------
     std::vector<const Var*> constants;
     Window win;
-    const StringPool::StrColl strcoll;
+
+    typedef std::map<StrRef, size_t> Ref2Idx;
+    Ref2Idx ref2idx;
 };
 
+// rem is part of another byte written before the rest of the encoded number,
+// -> can't just write to the output stream; need to buffer the result
 struct IntEncoder
 {
-    u8 *begin;
     size_t n;
     u8 encode(u64 x, u8 rem)
     {
-        n = 0;
-        begin = &buf[16];
         if(x < rem)
+        {
+            n = 0;
             return u8(x);
+        }
 
         x -= rem;
-        
-        // encode backwards so that when read forwards it's big endian
+
+        size_t k = 1;
+        u8 *p = &buf[0];
         while(x > 0x7f)
         {
-            *--begin = 0x80 | (x & 0x7f); // encode backwards
+            *p++ = 0x80 | (x & 0x7f); // highest bit set -> continue
             x >>= 7;
-            ++n;
+            ++k;
         }
-        *--begin = u8(x); // highest bit not set
-        ++n;
+        *p++ = u8(x); // highest bit not set -> end
+        this->n = k;
 
         return rem;
     };
-private:
     u8 buf[16];
 };
 
@@ -363,9 +474,9 @@ static size_t putOpAndSize(WriteState& wr, Op op, u64 size)
 {
     IntEncoder enc;
     u8 rem = enc.encode(size, 0b11111);
-    wr.dst.Put(op | (rem << 3));
+    wr.dst.Put(encodeOp(op, rem));
     for(size_t i = 0; i < enc.n; ++i)
-        wr.dst.Put(enc.begin[i]);
+        wr.dst.Put(enc.buf[i]);
     return enc.n + 1;
 }
 
@@ -374,24 +485,67 @@ static size_t putSize(WriteState& wr, u64 size)
     IntEncoder enc;
     enc.encode(size, 0);
     for (size_t i = 0; i < enc.n; ++i)
-        wr.dst.Put(enc.begin[i]);
+        wr.dst.Put(enc.buf[i]);
     return enc.n;
 }
 
-static size_t putStr(WriteState& wr, StrRef ref, size_t len)
+static size_t putStrRaw(WriteState& wr, const char *s, size_t len)
 {
-    const char *s = wr.mem.getS(ref);
     size_t n = putOpAndSize(wr, OP_STRING, len);
+    //++len; // zero
     wr.dst.Write(s, len);
     return len + n;
 }
 
-static size_t putStr(WriteState& wr, StrRef ref)
+static size_t putStrRaw(WriteState& wr, StrRef ref, size_t len)
+{
+    const char *s = wr.mem.getS(ref);
+    return putStrRaw(wr, s, len);
+}
+
+static size_t putStrRaw(WriteState& wr, StrRef ref)
 {
     PoolStr ps = wr.mem.getSL(ref);
-    size_t n = putOpAndSize(wr, OP_STRING, ps.len);
-    wr.dst.Write(ps.s, ps.len);
-    return ps.len + n;
+    return putStrRaw(wr, ps.s, ps.len);
+}
+
+static size_t putStr(WriteState& wr, StrRef ref, size_t len)
+{
+    WriteState::Ref2Idx::const_iterator it = wr.ref2idx.find(ref);
+    return it != wr.ref2idx.end()
+        ? putOpAndSize(wr, OP_COPY_CONST, it->second)
+        : putStrRaw(wr, ref, len);
+}
+
+static size_t putStr(WriteState& wr, StrRef ref)
+{
+    size_t sz = wr.mem.getL(ref);
+    return putStr(wr, ref, sz);
+}
+
+size_t WriteState::poolAndEmitStrings()
+{
+    StringPool::StrColl strcoll = mem.collate();
+
+    // remove strings that are not worth pooling
+    strcoll.erase(std::remove_if(strcoll.begin(), strcoll.end(), _RemoveIf), strcoll.end());
+
+    size_t ret = 0;
+    if(size_t N = strcoll.size())
+    {
+        std::sort(strcoll.begin(), strcoll.end(), _Order); // most common strings first
+
+        dst.Put(encodeOp(OP_VALUE, 0b01000));
+        ret++;
+        ret += putSize(*this, 0);
+        ret += putSize(*this, N);
+        for(size_t i = 0; i < N; ++i)
+        {
+            ref2idx[strcoll[i].ref] = i;
+            ret += putStrRaw(*this, strcoll[i].s.c_str(), strcoll[i].s.length());
+        }
+    }
+    return ret;
 }
 
 static size_t encodeVal(WriteState& wr, const Var& in)
@@ -399,11 +553,11 @@ static size_t encodeVal(WriteState& wr, const Var& in)
     switch(in.type())
     {
         case Var::TYPE_NULL:
-            wr.dst.Put(OP_VALUE | 0);
+            wr.dst.Put(encodeOp(OP_VALUE, 0));
             return 1;
 
         case Var::TYPE_BOOL:
-            wr.dst.Put(OP_VALUE | (0b00010 << 3) | u8(!!in.u.ui));
+            wr.dst.Put(encodeOp(OP_VALUE, 0b00010 | u8(!!in.u.ui)));
             return 1;
 
         case Var::TYPE_INT:
@@ -419,24 +573,24 @@ static size_t encodeVal(WriteState& wr, const Var& in)
             double f = in.u.f;
             if(trunc(f) == f && abs(f) < 0x7fffffff) // can be sanely encoded as int?
             {
-                u8 bits = 0b00100;
+                u8 bits = 0b00110;
                 if(f < 0)
                 {
                     bits = 0b00111;
                     f = -f;
                 }
-                wr.dst.Put(OP_VALUE | (bits << 3));
+                wr.dst.Put(encodeOp(OP_VALUE, bits));
                 return putSize(wr, u64(f)) + 1;
             }
             float ff = (float)f;
             if(f == (double)ff) // fits losslessly in float?
             {
-                wr.dst.Put(OP_VALUE | (0b00100 << 3));
+                wr.dst.Put(encodeOp(OP_VALUE, 0b00100));
                 return writeLE(wr, ff) + 1;
             }
 
             // write as double
-            wr.dst.Put(OP_VALUE | (0b00101 << 3));
+            wr.dst.Put(encodeOp(OP_VALUE, 0b00101));
             return writeLE(wr, f) + 1;
         }
 
@@ -452,7 +606,7 @@ static size_t encodeVal(WriteState& wr, const Var& in)
             {
                 const size_t vsz = encodeVal(wr, a[i]);
                 if(!vsz)
-                    return 0;
+                    return FAIL(0, "encode array value");
                 sz += vsz;
             }
             return sz;
@@ -468,7 +622,7 @@ static size_t encodeVal(WriteState& wr, const Var& in)
                 sz += putStr(wr, it.key());
                 size_t vsz = encodeVal(wr, it.value());
                 if(!vsz)
-                    return 0;
+                    return FAIL(0, "encode map value");
                 sz += vsz;
             }
             return sz;
@@ -476,7 +630,8 @@ static size_t encodeVal(WriteState& wr, const Var& in)
     }
 
     assert(false);
-    return 0;
+    assert(false);
+    return FAIL(0, "encode unhandled type");
 }
 
 size_t encode(BufferedWriteStream& dst, const VarCRef& json, u8 windowSizeLog)
@@ -484,7 +639,8 @@ size_t encode(BufferedWriteStream& dst, const VarCRef& json, u8 windowSizeLog)
     WriteState wr(dst, *json.mem);
     wr.win.init(windowSizeLog);
     dst.Put(windowSizeLog);
-    return encodeVal(wr, *json.v) + 1;
+    size_t strsize = wr.poolAndEmitStrings();
+    return encodeVal(wr, *json.v) + strsize + 1;
 }
 
 
