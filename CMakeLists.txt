@@ -32,6 +32,7 @@ if(RAPIDJSON_NEON)
 endif()
 
 include_directories(dep/tomcrypt)
+include_directories(dep/brotli/include)
 include_directories(dep)
 add_subdirectory(dep)
 add_subdirectory(src)

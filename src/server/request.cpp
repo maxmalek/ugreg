@@ -32,6 +32,7 @@ static const RequestType getRequestType(const char *s)
     return RQ_UNKNOWN;
 }
 
+static_assert(Countof(CompressionTypeName) == COMPR_ARRAYSIZE, "array size mismatch");
 
 static CompressionType parseEncoding(const char *enc)
 {

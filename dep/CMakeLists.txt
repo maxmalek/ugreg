@@ -6,6 +6,8 @@
 # use a tiny subset of libtomcrypt
 add_subdirectory(tomcrypt)
 
+add_subdirectory(brotli)
+
 
 set(extra_libs)
 
@@ -88,7 +90,7 @@ endif()
 
 message(STATUS "dep extra libs: ${extra_libs}")
 
-target_link_libraries(alldeps ${extra_libs} tomcrypt)
+target_link_libraries(alldeps ${extra_libs} tomcrypt brotli)
 
 add_subdirectory(lua)
 

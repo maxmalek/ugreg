@@ -14,6 +14,8 @@ set(src
     serverutil.h
     responseformat.cpp
     responseformat.h
+    brstream.cpp
+    brstream.h
 )
 
 add_library(server ${src})

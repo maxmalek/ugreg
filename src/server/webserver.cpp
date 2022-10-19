@@ -7,6 +7,7 @@
 #include "socketstream.h"
 #include "treefunc.h"
 #include "zstream.h"
+#include "brstream.h"
 #include "json_out.h"
 
 
@@ -185,6 +186,7 @@ struct HeaderHelper
 const RequestHandler::StreamWriteMth RequestHandler::s_writer[COMPR_ARRAYSIZE] =
 {
     /* COMPR_NONE */     &RequestHandler::onRequest,
+    /* COMPR_BROTLI */   &RequestHandler::onRequest_brotli,
     /* COMPR_DEFLATE */  &RequestHandler::onRequest_deflate,
 };
 
@@ -285,7 +287,7 @@ int RequestHandler::_onRequest(mg_connection* conn) const
         }
         if(status) // expected to return 0 if all good and not custom handled
             return status;
-        
+
         HeaderHelper hh(k.obj.compression, rq->bodysize());
         if(!rq->spliceHeader(preparedHdr.c_str(), preparedHdr.size(), hh.buf, hh.size))
         {
@@ -325,6 +327,16 @@ int RequestHandler::onRequest_deflate(BufferedWriteStream& dst, mg_connection* c
 {
     char zbuf[8 * 1024];
     DeflateWriteStream z(dst, 1, zbuf, sizeof(zbuf)); // TODO: use compression level from config
+    z.init();
+    int ret = this->onRequest(z, conn, rq);
+    z.finish();
+    return ret;
+}
+
+int RequestHandler::onRequest_brotli(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+{
+    char zbuf[8 * 1024];
+    BrotliWriteStream z(dst, 3, zbuf, sizeof(zbuf)); // TODO: use compression level from config
     z.init();
     int ret = this->onRequest(z, conn, rq);
     z.finish();

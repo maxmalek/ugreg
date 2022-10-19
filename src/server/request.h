@@ -20,21 +20,24 @@ enum RequestType
     RQ_DELETE,
 };
 
-// Supported compression algorithms, ordered by preference
+// Supported compression algorithms, ordered highest-to-lowest preference
 // Higher values are preferred
 // See request.cpp: parseEncoding()
 enum CompressionType
 {
     COMPR_NONE,
+    // begin compression
+    COMPR_BROTLI,
     COMPR_DEFLATE,
-
+    // end compression
     COMPR_ARRAYSIZE
 };
-// name used in HTTP header Content-Enc oding field
+// name used in HTTP header Content-Encoding field
 static const char* CompressionTypeName[] =
 {
     NULL,
-    "deflate"
+    "br",
+    "deflate",
 };
 
 enum RequestFlags // bitmask

@@ -33,6 +33,7 @@ public:
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const = 0;
 
     int onRequest_deflate(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const;
+    int onRequest_brotli(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const;
 
     void clearCache();
 
