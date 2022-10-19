@@ -39,7 +39,6 @@ enum Op : u8
     OP_STRING,
     OP_ARRAY,
     OP_MAP,
-    OP_COPY_PREV,
     OP_COPY_CONST,
 };
 
@@ -48,56 +47,15 @@ inline static u8 encodeOp(Op op, u8 bits)
     return (op << 5) | bits;
 }
 
-struct Window
-{
-    Window() : w(0), mask(0) {}
-
-    void init(u8 wbits)
-    {
-        mask = (size_t(1) << wbits) - 1;
-        v.clear();
-        v.resize(size_t(1) << wbits, NULL);
-    }
-
-    void emit(const Var *p) { v[w++ & mask] = p; }
-
-    const Var *getOffs(size_t offset) const
-    {
-        assert(offset);
-        return offset <= mask ? v[(w - offset) & mask] : NULL;
-    }
-    size_t find(const Var *x) const // 0 when not found
-    {
-        size_t n = w < v.size() ? w : v.size();
-        for(size_t i = 1; i < n; ++i)
-            if(getOffs(i)->compareExactSameMem(*x))
-                return i;
-        return 0;
-    }
-    size_t w;
-    size_t mask;
-    std::vector<const Var*> v;
-};
-
 struct ReadState
 {
     ReadState(BufferedReadStream& src, TreeMem& mem) : src(src), mem(mem) {}
-
-    bool init()
-    {
-        if(src.done())
-            return FAIL(false, "stream end");
-        u8 wbits = src.Take();
-        win.init(wbits);
-        return true;
-    }
 
     BufferedReadStream& src;
     TreeMem& mem;
 
     //------------------------
     std::vector<Var> constants;
-    Window win;
     std::string tmpstr;
 
     // temporary storage for keys
@@ -193,13 +151,11 @@ start:
             if(!a) // None
             {
                 dst.clear(rd.mem);
-                rd.win.emit(&dst);
                 return true;
             }
             if((a & 0b11110) == 0b00010) // Bool
             {
                 dst.setBool(rd.mem, a & 1);
-                rd.win.emit(&dst);
                 return true;
             }
             if((a & 0b11100) == 0b00100) // Float
@@ -236,7 +192,6 @@ start:
                         break;
                 }
                 dst.setFloat(rd.mem, f);
-                rd.win.emit(&dst);
                 return true;
             }
             if(a == 0b01000) // Define constants
@@ -267,7 +222,6 @@ start:
             if(!smallnum5(n, rd, a))
                 return FAIL(false, "OP_INT_POS decode");
             dst.setUint(rd.mem, n);
-            rd.win.emit(&dst);
             return true;
         }
         case OP_INT_NEG:
@@ -281,7 +235,6 @@ start:
             if(neg >= 0)
                 return FAIL(false, "OP_INT_NEG still negative");
             dst.setInt(rd.mem, neg);
-            rd.win.emit(&dst);
             return true;
         }
         case OP_STRING:
@@ -306,10 +259,6 @@ start:
                 }
                 dst.setStr(rd.mem, s.c_str(), len);
             }
-            /*u8 zero = rd.src.Take();
-            assert(!zero);
-            if(zero) return FAIL(false, "not zero");*/
-            rd.win.emit(&dst);
             return true;
         }
         case OP_ARRAY:
@@ -323,7 +272,6 @@ start:
             for(size_t i = 0; i < len; ++i)
                 if(!readval(arr[i], rd))
                     return FAIL(false, "OP_ARRAY value");
-            rd.win.emit(&dst);
             return true;
         }
         case OP_MAP:
@@ -346,21 +294,7 @@ start:
                 if(!readval(m->getOrCreate(rd.mem, k.asStrRef()), rd))
                     FAIL(false, "OP_MAP value");
             }
-            rd.win.emit(&dst);
             return true;
-        }
-        case OP_COPY_PREV:
-        {
-            u64 off;
-            if(!smallnum5(off, rd, a) || add_check_overflow<u64>(&off, off, 1))
-                return FAIL(false, "OP_COPY_PREV read offset");
-            if(const Var *prev = rd.win.getOffs(off))
-            {
-                dst = std::move(prev->clone(rd.mem, rd.mem));
-                rd.win.emit(prev);
-                return true;
-            }
-            return FAIL(false, "OP_COPY_PREV get offs");
         }
         case OP_COPY_CONST:
         {
@@ -371,7 +305,6 @@ start:
             {
                 const Var& c = rd.constants[idx];
                 dst = std::move(c.clone(rd.mem, rd.mem));
-                rd.win.emit(&dst);
                 return true;
             }
             return FAIL(false, "OP_COPY_CONST index out of bounds");
@@ -385,7 +318,7 @@ start:
 bool decode_json(VarRef dst, BufferedReadStream& src)
 {
     ReadState rd(src, *dst.mem);
-    return rd.init() && readval(*dst.v, rd);
+    return readval(*dst.v, rd);
 }
 
 // -----------------------------------------------------------
@@ -413,7 +346,6 @@ struct WriteState
 
     //------------------------
     std::vector<const Var*> constants;
-    Window win;
 
     typedef std::map<StrRef, size_t> Ref2Idx;
     Ref2Idx ref2idx;
@@ -492,7 +424,6 @@ static size_t putSize(WriteState& wr, u64 size)
 static size_t putStrRaw(WriteState& wr, const char *s, size_t len)
 {
     size_t n = putOpAndSize(wr, OP_STRING, len);
-    //++len; // zero
     wr.dst.Write(s, len);
     return len + n;
 }
@@ -630,15 +561,12 @@ static size_t encodeVal(WriteState& wr, const Var& in)
     }
 
     assert(false);
-    assert(false);
     return FAIL(0, "encode unhandled type");
 }
 
-size_t encode(BufferedWriteStream& dst, const VarCRef& json, u8 windowSizeLog)
+size_t encode(BufferedWriteStream& dst, const VarCRef& json)
 {
     WriteState wr(dst, *json.mem);
-    wr.win.init(windowSizeLog);
-    dst.Put(windowSizeLog);
     size_t strsize = wr.poolAndEmitStrings();
     return encodeVal(wr, *json.v) + strsize + 1;
 }
