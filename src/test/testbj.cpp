@@ -119,7 +119,7 @@ int main(int argc, char **argv)
     char buf[8*1024];
     FILE *fh;
 
-    /*
+
     fh = fopen("citylots.json", "rb");
     if(!fh)
         abort();
@@ -147,7 +147,7 @@ int main(int argc, char **argv)
     fclose(fh);
     printf("encoded: %zu\n", sz);
     tre.root().clear();
-    */
+
 
     fh = fopen("test.bj", "rb");
     if(!fh)

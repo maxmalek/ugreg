@@ -3,7 +3,7 @@
 #include "jsonstreamwrapper.h"
 #include "miniz.h"
 
-// Compresses incoming data and forwards those to anothre stream
+// Compresses incoming data and forwards those to another stream
 class DeflateWriteStream : public BufferedWriteStream
 {
 public:

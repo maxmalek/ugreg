@@ -218,7 +218,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 
                     if(askHS)
                     {
-                        // kick off search in background + re-use vars 
+                        // kick off search in background + re-use vars
                         // (this invalidates all strings, that's why term is std::string)
                         vars.root().v->map()->clear(vars);
                         auto fut = std::async(&MxSearchHandler::doSearch, this, vars.root(), term.c_str(), limit);

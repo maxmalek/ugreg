@@ -161,6 +161,12 @@ public:
         SIZE_MASK = size_t(-1) >> 2u // upper 2 bits 0, rest 1
     };
 
+    enum Limits : size_t
+    {
+        MAXSIZE  = SIZE_MASK,
+        MAX_SIZE_BITS = SHIFT_TOP2BITS
+    };
+
     void _settop(TreeMem& mem, Topbits top, size_t size);
     void _transmute(TreeMem& mem, size_t newmeta);
     void _adjustsize(size_t newsize);
