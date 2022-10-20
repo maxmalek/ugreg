@@ -115,7 +115,6 @@ int main(int argc, char **argv)
     //testints();
 
     DataTree tre;
-    size_t sz;
     char buf[8*1024];
     FILE *fh;
 
@@ -141,11 +140,10 @@ int main(int argc, char **argv)
         ScopeTimer t;
         BufferedFILEWriteStream wr(fh, buf, sizeof(buf));
         wr.init();
-        sz = bj::encode(wr, tre.root());
-        printf("Wrote BJ in %llu ms\n", t.ms());
+        size_t sz = bj::encode(wr, tre.root());
+        printf("Wrote BJ in %llu ms, size = %zu\n", t.ms(), sz);
     }
     fclose(fh);
-    printf("encoded: %zu\n", sz);
     tre.root().clear();
 
 
@@ -157,8 +155,8 @@ int main(int argc, char **argv)
         ScopeTimer t;
         BufferedFILEReadStream rd(fh, buf, sizeof(buf));
         rd.init();
-        sz = bj::decode_json(tre.root(), rd);
-        printf("Loaded BJ in %llu ms\n", t.ms());
+        bool ok = bj::decode_json(tre.root(), rd);
+        printf("Loaded BJ in %llu ms, ok = %u\n", t.ms(), ok);
     }
     fclose(fh);
     //puts(dumpjson(tre.root(), true).c_str());

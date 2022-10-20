@@ -49,26 +49,18 @@ inline static u8 encodeOp(Op op, u8 bits)
 
 struct ReadState
 {
-    ReadState(BufferedReadStream& src, TreeMem& mem) : src(src), mem(mem) {}
+    ReadState(BufferedReadStream& src, TreeMem& mem, const Limits& lim) : src(src), mem(mem) {}
 
     BufferedReadStream& src;
     TreeMem& mem;
+    const Limits lim;
 
     //------------------------
     std::vector<Var> constants;
     std::string tmpstr;
 
-    // temporary storage for keys
-    // important that this never moves elements because
-    // we're keeping pointers to elements in the window!
-    // a std::vector is unsuitable, but a std::deque doesn't reallocate so it's fine
-    typedef std::deque<Var> TmpStorage;
-    TmpStorage tmp;
-
     ~ReadState()
     {
-        for(TmpStorage::iterator it = tmp.begin(); it != tmp.end(); ++it)
-            it->clear(mem);
         for(size_t i = 0; i < constants.size(); ++i)
             constants[i].clear(mem);
     }
@@ -83,7 +75,7 @@ inline static bool readnum(u64& dst, ReadState& rd)
     {
         if(rd.src.done())
             return FAIL(false, "stream end");
-        if(sh > MaxSizeBits)
+        if(sh >= MaxSizeBits)
             return FAIL(false, "too many bits");
         c = rd.src.Take();
         const size_t add = u64(c & 0x7f) << sh;
@@ -142,6 +134,8 @@ static bool readLE(T& dst, ReadState& rd)
 inline static bool readval(Var& dst, ReadState& rd)
 {
 start:
+    if(rd.src.done())
+        return FAIL(false, "end of stream");
     u8 a = rd.src.Take();
     const Op op = Op(a >> 5);
     a &= 0b11111;
@@ -202,6 +196,8 @@ start:
                 if(!readnum(n, rd))
                     return FAIL(false, "def constants size");
                 const u64 end = i + n;
+                if(end > rd.lim.constants)
+                    return FAIL(false, "def constants table exceeds limits");
                 if(rd.constants.size() < end)
                     rd.constants.resize(end);
                 for( ; i < end; ++i)
@@ -242,6 +238,8 @@ start:
             u64 len;
             if(!smallnum5(len, rd, a))
                 return FAIL(false, "OP_STRING length");
+            if(len > rd.lim.maxsize)
+                return FAIL(false, "string size exceeds limit");
             if(rd.src.availBuffered() >= len) // copy directly
             {
                 dst.setStr(rd.mem, (const char*)rd.src.ptr(), len);
@@ -266,6 +264,8 @@ start:
             u64 len;
             if(!smallnum5(len, rd, a))
                 return FAIL(false, "OP_ARRAY size");
+            if(len > rd.lim.maxsize)
+                return FAIL(false, "OP_ARRAY size exceeds limit");
             Var * const arr = dst.makeArray(rd.mem, len);
             if(!arr)
                 return FAIL(false, "OP_ARRAY alloc");
@@ -279,21 +279,24 @@ start:
             u64 len;
             if(!smallnum5(len, rd, a))
                 return FAIL(false, "OP_MAP size");
-            // It's VERY important here that the map's storage vector is
-            // pre-allocated properly, because we're taking ptrs to elements.
+            if(len > rd.lim.maxsize)
+                return FAIL(false, "OP_MAP size exceeds limit");
             Var::Map * const m  = dst.makeMap(rd.mem, len);
             if(!m)
                 return FAIL(false, "OP_MAP alloc");
+            Var k;
             for(size_t i = 0; i < len; ++i)
             {
-                Var& k = rd.tmp.emplace_back();
-                if(!readval(k, rd))
-                    FAIL(false, "OP_MAP read key");
-                if(k.type() != Var::TYPE_STRING)
-                    FAIL(false, "OP_MAP key is not string");
-                if(!readval(m->getOrCreate(rd.mem, k.asStrRef()), rd))
-                    FAIL(false, "OP_MAP value");
+                if(!(readval(k, rd)
+                    && k.type() == Var::TYPE_STRING
+                    && readval(m->getOrCreate(rd.mem, k.asStrRef()), rd)
+                ))
+                {
+                    k.clear(rd.mem);
+                    return FAIL(false, "OP_MAP key/value pair");
+                }
             }
+            k.clear(rd.mem);
             return true;
         }
         case OP_COPY_CONST:
@@ -311,13 +314,12 @@ start:
         }
     }
 
-    assert(false);
     return FAIL(false, "unhandled OP");
 }
 
-bool decode_json(VarRef dst, BufferedReadStream& src)
+bool decode_json(VarRef dst, BufferedReadStream& src, const Limits& lim)
 {
-    ReadState rd(src, *dst.mem);
+    ReadState rd(src, *dst.mem, lim);
     return readval(*dst.v, rd);
 }
 
@@ -379,7 +381,7 @@ struct IntEncoder
 
         return rem;
     };
-    u8 buf[16];
+    u8 buf[16]; // large enough to encode any u64
 };
 
 template<typename T>
@@ -421,6 +423,7 @@ static size_t putSize(WriteState& wr, u64 size)
     return enc.n;
 }
 
+// always emit string (no constant table lookup)
 static size_t putStrRaw(WriteState& wr, const char *s, size_t len)
 {
     size_t n = putOpAndSize(wr, OP_STRING, len);
@@ -440,6 +443,8 @@ static size_t putStrRaw(WriteState& wr, StrRef ref)
     return putStrRaw(wr, ps.s, ps.len);
 }
 
+// emit lookup to constant table if the string is there,
+// emit string otherwise
 static size_t putStr(WriteState& wr, StrRef ref, size_t len)
 {
     WriteState::Ref2Idx::const_iterator it = wr.ref2idx.find(ref);

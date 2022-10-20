@@ -265,6 +265,8 @@ Var Var::clone(TreeMem &dstmem, const TreeMem& srcmem) const
 Var * Var::makeArray(TreeMem& mem, size_t n)
 {
     Var *a;
+    if(n > MAXSIZE)
+        return NULL;
     if(_topbits() == BITS_ARRAY)
     {
         a = _ResizeArray(mem, n, u.a, _size());
@@ -280,6 +282,8 @@ Var * Var::makeArray(TreeMem& mem, size_t n)
 
 Var::Map *Var::makeMap(TreeMem& mem, size_t prealloc)
 {
+    if(prealloc > MAXSIZE)
+        return NULL;
     if (_topbits() == BITS_MAP)
         return u.m;
     _settop(mem, BITS_MAP, 0);
