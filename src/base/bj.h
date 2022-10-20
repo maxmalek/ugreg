@@ -18,7 +18,9 @@ struct Limits
     size_t constants = 256 * 1024 * 1024;
 };
 
-size_t encode(BufferedWriteStream& dst, const VarCRef& json);
+// tmpalloc is for string pooling. Optional but recommended.
+size_t encode(BufferedWriteStream& dst, const VarCRef& json, BlockAllocator *tmpalloc);
+
 bool  decode_json(VarRef dst, BufferedReadStream& src, const Limits& lim = Limits());
 
 } // end namespace bj

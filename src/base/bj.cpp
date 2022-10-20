@@ -1,8 +1,5 @@
 #include "bj.h"
 
-#include <vector>
-#include <deque>
-#include <map>
 #include <assert.h>
 #include <math.h>
 #include <algorithm>
@@ -56,13 +53,13 @@ struct ReadState
     const Limits lim;
 
     //------------------------
-    std::vector<Var> constants;
+    Var constantsHolder;
+    Var *constants = NULL;
     std::string tmpstr;
 
     ~ReadState()
     {
-        for(size_t i = 0; i < constants.size(); ++i)
-            constants[i].clear(mem);
+        constantsHolder.clear(mem);
     }
 };
 
@@ -198,8 +195,12 @@ start:
                 const u64 end = i + n;
                 if(end > rd.lim.constants)
                     return FAIL(false, "def constants table exceeds limits");
-                if(rd.constants.size() < end)
-                    rd.constants.resize(end);
+                if(rd.constantsHolder._size() < end)
+                {
+                    rd.constants = rd.constantsHolder.makeArray(rd.mem, end);
+                    if(!rd.constants)
+                        return FAIL(false, "alloc constants table");
+                }
                 for( ; i < end; ++i)
                 {
                     Var& k = rd.constants[i];
@@ -304,7 +305,7 @@ start:
             size_t idx;
             if(!smallnum5(idx, rd, a))
                 return FAIL(false, "OP_COPY_CONST read index");
-            if(idx < rd.constants.size())
+            if(idx < rd.constantsHolder._size())
             {
                 const Var& c = rd.constants[idx];
                 dst = std::move(c.clone(rd.mem, rd.mem));
@@ -337,19 +338,26 @@ struct WriteState
         return a.count > b.count // highest count comes first
             || (a.count == b.count && a.s < b.s);
     }
-    WriteState(BufferedWriteStream& dst, const TreeMem& mem)
-        : dst(dst), mem(mem)
+    WriteState(BufferedWriteStream& dst, const TreeMem& mem, BlockAllocator *alloc)
+        : dst(dst), mem(mem), balloc(alloc)
     {}
+
+    ~WriteState()
+    {
+        if(balloc)
+            ref2idx.dealloc(*balloc);
+    }
 
     size_t poolAndEmitStrings();
 
     BufferedWriteStream& dst;
     const TreeMem& mem;
+    BlockAllocator * const balloc;
 
     //------------------------
     std::vector<const Var*> constants;
 
-    typedef std::map<StrRef, size_t> Ref2Idx;
+    typedef TinyHashMap<size_t> Ref2Idx;
     Ref2Idx ref2idx;
 };
 
@@ -447,9 +455,9 @@ static size_t putStrRaw(WriteState& wr, StrRef ref)
 // emit string otherwise
 static size_t putStr(WriteState& wr, StrRef ref, size_t len)
 {
-    WriteState::Ref2Idx::const_iterator it = wr.ref2idx.find(ref);
-    return it != wr.ref2idx.end()
-        ? putOpAndSize(wr, OP_COPY_CONST, it->second)
+    size_t *p = wr.ref2idx.getp(ref);
+    return p
+        ? putOpAndSize(wr, OP_COPY_CONST, *p)
         : putStrRaw(wr, ref, len);
 }
 
@@ -461,10 +469,15 @@ static size_t putStr(WriteState& wr, StrRef ref)
 
 size_t WriteState::poolAndEmitStrings()
 {
+    if(!balloc)
+        return 0;
+
     StringPool::StrColl strcoll = mem.collate();
 
     // remove strings that are not worth pooling
     strcoll.erase(std::remove_if(strcoll.begin(), strcoll.end(), _RemoveIf), strcoll.end());
+
+    ref2idx.reserve(*balloc, strcoll.size());
 
     size_t ret = 0;
     if(size_t N = strcoll.size())
@@ -477,7 +490,7 @@ size_t WriteState::poolAndEmitStrings()
         ret += putSize(*this, N);
         for(size_t i = 0; i < N; ++i)
         {
-            ref2idx[strcoll[i].ref] = i;
+            ref2idx.at(*balloc, strcoll[i].ref) = i;
             ret += putStrRaw(*this, strcoll[i].s.c_str(), strcoll[i].s.length());
         }
     }
@@ -569,9 +582,9 @@ static size_t encodeVal(WriteState& wr, const Var& in)
     return FAIL(0, "encode unhandled type");
 }
 
-size_t encode(BufferedWriteStream& dst, const VarCRef& json)
+size_t encode(BufferedWriteStream& dst, const VarCRef& json, BlockAllocator *tmpalloc)
 {
-    WriteState wr(dst, *json.mem);
+    WriteState wr(dst, *json.mem, tmpalloc);
     size_t strsize = wr.poolAndEmitStrings();
     return encodeVal(wr, *json.v) + strsize + 1;
 }

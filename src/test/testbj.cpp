@@ -37,7 +37,7 @@ static bool testsame(VarCRef v, TreeMem& mem)
     {
         BufferTestWriteStream sm(&buf[0], sizeof(buf));
         sm.init();
-        sz = bj::encode(sm, v);
+        sz = bj::encode(sm, v, &mem);
         assert(sz <= sizeof(buf));
     }
     if(!sz)
@@ -140,7 +140,7 @@ int main(int argc, char **argv)
         ScopeTimer t;
         BufferedFILEWriteStream wr(fh, buf, sizeof(buf));
         wr.init();
-        size_t sz = bj::encode(wr, tre.root());
+        size_t sz = bj::encode(wr, tre.root(), &tre);
         printf("Wrote BJ in %llu ms, size = %zu\n", t.ms(), sz);
     }
     fclose(fh);

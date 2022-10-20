@@ -508,6 +508,7 @@ class TinyHashMap
 {
     typedef LVector<T, u32, Policy> TVec;
     typedef HashHat<TVec> HH;
+    typedef typename TVec::size_type SZ;
     typedef typename HH::Allocator Allocator;
     HashHat<TVec> _hh;
     TVec _vec;
@@ -523,7 +524,7 @@ public:
     TinyHashMap()
     {
     }
-    TinyHashMap(Allocator& mem, size_t prealloc)
+    TinyHashMap(Allocator& mem, SZ prealloc)
         : _vec(mem, prealloc, TVec::ReserveTag{} )
     {
     }
@@ -544,6 +545,11 @@ public:
         }
         return *this;
     }*/
+
+    void reserve(Allocator& mem, SZ n)
+    {
+        _vec.reserve(mem, n);
+    }
 
     InsertResult insert(Allocator& mem, StrRef k, T&& v, T& prev)
     {
@@ -570,12 +576,10 @@ public:
     const_iterator begin() const { return _hh.begin(_vec.data()); }
     const_iterator end()   const { return _hh.end(_vec.data()); }
 
-    size_t size() const { return _vec.size(); }
+    SZ size() const { return _vec.size(); }
     bool empty() const { return _vec.empty(); }
     void clear(Allocator& mem)
     {
-        //for(size_t i = 0; i < _vec.size(); ++i)
-        //    _vec[i].clear(mem);
         _vec.clear(mem);
         _hh.clear(mem);
     }
