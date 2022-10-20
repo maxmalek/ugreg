@@ -19,7 +19,7 @@ bool URLTarget::load(const VarCRef& ref)
     const u64 *pport = xport ? xport.asUint() : NULL;
     if(!pport)
         return false;
-    const unsigned port = pport ? (unsigned)*pport : NULL;
+    const unsigned port = pport ? (unsigned)*pport : 0;
     if(!port)
         return false;
 
@@ -34,12 +34,12 @@ bool URLTarget::parse(const char* url, unsigned defaultport /* = 0 */)
     unsigned port = 0;
     bool http = false, https = false, ssl = false;
 
-    if(!strnicmp(url, "http://", 7))
+    if(!mg_strncasecmp(url, "http://", 7))
     {
         http = true;
         url += 7;
     }
-    else if(!strnicmp(url, "https://", 8))
+    else if(!mg_strncasecmp(url, "https://", 8))
     {
         https = true;
         ssl = true;

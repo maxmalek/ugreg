@@ -183,6 +183,7 @@ swap(upgrade_lock<Mutex>&  x, upgrade_lock<Mutex>&  y);
 #include <mutex>
 #include <shared_mutex>
 #include <system_error>
+#include <condition_variable>
 
 namespace acme
 {

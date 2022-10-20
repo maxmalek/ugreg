@@ -123,8 +123,8 @@ static void srvLookup(MxResolvList &dst, const char *host)
                 name, port, priority, weight);
 
             MxResolvResult res;
-            res.host = name;
-            res.port = port;
+            res.target.host = name;
+            res.target.port = port;
             res.priority = priority;
             res.weight = weight;
             // TODO: handle TTL?

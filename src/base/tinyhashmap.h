@@ -525,7 +525,7 @@ public:
     {
     }
     TinyHashMap(Allocator& mem, SZ prealloc)
-        : _vec(mem, prealloc, TVec::ReserveTag{} )
+        : _vec(mem, prealloc, typename TVec::ReserveTag{} )
     {
     }
     ~TinyHashMap()
