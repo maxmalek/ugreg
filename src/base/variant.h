@@ -197,7 +197,7 @@ public:
     StrRef setStr(TreeMem& mem, const char* x, size_t len);
     StrRef setStrRef(TreeMem& mem, StrRef r);
     void *setPtr(TreeMem& mem, void *p);
-    Var *makeArray(TreeMem& mem, size_t n);
+    Var *makeArray(TreeMem& mem, size_t n); // this may return NULL for n == 0
     Map *makeMap(TreeMem& mem, size_t prealloc = 0);
     Range *setRange(TreeMem& mem, const Range *ra, size_t n);
 
@@ -267,6 +267,15 @@ public:
     Var(TreeMem& mem, const char* s, size_t len);
 
     static const Var Null;
+
+    static void ClearArray(TreeMem& mem, Var *p, size_t n);
+
+    // --- DANGER ZONE ----
+    // caller MUST properly destroy existing elements before shrinking, and init ALL new elements after enlarging
+    // (It is valid to call this, keep the end uninited, then call this again to clip off the uninited end)
+    // -> failing to usethis properly will caused memory leaks, crashes, and generally UB.
+    // read the code *carefully* before calling this!
+    Var* makeArrayUninitialized_Dangerous(TreeMem& mem, size_t n);
 
 private:
     int numericCompare(const Var& b) const; // -1 if less, 0 if eq, +1 if greater
@@ -520,3 +529,6 @@ public:
     Var::CompareResult compare(Var::CompareMode cmp, const VarCRef& o);
 };
 
+// this is specialized
+template<>
+Var* mem_construct_default<Var>(Var* begin, Var* end);

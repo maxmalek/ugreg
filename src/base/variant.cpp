@@ -16,6 +16,17 @@
 
 const Var Var::Null;
 
+// specialize for Var
+// the default ctor inits meta to 0 and leaves the rest uninited
+// so we can just plow over the entire thing and it'll be fine
+template<>
+Var * mem_construct_default<Var>(Var *begin, Var *end)
+{
+    if(begin < end)
+        memset(begin, 0, (end - begin) * sizeof(*begin));
+    return begin;
+}
+
 static _VarMap*_NewMap(TreeMem& mem, size_t prealloc)
 {
     void *p = mem.Alloc(sizeof(_VarMap));
@@ -23,18 +34,29 @@ static _VarMap*_NewMap(TreeMem& mem, size_t prealloc)
 }
 // ... use m->destroy(mem) to delete it
 
-static Var *_NewArray(TreeMem& mem, size_t n)
+static Var *_NewArrayNoInit(TreeMem& mem, size_t n)
 {
-    Var* p = (Var*)mem.Alloc(sizeof(Var) * n);
-    mem_construct_default(p, p + n);
+    return (Var*)mem.Alloc(sizeof(Var) * n);
+}
+
+static Var* _NewArray(TreeMem& mem, size_t n)
+{
+    Var* p = _NewArrayNoInit(mem, n);
+    if(p)
+        mem_construct_default(p, p + n);
     return p;
 }
 
-static Var* _ResizeArray(TreeMem& mem, size_t newsize, Var *arr, size_t oldsize)
+static Var* _ResizeArrayNoInitNoDestruct(TreeMem& mem, size_t newsize, Var* arr, size_t oldsize)
 {
-    if(newsize == oldsize) // sanity check
+    if (newsize == oldsize) // sanity check
         return arr;
 
+    return (Var*)mem.Realloc(arr, sizeof(Var) * oldsize, sizeof(Var) * newsize);
+}
+
+static Var* _ResizeArrayNoInit(TreeMem& mem, size_t newsize, Var *arr, size_t oldsize)
+{
     // shrinking? -- destruct trailing range first
     if(newsize < oldsize)
     {
@@ -42,11 +64,22 @@ static Var* _ResizeArray(TreeMem& mem, size_t newsize, Var *arr, size_t oldsize)
             arr[i].clear(mem);
         mem_destruct(arr + newsize, arr + oldsize);
     }
-    Var* p = (Var*)mem.Realloc(arr, sizeof(Var) * oldsize, sizeof(Var) * newsize);
-    // enlarging?
-    if(oldsize < newsize)
+    return  _ResizeArrayNoInitNoDestruct(mem, newsize, arr, oldsize);
+}
+
+static Var* _ResizeArray(TreeMem& mem, size_t newsize, Var* arr, size_t oldsize)
+{
+    Var* p = _ResizeArrayNoInit(mem, newsize, arr, oldsize);
+    // enlarging? init range
+    if (p && oldsize < newsize)
         mem_construct_default(p + oldsize, p + newsize);
     return p;
+}
+
+void _ClearArray(TreeMem& mem, Var* p, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        p[i].clear(mem);
 }
 
 static void _DeleteArray(TreeMem& mem, Var *p, size_t n)
@@ -54,8 +87,7 @@ static void _DeleteArray(TreeMem& mem, Var *p, size_t n)
     assert(!p == !n);
     if(p)
     {
-        for(size_t i = 0; i < n; ++i)
-            p[i].clear(mem);
+        _ClearArray(mem, p, n);
         mem_destruct(p, p + n);
         mem.Free(p, sizeof(*p) * n);
     }
@@ -171,6 +203,11 @@ Var::Var(TreeMem& mem, const char* s, size_t len)
     setStr(mem, s, len);
 }
 
+void Var::ClearArray(TreeMem& mem, Var* p, size_t n)
+{
+    _ClearArray(mem, p, n);
+}
+
 void Var::_settop(TreeMem& mem, Topbits top, size_t size)
 {
     assert(size <= SIZE_MASK);
@@ -278,6 +315,24 @@ Var * Var::makeArray(TreeMem& mem, size_t n)
         _settop(mem, BITS_ARRAY, n);
     }
     return (( u.a = a )); // u.a must be assigned AFTER _settop()!
+}
+
+Var* Var::makeArrayUninitialized_Dangerous(TreeMem& mem, size_t n)
+{
+    Var* a;
+    if (n > MAXSIZE)
+        return NULL;
+    if (_topbits() == BITS_ARRAY)
+    {
+        a = _ResizeArrayNoInitNoDestruct(mem, n, u.a, _size());
+        _adjustsize(n);
+    }
+    else
+    {
+        a = _NewArrayNoInit(mem, n);
+        _settop(mem, BITS_ARRAY, n);
+    }
+    return ((u.a = a)); // u.a must be assigned AFTER _settop()!
 }
 
 Var::Map *Var::makeMap(TreeMem& mem, size_t prealloc)

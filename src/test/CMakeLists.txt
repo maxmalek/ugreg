@@ -9,3 +9,6 @@ target_link_libraries(testcontainer base alldeps)
 
 add_executable(testbj testbj.cpp)
 target_link_libraries(testbj base alldeps)
+
+add_executable(testbjfuzz testbjfuzz.cpp)
+target_link_libraries(testbjfuzz base alldeps)

@@ -55,6 +55,8 @@ struct ReadState
     //------------------------
     Var constantsHolder;
     Var *constants = NULL;
+    size_t constantsMax = 0;
+    bool definingConstants = false;
     std::string tmpstr;
 
     ~ReadState()
@@ -187,30 +189,70 @@ start:
             }
             if(a == 0b01000) // Define constants
             {
+                if(rd.definingConstants)
+                    return FAIL(false, "can't nest def constants");
+                rd.definingConstants = true;
                 u64 i, n;
                 if(!readnum(i, rd))
                     return FAIL(false, "def constants begin idx");
                 if(!readnum(n, rd))
                     return FAIL(false, "def constants size");
-                const u64 end = i + n;
-                if(end > rd.lim.constants)
-                    return FAIL(false, "def constants table exceeds limits");
-                if(rd.constantsHolder._size() < end)
+                u64 end;
+                if(add_check_overflow(&end, i, n))
+                    return FAIL(false, "def constants size overflow");
+                if(end)
                 {
-                    rd.constants = rd.constantsHolder.makeArray(rd.mem, end);
-                    if(!rd.constants)
-                        return FAIL(false, "alloc constants table");
+                    if(end > rd.lim.constants)
+                        return FAIL(false, "def constants table exceeds limits");
+                    if(i > rd.constantsMax)
+                        return FAIL(false, "def constants non-contiguous");
+                    Var tmp;
+                    const size_t oldsize = rd.constantsHolder._size();
+                    assert(oldsize == rd.constantsMax);
+                    // we know that n elems follow. so we don't have to init array elems only to overwrite them later
+                    // it's possible that malicious inputs request a large block of memory,
+                    // in that case we might fail later when trying to read elements.
+                    if(oldsize < end)
+                    {
+                        // precond: arr[0..oldsize) is inited
+                        Var * const arr = rd.constantsHolder.makeArrayUninitialized_Dangerous(rd.mem, end);
+                        if(!arr)
+                        {
+                            i = oldsize;
+                            goto failclean;
+                        }
+                        rd.constants = arr;
+                    }
+                    for( ; i < oldsize; ++i) // this was previously initialized. overwrite elems cleanly.
+                    {
+                        Var& k = rd.constants[i];
+                        if(!readval(k, rd))
+                            return FAIL(false, "def constants elems");
+                    }
+                    // new, uninited memory. must move-construct with placement new
+                    for( ; i < end; ++i)
+                    {
+                        if (!readval(tmp, rd))
+                        {
+                            tmp.clear(rd.mem);
+                            // ouch. array is partially uninited. clear valid part, then drop it
+failclean:
+                            Var::ClearArray(rd.mem, rd.constants, i);
+                            rd.constants = rd.constantsHolder.makeArrayUninitialized_Dangerous(rd.mem, 0);
+                            rd.constantsHolder.clear(rd.mem); // to be safe: do this here so that we won't crash later in the dtor in case anything is wrong
+                            return FAIL(false, "def constants table (new elems)");
+                        }
+                        new (&rd.constants[i]) Var(std::move(tmp));
+                        // tmp now empty and ready to be filled again
+                        assert(tmp.isNull());
+                    }
                 }
-                for( ; i < end; ++i)
-                {
-                    Var& k = rd.constants[i];
-                    if(!readval(k, rd))
-                        return FAIL(false, "def constants table");
-                }
+                if(end > rd.constantsMax)
+                    rd.constantsMax = end;
+                rd.definingConstants = false;
                 goto start;
             }
 
-            assert(false);
             return FAIL(false, "OP_VALUE unknown bits");
 
         case OP_INT_POS:
@@ -267,12 +309,25 @@ start:
                 return FAIL(false, "OP_ARRAY size");
             if(len > rd.lim.maxsize)
                 return FAIL(false, "OP_ARRAY size exceeds limit");
-            Var * const arr = dst.makeArray(rd.mem, len);
-            if(!arr)
+            Var * const arr = dst.makeArrayUninitialized_Dangerous(rd.mem, len);
+            if(len && !arr)
                 return FAIL(false, "OP_ARRAY alloc");
+            Var tmp;
             for(size_t i = 0; i < len; ++i)
-                if(!readval(arr[i], rd))
+                if(readval(tmp, rd))
+                {
+                    new (&arr[i]) Var(std::move(tmp));
+                    assert(tmp.isNull());
+                }
+                else
+                {
+                    tmp.clear(rd.mem);
+                    // ouch. array is partially uninited. clear valid part, then drop array
+                    Var::ClearArray(rd.mem, arr, i);
+                    dst.makeArrayUninitialized_Dangerous(rd.mem, 0);
+                    dst.clear(rd.mem);
                     return FAIL(false, "OP_ARRAY value");
+                }
             return true;
         }
         case OP_MAP:
@@ -305,9 +360,10 @@ start:
             size_t idx;
             if(!smallnum5(idx, rd, a))
                 return FAIL(false, "OP_COPY_CONST read index");
-            if(idx < rd.constantsHolder._size())
+            if(idx < rd.constantsMax)
             {
                 const Var& c = rd.constants[idx];
+                dst.clear(rd.mem);
                 dst = std::move(c.clone(rd.mem, rd.mem));
                 return true;
             }
@@ -576,6 +632,8 @@ static size_t encodeVal(WriteState& wr, const Var& in)
             }
             return sz;
         }
+
+        default: ;
     }
 
     assert(false);

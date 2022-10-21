@@ -118,7 +118,7 @@ int main(int argc, char **argv)
     char buf[8*1024];
     FILE *fh;
 
-
+    /*
     fh = fopen("citylots.json", "rb");
     if(!fh)
         abort();
@@ -145,21 +145,28 @@ int main(int argc, char **argv)
     }
     fclose(fh);
     tre.root().clear();
+    */
 
-
-    fh = fopen("test.bj", "rb");
-    if(!fh)
-        abort();
-
+    for(int i = 1; i < argc; ++i)
     {
-        ScopeTimer t;
-        BufferedFILEReadStream rd(fh, buf, sizeof(buf));
-        rd.init();
-        bool ok = bj::decode_json(tre.root(), rd);
-        printf("Loaded BJ in %llu ms, ok = %u\n", t.ms(), ok);
+        printf("File: %s\n", argv[i]);
+        fh = fopen(argv[i], "rb");
+        if(!fh)
+        {
+            puts("File not found!");
+            return 1;
+        }
+
+        {
+            ScopeTimer t;
+            BufferedFILEReadStream rd(fh, buf, sizeof(buf));
+            rd.init();
+            bool ok = bj::decode_json(tre.root(), rd);
+            printf("Loaded BJ in %" PRIu64 " ms, ok = %d\n", t.ms(), (int)ok);
+        }
+        fclose(fh);
+        //puts(dumpjson(tre.root(), true).c_str());
     }
-    fclose(fh);
-    //puts(dumpjson(tre.root(), true).c_str());
 
 
     return 0;
