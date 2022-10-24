@@ -59,6 +59,8 @@ set(src
     webstuff.h
     bj.cpp
     bj.h
+    osfunc.cpp
+    osfunc.h
 )
 
 add_library(base ${src})
