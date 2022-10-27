@@ -1,4 +1,5 @@
 #include <string.h>
+#include <algorithm>
 #include "variant.h"
 #include "bj.h"
 #include "jsonstreamwrapper.h"
@@ -8,12 +9,16 @@
 bool loadbj(FILE *fn)
 {
     char buf[8*1024];
-    DataTree tre;
+    DataTree tre(DataTree::TINY);
     BufferedFILEReadStream rd(fn, buf, sizeof(buf));
     rd.init();
     return bj::decode_json(tre.root(), rd);
 }
 
+static bool sortFN(const DirListEntryW& a, const DirListEntryW& b)
+{
+    return a.fn < b.fn;
+}
 
 int main(int argc, char **argv)
 {
@@ -30,6 +35,7 @@ int main(int argc, char **argv)
         DirListW list;
         if(!dirlist(list, dir))
             continue;
+        std::sort(list.begin(), list.end(), sortFN);
 
         DirListEntryW::StringType fn;
         for(size_t i = 0; i < list.size(); ++i)

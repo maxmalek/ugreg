@@ -208,6 +208,12 @@ void Var::ClearArray(TreeMem& mem, Var* p, size_t n)
     _ClearArray(mem, p, n);
 }
 
+void Var::ClearArrayRange(TreeMem& mem, Var* begin, Var* end)
+{
+    if(begin < end)
+        _ClearArray(mem, begin, end - begin);
+}
+
 void Var::_settop(TreeMem& mem, Topbits top, size_t size)
 {
     assert(size <= SIZE_MASK);

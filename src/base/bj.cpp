@@ -1,3 +1,8 @@
+/* Inspired by BSON, BJSON, <insert whatever binary encoding for json here>.
+   It's a draft but should be quite a bit more compact than all of the above.
+   This code is possibly security-critical since it handles untrusted data.
+   It has been AFL-fuzzed to death so beware nontrivial changes! */
+
 #include "bj.h"
 
 #include <assert.h>
@@ -211,47 +216,69 @@ start:
                     assert(oldsize == rd.constantsMax);
                     // we know that n elems follow. so we don't have to init array elems only to overwrite them later
                     // it's possible that malicious inputs request a large block of memory,
-                    // in that case we might fail later when trying to read elements.
+                    // in that case we might fail later when trying to read elements and the input stream runs out.
                     if(oldsize < end)
                     {
                         // precond: arr[0..oldsize) is inited
                         Var * const arr = rd.constantsHolder.makeArrayUninitialized_Dangerous(rd.mem, end);
                         if(!arr)
                         {
-                            i = oldsize;
+                            FAIL(false, "def constants table (alloc)");
+                            i = oldsize; // valid up until here
                             goto failclean;
                         }
                         rd.constants = arr;
                     }
+                    Var::ClearArrayRange(rd.mem, rd.constants + i, rd.constants + oldsize);
                     for( ; i < oldsize; ++i) // this was previously initialized. overwrite elems cleanly.
                     {
-                        Var& k = rd.constants[i];
-                        if(!readval(k, rd))
-                            return FAIL(false, "def constants elems");
+                        if(readval(tmp, rd))
+                            rd.constants[i] = std::move(tmp); // this is known to be cleared previously
+                        else
+                        {
+                            FAIL(false, "def constants table (overwrite old)");
+                            i = oldsize; // valid up until here
+                            goto failclean;
+                        }
                     }
                     // new, uninited memory. must move-construct with placement new
                     for( ; i < end; ++i)
                     {
-                        if (!readval(tmp, rd))
+                        if (readval(tmp, rd))
                         {
-                            tmp.clear(rd.mem);
+                            new (&rd.constants[i]) Var(std::move(tmp));  // move construct into uninitialized
+                            assert(tmp.isNull());  // tmp now empty and ready to be filled again
+                            rd.constantsMax = std::max(rd.constantsMax, i+1);  // constant written successfully, can now use it
+                        }
+                        else
+                        {
+                            FAIL(false, "def constants table (new elems)");
                             // ouch. array is partially uninited. clear valid part, then drop it
 failclean:
-                            Var::ClearArray(rd.mem, rd.constants, i);
-                            rd.constants = rd.constantsHolder.makeArrayUninitialized_Dangerous(rd.mem, 0);
+                            tmp.clear(rd.mem);
+                            Var::ClearArray(rd.mem, rd.constants, i); // destruct valid range (not actually dtor, but effectively clears everything into a dealloc-able state)
+                            rd.constants = rd.constantsHolder.makeArrayUninitialized_Dangerous(rd.mem, 0); // dealloc without dtor
+                            assert(!rd.constants);
                             rd.constantsHolder.clear(rd.mem); // to be safe: do this here so that we won't crash later in the dtor in case anything is wrong
-                            return FAIL(false, "def constants table (new elems)");
+                            return FAIL(false, "def constants table (failclean)");
                         }
-                        new (&rd.constants[i]) Var(std::move(tmp));
-                        // tmp now empty and ready to be filled again
-                        assert(tmp.isNull());
+
                     }
                 }
-                if(end > rd.constantsMax)
-                    rd.constantsMax = end;
                 rd.definingConstants = false;
                 goto start;
             }
+
+            // Reserved:
+            // 0b01xxx
+
+            // Ideas:
+            // 0b01001 - terminator
+            // 0b01010 - array of unk len
+            // 0b01011 - map of unk len
+
+            // Unused / for user extensions:
+            // 0b1xxxx
 
             return FAIL(false, "OP_VALUE unknown bits");
 
@@ -268,7 +295,7 @@ failclean:
             u64 n;
             if(!smallnum5(n, rd, a))
                 return FAIL(false, "OP_INT_NEG decode");
-            if((s64(n) < 0) == (-s64(n) < 0))
+            if((s64(n) < 0) == (-s64(n) < 0)) // encoding -0 is not allowed
                 return FAIL(false, "OP_INT_NEG consistency");
             s64 neg = -s64(n);
             if(neg >= 0)
@@ -340,20 +367,28 @@ failclean:
             Var::Map * const m  = dst.makeMap(rd.mem, len);
             if(!m)
                 return FAIL(false, "OP_MAP alloc");
-            Var k;
+            Var k, v;
+            bool ok = false;
             for(size_t i = 0; i < len; ++i)
             {
-                if(!(readval(k, rd)
-                    && k.type() == Var::TYPE_STRING
-                    && readval(m->getOrCreate(rd.mem, k.asStrRef()), rd)
-                ))
+                // read both key + value first, and insert it only if it's a good pair
+                if(readval(k, rd) && k.type() == Var::TYPE_STRING && readval(v, rd))
                 {
-                    k.clear(rd.mem);
-                    return FAIL(false, "OP_MAP key/value pair");
+                    m->put(rd.mem, k.asStrRef(), std::move(v));
+                    assert(v.isNull());
+                }
+                else
+                {
+                    FAIL(false, "OP_MAP key/value pair");
+                    dst.clear(rd.mem);
+                    goto mapexit;
                 }
             }
+            ok = true; // got here without an error
+mapexit:
+            v.clear(rd.mem);
             k.clear(rd.mem);
-            return true;
+            return ok;
         }
         case OP_COPY_CONST:
         {
@@ -377,7 +412,11 @@ failclean:
 bool decode_json(VarRef dst, BufferedReadStream& src, const Limits& lim)
 {
     ReadState rd(src, *dst.mem, lim);
-    return readval(*dst.v, rd);
+    bool ok = readval(*dst.v, rd);
+    if(!ok)
+        dst.clear();
+    return ok;
+
 }
 
 // -----------------------------------------------------------

@@ -269,6 +269,7 @@ public:
     static const Var Null;
 
     static void ClearArray(TreeMem& mem, Var *p, size_t n);
+    static void ClearArrayRange(TreeMem& mem, Var *begin, Var *end); // clear [begin..end)
 
     // --- DANGER ZONE ----
     // caller MUST properly destroy existing elements before shrinking, and init ALL new elements after enlarging
