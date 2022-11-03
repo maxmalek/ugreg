@@ -23,4 +23,6 @@ size_t encode(BufferedWriteStream& dst, const VarCRef& json, BlockAllocator *tmp
 
 bool  decode_json(VarRef dst, BufferedReadStream& src, const Limits& lim = Limits());
 
+bool checkMagic4(const char *p);
+
 } // end namespace bj

@@ -61,6 +61,8 @@ set(src
     bj.h
     osfunc.cpp
     osfunc.h
+    serialize.cpp
+    serialize.h
 )
 
 add_library(base ${src})

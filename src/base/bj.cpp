@@ -41,13 +41,40 @@ enum Op : u8
     OP_STRING,
     OP_ARRAY,
     OP_MAP,
-    OP_COPY_CONST,
+    OP_COPY_CONST
+    // OP_UNUSED -- one more op possible here
 };
 
-inline static u8 encodeOp(Op op, u8 bits)
+// Note about OP_STRING:
+// empty string encodes as 0x60 (`)
+// this has the nice side effect that strings of length 1 begin with 'a' (0x61),
+// length 2 with 'b' (0x62), and so on
+// -> increases compressability since the byte that denotes the start of a string
+//    stays in the range typically present in ascii strings anyway
+
+
+inline static constexpr u8 encodeOp(Op op, u8 bits)
 {
     return (op << 5) | bits;
 }
+
+// Chosen to be decode-able but effectively a nop when placed at the start of a bj stream.
+// For format autodetection.
+static const char s_magic[4] =
+{
+    encodeOp(OP_VALUE, 0b01000), // define constants
+    0,                           // at index 0
+    1,                           // 1 constant
+    encodeOp(OP_INT_NEG, 0)      // -0 (valid to decode but not used by encoder)
+};
+
+
+bool checkMagic4(const char* p)
+{
+    return !memcmp(p, s_magic, sizeof(s_magic));
+}
+
+//-------------------------------------------------------
 
 struct ReadState
 {
@@ -295,11 +322,11 @@ failclean:
             u64 n;
             if(!smallnum5(n, rd, a))
                 return FAIL(false, "OP_INT_NEG decode");
-            if((s64(n) < 0) == (-s64(n) < 0)) // encoding -0 is not allowed
-                return FAIL(false, "OP_INT_NEG consistency");
             s64 neg = -s64(n);
-            if(neg >= 0)
-                return FAIL(false, "OP_INT_NEG still negative");
+            if(n && (s64(n) < 0) == (neg < 0)) // -n MUST flip the sign if != 0
+                return FAIL(false, "OP_INT_NEG consistency");
+            if(neg > 0) // underflow? But tolerate -0 (reads as simply 0 here)
+                return FAIL(false, "OP_INT_NEG ended up > 0, should be negative");
             dst.setInt(rd.mem, neg);
             return true;
         }
@@ -572,7 +599,7 @@ size_t WriteState::poolAndEmitStrings()
     // remove strings that are not worth pooling
     strcoll.erase(std::remove_if(strcoll.begin(), strcoll.end(), _RemoveIf), strcoll.end());
 
-    ref2idx.reserve(*balloc, strcoll.size());
+    ref2idx.reserve(*balloc, (u32)strcoll.size());
 
     size_t ret = 0;
     if(size_t N = strcoll.size())
@@ -682,8 +709,9 @@ static size_t encodeVal(WriteState& wr, const Var& in)
 size_t encode(BufferedWriteStream& dst, const VarCRef& json, BlockAllocator *tmpalloc)
 {
     WriteState wr(dst, *json.mem, tmpalloc);
+    wr.dst.Write(s_magic, sizeof(s_magic)); // magic, for format autodetection
     size_t strsize = wr.poolAndEmitStrings();
-    return encodeVal(wr, *json.v) + strsize + 1;
+    return 4 + strsize + encodeVal(wr, *json.v);
 }
 
 

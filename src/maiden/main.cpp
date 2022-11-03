@@ -214,11 +214,9 @@ int main(int argc, char** argv)
     MxSources sources(mxs);
 
     std::vector<ServerAndConfig*> servers;
-    //std::string wkServer, wkClient;
-
 
     {
-        DataTree cfgtree;
+        DataTree cfgtree(DataTree::TINY);
         if (!doargs(cfgtree, argc, argv, argsCallback, NULL))
             bail("Failed to handle cmdline. Exiting.", "");
 
@@ -272,7 +270,10 @@ int main(int argc, char** argv)
         sleepMS(200);
 
     for (size_t i = 0; i < servers.size(); ++i)
+    {
         servers[i]->stop();
+        delete servers[i];
+    }
 
     WebServer::StaticShutdown();
     //mxs.save();
