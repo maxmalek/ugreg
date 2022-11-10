@@ -65,5 +65,9 @@ set(src
     serialize.h
 )
 
+if(MSVC)
+    set(src ${src} types.natvis)
+endif()
+
 add_library(base ${src})
 target_link_libraries(base lua)
