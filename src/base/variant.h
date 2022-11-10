@@ -330,6 +330,7 @@ private:
 class _VarMap
 {
     typedef TinyHashMap<Var /*, typename Var::Policy*/ > _Map; // FIXME: use policy
+    typedef typename _Map::TVec Vec;
     ~_VarMap(); // call destroy() instead
 public:
     // there's rarely any reason to change things while iterating,
@@ -355,6 +356,7 @@ public:
     const Var* get(const TreeMem& mem, const char* key, size_t len) const;
           Var* get(StrRef key);
     const Var* get(StrRef key) const;
+    const Vec& values() const { return _storage.values(); }
     Var* fetchOne(const char *key, size_t len); // always fetch
     bool fetchAll();                       // always fetch and replace own data
 

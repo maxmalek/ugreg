@@ -506,7 +506,9 @@ private:
 template<typename T, typename Policy = ContainerDefaultPolicy<T> >
 class TinyHashMap
 {
+public:
     typedef LVector<T, u32, Policy> TVec;
+private:
     typedef HashHat<TVec> HH;
     typedef typename TVec::size_type SZ;
     typedef typename HH::Allocator Allocator;
@@ -593,6 +595,11 @@ public:
     inline T& at(Allocator& mem, StrRef k)
     {
         return insert_new(mem, k).ref;
+    }
+
+    inline const TVec& values() const
+    {
+        return _vec;
     }
 };
 

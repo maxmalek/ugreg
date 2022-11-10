@@ -158,6 +158,37 @@ public:
         std::swap(_cap, o._cap);
     }
 
+    T& back()
+    {
+        assert(_sz);
+        return _ptr[_sz - 1];
+    }
+
+    const T& back() const
+    {
+        assert(_sz);
+        return _ptr[_sz - 1];
+    }
+
+    void pop_back(Allocator& mem)
+    {
+        assert(_sz);
+        const size_t sz = _sz - 1;
+        _sz = sz;
+        T& bk = _ptr[sz];
+        Policy::OnDestroy(mem, bk);
+        bk.~T();
+    }
+
+    T pop_back_move()
+    {
+        assert(_sz);
+        const size_t sz = _sz - 1;
+        _sz = sz;
+        T bk = std::move(_ptr[sz]);
+        return bk; // copy elision / named return value always moves
+    }
+
 private:
     static void _Destroy(Allocator& mem, T * const begin, T * const end)
     {

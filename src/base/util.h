@@ -16,6 +16,15 @@ namespace detail
 #define Countof(a) (sizeof(detail::_ArraySizeHelper(a)))
 
 
+#ifdef __GNUC__ // GCC 4.8+, Clang, Intel and other compilers compatible with GCC (-std=c++0x or above)
+[[noreturn]] static inline __attribute__((always_inline)) void unreachable() {__builtin_unreachable();}
+#elif defined(_MSC_VER) // MSVC
+[[noreturn]] static __forceinline void unreachable() { __assume(false);}
+#else // ???
+static inline void unreachable() {}
+#endif
+
+
 struct NumConvertResult
 {
     size_t used; // number of chars processed
