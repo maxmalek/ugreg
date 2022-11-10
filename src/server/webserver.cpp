@@ -8,6 +8,7 @@
 #include "treefunc.h"
 #include "zstream.h"
 #include "brstream.h"
+#include "zstdstream.h"
 #include "json_out.h"
 
 
@@ -186,6 +187,7 @@ struct HeaderHelper
 const RequestHandler::StreamWriteMth RequestHandler::s_writer[COMPR_ARRAYSIZE] =
 {
     /* COMPR_NONE */     &RequestHandler::onRequest,
+    /* COMPR_ZSTD */     &RequestHandler::onRequest_zstd,
     /* COMPR_BROTLI */   &RequestHandler::onRequest_brotli,
     /* COMPR_DEFLATE */  &RequestHandler::onRequest_deflate,
 };
@@ -337,6 +339,16 @@ int RequestHandler::onRequest_brotli(BufferedWriteStream& dst, mg_connection* co
 {
     char zbuf[8 * 1024];
     BrotliWriteStream z(dst, 3, zbuf, sizeof(zbuf)); // TODO: use compression level from config
+    z.init();
+    int ret = this->onRequest(z, conn, rq);
+    z.finish();
+    return ret;
+}
+
+int RequestHandler::onRequest_zstd(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
+{
+    char zbuf[8 * 1024];
+    ZstdWriteStream z(dst, 3, zbuf, sizeof(zbuf)); // TODO: use compression level from config
     z.init();
     int ret = this->onRequest(z, conn, rq);
     z.finish();

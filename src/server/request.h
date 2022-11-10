@@ -27,6 +27,7 @@ enum CompressionType
 {
     COMPR_NONE,
     // begin compression
+    COMPR_ZSTD,
     COMPR_BROTLI,
     COMPR_DEFLATE,
     // end compression
@@ -36,6 +37,7 @@ enum CompressionType
 static const char* CompressionTypeName[] =
 {
     NULL,
+    "zstd",
     "br",
     "deflate",
 };

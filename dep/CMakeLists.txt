@@ -59,18 +59,20 @@ add_definitions(-DMINIZ_NO_STDIO)
 add_definitions(-DLA_TRACK_STATS)
 
 set(src
-    luaalloc.c
-    luaalloc.h
+    zstd.c
+    zstd.h
+    miniz.c
+    miniz.h
     civetweb/civetweb.c
     civetweb/civetweb.h
     external_mg_cry_internal_impl.inl  # civetweb stub
     external_log_access.inl            # civetweb stub
+    luaalloc.c
+    luaalloc.h
     subprocess.h
     strpool.h
     argh.h
     impls.cpp
-    miniz.c
-    miniz.h
     upgrade_mutex.cpp
     upgrade_mutex.h
     minicoro.h

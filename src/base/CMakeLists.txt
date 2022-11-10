@@ -63,6 +63,8 @@ set(src
     osfunc.h
     serialize.cpp
     serialize.h
+    zstdstream.cpp
+    zstdstream.h
 )
 
 if(MSVC)
