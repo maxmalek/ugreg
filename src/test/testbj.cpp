@@ -162,7 +162,7 @@ int main(int argc, char **argv)
             BufferedFILEReadStream rd(fh, buf, sizeof(buf));
             rd.init();
             bool ok = bj::decode_json(tre.root(), rd);
-            printf("Loaded BJ in %" PRIu64 " ms, ok = %d\n", t.ms(), (int)ok);
+            printf("Loaded BJ in %" PRIu64 " ms, ok = %d, streampos = %zu\n", t.ms(), (int)ok, rd.Tell());
         }
         fclose(fh);
         //puts(dumpjson(tre.root(), true).c_str());

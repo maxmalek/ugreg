@@ -15,6 +15,243 @@
 
 namespace bj {
 
+/*
+struct Reader
+{
+    bool Null() { return _emit(Var()); }
+    bool Bool(bool b) { return _emit(b); }
+    bool Int(int64_t i) { return _emit((s64)i); }
+    bool Uint(uint64_t u) { return _emit((u64)u); }
+    bool Double(double d) { return _emit(d); }
+
+    // known size containers
+    bool BeginArray(size_t size) {}
+    bool EndArray(size_t size) {}
+
+    bool BeginMap(size_t size) {}
+    bool EndMap(size_t size) {}
+
+    bool BeginConstants(size_t start, size_t n) {}
+    bool EndConstants(size_t start, size_t n) {}
+    bool EmitConstant(size_t idx) {}
+};
+*/
+
+struct BjEmit
+{
+    enum FrameType
+    {
+        FRM_ARRAY,
+        FRM_MAP,
+        FRM_CTAB,
+        FRM_SENTINEL
+    };
+    struct Frame
+    {
+        FrameType ty;
+        union
+        {
+            Var *a; // if array
+            Var::Map *m; // if map
+        } u;
+        size_t idx = 0;
+        size_t size = 0;
+        Var currentKey; // holds key when filling maps
+    };
+
+    BjEmit(TreeMem& mem)
+        : mem(mem)
+    {
+        currentFrame.ty = FRM_SENTINEL;
+        currentFrame.u.a = NULL;
+        currentFrame.idx = 0;
+        currentFrame.size = 0;
+    }
+
+    ~BjEmit()
+    {
+        while(currentFrame.ty != FRM_SENTINEL)
+        {
+            currentFrame.currentKey.clear(mem);
+            popFrame();
+        }
+        assert(frames.empty());
+        frames.dealloc(mem);
+
+        if(constants)
+        {
+            Var::ClearArray(mem, constants, constantsMax);
+            constantsHolder.makeArrayUninitialized_Dangerous(mem, 0);
+            constantsHolder.clear(mem);
+        }
+
+        outputValue.clear(mem);
+    }
+
+
+    bool finalize(Var& dst)
+    {
+        assert(currentFrame.ty == FRM_SENTINEL);
+        dst = std::move(outputValue);
+        return true;
+    }
+
+    bool Null() { return _emit(Var()); }
+    bool Bool(bool b) { return _emit(b); }
+    bool Int(int64_t i) { return _emit((s64)i); }
+    bool Uint(uint64_t u) { return _emit((u64)u); }
+    bool Double(double d) { return _emit(d); }
+    bool Str(const char *s, size_t len) { return _emit(Var(mem, s, len)); }
+
+    bool Array(size_t size)
+    {
+        Var v;
+        Var *a = v.makeArray(mem, size);
+        if(size && !a)
+            return false;
+
+        bool ret = _emit(std::move(v));
+        if(size && ret)
+        {
+            pushFrame();
+            currentFrame.ty = FRM_ARRAY;
+            currentFrame.u.a = a;
+            currentFrame.idx = 0;
+            currentFrame.size = size;
+        }
+        return ret;
+    }
+
+    bool Map(size_t size)
+    {
+        Var v;
+        Var::Map *m = v.makeMap(mem, size);
+        if(!m)
+            return false;
+
+        bool ret = _emit(std::move(v));
+        if(size && ret)
+        {
+            pushFrame();
+            currentFrame.ty = FRM_MAP;
+            currentFrame.u.m = m;
+            currentFrame.idx = 0;
+            currentFrame.size = size * 2;
+        }
+        return ret;
+    }
+
+    bool Constants(size_t start, size_t end)
+    {
+        assert(start < end);
+        if(start == end)
+            return true;
+        if(start > constantsMax)
+            return false;
+
+        // this is the previously initialized/valid region that we're going to overwrite.
+        // make it safe to placement-new into it.
+        if(constants)
+            Var::ClearArrayRange(mem, constants + start, constants + std::min(end, constantsMax));
+
+        if(constantsMax < end)
+        {
+            constants = constantsHolder.makeArrayUninitialized_Dangerous(mem, end);
+            if(!constants)
+                return false;
+        }
+
+        pushFrame();
+        currentFrame.ty = FRM_CTAB;
+        currentFrame.u.a = NULL;
+        currentFrame.idx = start;
+        currentFrame.size = end;
+
+        return true;
+    }
+
+    bool EmitConstant(size_t idx)
+    {
+        return idx < constantsMax
+            && _emit(std::move(constants[idx].clone(mem, mem)));
+    }
+
+    void pushFrame()
+    {
+        frames.push_back(mem, std::move(currentFrame));
+    }
+    void popFrame()
+    {
+        currentFrame = std::move(frames.pop_back_move());
+    }
+
+    bool _emit(Var&& v)
+    {
+        const size_t idx = currentFrame.idx++;
+        assert(!currentFrame.size || idx < currentFrame.size);
+
+        switch(currentFrame.ty)
+        {
+            case FRM_ARRAY:
+                currentFrame.u.a[idx] = std::move(v);
+                //new(&f.u.a[idx]) Var(std::move(v)); // target is definitely uninitialized
+                break;
+
+            case FRM_MAP:
+                if(idx & 1) // alternating key+value, keys are at even indices, values at odd
+                {
+                    assert(currentFrame.currentKey.type() == Var::TYPE_STRING);
+                    currentFrame.u.m->put(mem, currentFrame.currentKey.asStrRef(), std::move(v));
+                    currentFrame.currentKey.clear(mem);
+                }
+                else
+                {
+                    if(v.type() != Var::TYPE_STRING)
+                        goto fail;
+                    currentFrame.currentKey = std::move(v);
+                }
+                break;
+
+            case FRM_CTAB:
+                new(&constants[idx]) Var(std::move(v)); // target is possibly uninitialized
+                constantsMax = std::max(constantsMax, idx+1);
+                break;
+
+            case FRM_SENTINEL:
+                outputValue.clear(mem);
+                outputValue = std::move(v);
+                break;
+        }
+
+        // done all we wanted? this frame's finished, pop it
+        if(idx + 1 == currentFrame.size)
+            popFrame();
+
+        return true;
+
+    fail:
+        v.clear(mem);
+        return false;
+    }
+
+    /*
+    bool ArrayUnk(size_t size) { return true; }
+    bool MapUnk(size_t size) { return true; }
+    bool Terminator() { return true; }
+    */
+
+    //bool _emit(Var&& v) { v.clear(mem); }
+
+    Frame currentFrame; // storing this here is one pointer indirection less
+    Var *constants = NULL;
+    size_t constantsMax = 0;
+    TreeMem& mem;
+
+    LVector<Frame> frames;
+    Var constantsHolder;
+    Var outputValue;
+};
+
 static const size_t MaxSizeBits = sizeof(u64) * CHAR_BIT;
 
 
@@ -80,111 +317,90 @@ bool checkMagic4(const char* p)
 
 //-------------------------------------------------------
 
-enum BjFrameReadResult
+/*
+    struct Frame
+    {
+        enum Type { ARRAY, MAP, CONSTTAB };
+        Type type;
+        size_t n; // reported frame size upon closing
+        size_t todo; // actual # of values to read
+    };
+
+    Frame &begin(Frame::Type type, size_t todo)
+    {
+        Frame frm { type, 0, todo };
+        return frames.push_back(alloc, std::move(frm));
+    }
+
+    ~BjReader()
+    {
+        frames.dealloc(alloc);
+    }
+
+*/
+
+/* This reader does the bare minimal parsing work. Doesn't keep track of object boundaries and sizes,
+* and only announces objects when they are created (so no closing callback). */
+struct BjReader
 {
-    FRM_FAIL, // failed. exit.
-    FRM_DONE, // no frame needed or frame is done, continue with next object
-    FRM_PUSH, // caller pushed our current frame -> suspend
-    FRM_NO_VALUE // no value was produced. continue right away
-};
+    BjReader(BlockAllocator& alloc, BufferedReadStream& stream)
+        : in(stream)
+        , alloc(alloc)
+        , remain(1)
+    {}
 
-struct BjReadFrame;
-struct BjReadState;
+    [[nodiscard]] inline bool expect(size_t n)
+    {
+        return !add_check_overflow(&remain, remain, n);
+    }
 
-typedef BjFrameReadResult (*BjReadFrameFunc)(BjReadState& rd);
-typedef void (*BjFailFrameFunc)(BjReadState& rd);
-
-struct BjReadFrame
-{
-    BjReadFrameFunc f;
-    Var *dst;
-    size_t idx, n;
-    BjFailFrameFunc fail;
-};
-
-struct BjReadState
-{
-    BjReadState(BufferedReadStream& src, TreeMem& mem, const Limits& lim) : src(src), mem(mem) {}
-
-    BufferedReadStream& src;
-    TreeMem& mem;
-    const Limits lim;
+    BufferedReadStream& in;
+    size_t remain;
+    BlockAllocator& alloc;
 
     //------------------------
-    BjReadFrame _currentFrame;
-    Var constantsHolder;
-    Var *constants = NULL;
-    size_t constantsMax = 0;
-    bool definingConstants = false;
     std::string tmpstr;
-    LVector<BjReadFrame> _framestack;
-
-    ~BjReadState()
-    {
-        assert(_framestack.empty());
-        constantsHolder.clear(mem);
-        _framestack.dealloc(mem);
-    }
-
-    BjReadFrame& beginFrame() // caller must set dst and write to that
-    {
-        _framestack.push_back(mem, std::move(_currentFrame));
-        _currentFrame.dst = NULL;
-        return _currentFrame;
-    }
-    BjReadFrame& currentFrame()
-    {
-        return _currentFrame; // this is intentionally always the same address
-    }
-    BjReadFrame& prevFrame() // returns frame below the top frame
-    {
-        return _framestack.back();
-    }
-    const BjReadFrame& popFrame() // returns new top frame after popping
-    {
-        _currentFrame = _framestack.pop_back_move();
-        return _currentFrame;
-    }
 };
+
 
 // helper to read a ULEB128-encoded uint. returns true when all is well.
 // dst must already contain an initial value.
-static bool _readnum_add(u64& dst, BjReadState& rd)
+static bool _readnum_add(u64& dst, BufferedReadStream& in)
 {
     u64 sh = 0;
     u8 c;
     do
     {
-        if(rd.src.done())
+        if(in.done())
             return FAIL(false, "stream end");
         if(sh >= MaxSizeBits)
             return FAIL(false, "too many bits");
-        c = rd.src.Take();
+        c = in.Take();
         const u64 add = u64(c & 0x7f) << sh;
         if(add_check_overflow(&dst, dst, add))
             return FAIL(false, "overflow");
         sh += 7;
     }
-    while((c & 0x80) && !rd.src.done());
+    while((c & 0x80) && !in.done());
 
     return true;
 }
 
-inline static bool readnum(u64& dst, BjReadState& rd)
+inline static bool readnum(u64& dst, BufferedReadStream& in)
 {
     dst = 0;
-    return _readnum_add(dst, rd);
+    return _readnum_add(dst, in);
 }
 
-inline static bool smallnum5(u64& dst, BjReadState& rd, u8 a)
+inline static bool smallnum5(u64& dst, BufferedReadStream& in, u8 a)
 {
     dst = a;
-    return a < 0b11111 || _readnum_add(dst, rd);
+    return a < 0b11111 || _readnum_add(dst, in);
 }
 
 // read value stored in little endian
 template<typename T>
-static bool readLE(T& dst, BjReadState& rd)
+static bool readLE(T& dst, BufferedReadStream& in)
 {
     union
     {
@@ -196,18 +412,18 @@ static bool readLE(T& dst, BjReadState& rd)
     {
         for(size_t i = 0; i < sizeof(T); ++i)
         {
-            if(rd.src.done())
+            if(in.done())
                 return FAIL(false, "stream end");
-            u.b[i] = rd.src.Take();
+            u.b[i] = in.Take();
         }
     }
     else
     {
         for (size_t i = sizeof(T); i --> 0; )
         {
-            if (rd.src.done())
+            if (in.done())
                 return FAIL(false, "stream end");
-            u.b[i] = rd.src.Take();
+            u.b[i] = in.Take();
         }
     }
 
@@ -215,377 +431,72 @@ static bool readLE(T& dst, BjReadState& rd)
     return true;
 }
 
-// ------------------- ARRAYS ------------------------
-
-static BjFrameReadResult readval(Var& dst, BjReadState& rd);
-static BjFrameReadResult readstrval(Var& dst, BjReadState& rd);
-
-static void readArrayFail(BjReadState& rd)
-{
-    BjReadFrame& frm = rd.currentFrame();
-    Var * const arr = frm.dst->array();
-    assert(arr);
-    // ouch. array is partially uninited. clear valid part, then drop array
-    Var::ClearArray(rd.mem, arr, frm.idx);
-    frm.dst->makeArrayUninitialized_Dangerous(rd.mem, 0);
-    frm.dst->clear(rd.mem);
-}
-
-static BjFrameReadResult readArrayElems(BjReadState& rd)
-{
-    BjFrameReadResult res = FRM_DONE;
-    Var tmp;
-
-    // load state, resume there
-    BjReadFrame& frm = rd.currentFrame(); // always ref to whichever frame is current
-    const size_t len = frm.n;
-    Var * const arr = frm.dst->array();
-    assert(arr);
-    size_t i = frm.idx;
-
-    for( ; i < len; ++i)
-    {
-loopstart:
-        res = readval(tmp, rd);
-        switch(res)
-        {
-            case FRM_DONE:
-                new (&arr[i]) Var(std::move(tmp)); // move into uninited mem
-                break; // read next elem
-
-            case FRM_PUSH: // readval() pushed a new frame.
-                rd.prevFrame().idx = i+1; // resume here -- update old frame
-                frm.dst = new (&arr[i]) Var(std::move(tmp));
-                goto exit;
-
-            case FRM_FAIL:
-                FAILMSG("readArrayElems");
-                frm.idx = i;
-                tmp.clear(rd.mem);
-                goto exit;
-
-            case FRM_NO_VALUE:
-                goto loopstart; // don't modify i, just read again
-        }
-    }
-exit:
-    assert(res != FRM_NO_VALUE);
-    return res;
-}
-
-static BjFrameReadResult readArrayBegin(Var& dst, BjReadState& rd, size_t size)
-{
-    Var *arr = dst.makeArrayUninitialized_Dangerous(rd.mem, size);
-    if(size) // don't need a frame for empty arrays
-    {
-        BjReadFrame& frm = rd.beginFrame(); // push a new frame, fill it in
-        //frm.dst = &dst;
-        frm.idx = 0;
-        frm.n = size;
-        frm.f = readArrayElems;
-        frm.fail = readArrayFail;
-        return arr ? FRM_PUSH : FRM_FAIL;
-    }
-
-    return FRM_DONE;
-}
-
-// --------------------- MAPS ----------------------
-
-static void readSingleValueFail(BjReadState& rd)
-{
-    BjReadFrame& frm = rd.currentFrame();
-    frm.dst->clear(rd.mem);
-}
-
-static BjFrameReadResult readMapElems(BjReadState& rd)
-{
-    BjFrameReadResult res = FRM_DONE;
-
-    // load state, resume there
-    BjReadFrame& frm = rd.currentFrame();
-    const size_t len = frm.n;
-    Var::Map * const m = frm.dst->map();
-    assert(m);
-    size_t i = frm.idx;
-    const Var * const vecptr = m->values().data();
-
-    Var k, v;
-
-    for( ; i < len; ++i)
-    {
-
-        // 1) read key, must be a string as required by variant.h. never pushes a new frame.
-        do
-            res = readstrval(k, rd);
-        while(res == FRM_NO_VALUE);
-        if(res != FRM_DONE)
-        {
-            FAILMSG("readMapElems key");
-            assert(res == FRM_FAIL);
-            goto exit;
-        }
-
-        // 2) read value, anything is fine. may push a new frame.
-readvalue:
-        res = readval(v, rd);
-        switch(res)
-        {
-            case FRM_DONE:
-                m->put(rd.mem, k.asStrRef(), std::move(v));
-                break; // read next elem
-
-            case FRM_PUSH: // readval() pushed a new frame
-                rd.prevFrame().idx = i+1; // resume here -- update old frame
-                frm.dst = &m->put(rd.mem, k.asStrRef(), std::move(v));
-                goto exit;
-
-            case FRM_FAIL:
-                FAILMSG("readMapElems value");
-                v.clear(rd.mem);
-                goto exit;
-
-            case FRM_NO_VALUE:
-                goto readvalue; // don't modify i, just read again
-        }
-    }
-exit:
-    assert(vecptr == m->values().data()); // Make sure the map didn't reallocate
-    k.clear(rd.mem);
-    assert(res != FRM_NO_VALUE);
-    return res;
-}
-
-static BjFrameReadResult readMapBegin(Var& dst, BjReadState& rd, size_t size)
-{
-    Var::Map *m = dst.makeMap(rd.mem, size);
-    if(size) // don't need a frame for empty maps
-    {
-        BjReadFrame& frm = rd.beginFrame(); // push a new frame, fill it in
-        //frm.dst = &dst;
-        frm.idx = 0;
-        frm.n = size;
-        frm.f = readMapElems;
-        frm.fail = readSingleValueFail;
-        return m ? FRM_PUSH : FRM_FAIL;
-    }
-
-    return FRM_DONE;
-}
-
-// -------------------- CONSTANT TABLE -----------------------
-
-static void readConstantTableFail(BjReadState& rd, size_t validSize)
-{
-    Var::ClearArray(rd.mem, rd.constants, validSize); // destruct valid range (not actually dtor, but effectively clears everything into a dealloc-able state)
-    rd.constants = rd.constantsHolder.makeArrayUninitialized_Dangerous(rd.mem, 0); // dealloc without dtor, including any uninitialized tail
-    assert(!rd.constants);
-    rd.constantsHolder.clear(rd.mem); // to be safe: do this here so that we won't crash later in the dtor in case anything is wrong
-}
-
-static void readConstantTableFail(BjReadState& rd)
-{
-    BjReadFrame& frm = rd.currentFrame();
-    readConstantTableFail(rd, frm.idx);
-}
-
-
-static BjFrameReadResult readConstantTableElems(BjReadState& rd)
-{
-    BjFrameReadResult res = FRM_DONE;
-    Var tmp;
-
-    // load state, resume there
-    BjReadFrame& frm = rd.currentFrame();
-    size_t i = frm.idx;
-    const size_t end = frm.n;
-    Var * const arr = rd.constantsHolder.array();
-    assert(arr);
-
-    for( ; i < end; ++i)
-    {
-        res = readval(tmp, rd);
-        switch(res)
-        {
-            case FRM_DONE:
-                new (&arr[i]) Var(std::move(tmp)); // move into uninited mem
-                rd.constantsMax = std::max(rd.constantsMax, i+1);  // constant written successfully, can now use it
-                break; // read next elem
-
-            case FRM_PUSH:
-                rd.prevFrame().idx = i+1; // resume here -- update current state in case we get pushed
-                frm.dst = new (&arr[i]) Var(std::move(tmp)); // a new frame was pushed but frm (aka rd._currentFrame) didn't change and now holds the NEW FRAME, so we can keep using this
-                goto exit;
-
-            case FRM_FAIL:
-                tmp.clear(rd.mem);
-                return FAIL(FRM_FAIL, "readConstantTableElems");
-
-            case FRM_NO_VALUE:
-                UNREACHABLE(); // can't nest constant tables
-        }
-    }
-    rd.definingConstants = false; // clear this ONLY when done processing all elements is done aka after exiting the loop cleanly
-    res = FRM_NO_VALUE; // we didn't actually produce a value, caller must read again
-exit:
-    assert(res != FRM_DONE); // this function does not produce a value
-    return res;
-}
-
-static BjFrameReadResult readConstantTableBegin(BjReadState& rd, size_t begin, size_t end)
-{
-    if(end > rd.lim.constants)
-        return FAIL(FRM_FAIL, "def constants table exceeds limits");
-    if(begin > rd.constantsMax)
-        return FAIL(FRM_FAIL, "def constants non-contiguous");
-    if(rd.definingConstants)
-        return FAIL(FRM_FAIL, "can't nest def constants");
-
-    Var& ctab = rd.constantsHolder;
-    const size_t oldsize = ctab._size();
-    assert(oldsize == rd.constantsMax);
-
-    // we know that n elems follow. so we don't have to init array elems only to overwrite them later
-    // it's possible that malicious inputs request a large block of memory,
-    // in that case we might fail later when trying to read elements and the input stream runs out.
-    if(oldsize < end)
-    {
-        // precond: arr[0..oldsize) is initialized and valid
-        Var * const arr = ctab.makeArrayUninitialized_Dangerous(rd.mem, end);
-        if(!arr)
-        {
-            readConstantTableFail(rd, oldsize);
-            return FAIL(FRM_FAIL, "def constants (alloc)");
-        }
-        rd.constants = arr;
-    }
-
-    if(begin != end) // don't need a frame for empty constant table
-    {
-        // this is the range that will be overwritten/redefined
-        Var::ClearArrayRange(rd.mem, rd.constants + begin, rd.constants + oldsize);
-
-        BjReadFrame& frm = rd.beginFrame(); // push a new frame, fill it in
-        frm.dst = &rd.constantsHolder; // not actually used, but serves as a marker (**)
-        frm.idx = begin;
-        frm.n = end;
-        frm.f = readConstantTableElems;
-        frm.fail = readConstantTableFail;
-
-        rd.definingConstants = true;
-        return FRM_PUSH;
-    }
-
-    return FRM_NO_VALUE; // empty constant table
-}
-
 // -------------------------------------------
 
-static BjFrameReadResult readstrN(Var& dst, BjReadState& rd, size_t n)
+template<typename Emit>
+static bool readstrN(Emit& emit, BjReader& rd, size_t n)
 {
-    if(rd.src.availBuffered() >= n) // copy directly
+    if(rd.in.availBuffered() >= n) // copy directly
     {
-        dst.setStr(rd.mem, (const char*)rd.src.ptr(), n);
-        rd.src.advanceBuffered(n);
+        bool ret = emit.Str((const char*)rd.in.ptr(), n);
+        rd.in.advanceBuffered(n);
+        return ret;
     }
-    else // slow path
+
+    // slow path
+    std::string& s = rd.tmpstr; // is a member to avoid repeated (re-)allocation
+    s.resize(n);
+    for(size_t i = 0; i < n; ++i)
     {
-        std::string& s = rd.tmpstr; // is a member to avoid repeated (re-)allocation
-        s.resize(n);
-        for(size_t i = 0; i < n; ++i)
-        {
-            if(rd.src.done())
-                return FAIL(FRM_FAIL, "stream end while reading string");
-            s[i] = rd.src.Take();
-        }
-        dst.setStr(rd.mem, s.c_str(), n);
+        if(rd.in.done())
+            return FAIL(false, "stream end while reading string");
+        s[i] = rd.in.Take();
     }
-    return FRM_DONE;
+    return emit.Str(s.c_str(), n);
 }
 
-static BjFrameReadResult copyconst(Var& dst, BjReadState& rd, size_t idx)
-{
-    if(idx < rd.constantsMax)
-    {
-        const Var& c = rd.constants[idx];
-        dst.clear(rd.mem);
-        dst = std::move(c.clone(rd.mem, rd.mem));
-        return FRM_DONE;
-    }
-    return FAIL(FRM_FAIL, "OP_COPY_CONST index out of bounds");
-}
 
-static BjFrameReadResult consttable(BjReadState& rd)
+enum BjReadResult
+{
+    RD_FAIL  = 0,
+    RD_OK    = 1, // lowest bit set
+    RD_NOVAL = 2, // lowest bit not set
+};
+
+
+template<typename Emit>
+static BjReadResult consttable(Emit& emit, BjReader& rd)
 {
     u64 i, n;
-    if(!readnum(i, rd))
-        return FAIL(FRM_FAIL, "def constants begin idx");
-    if(!readnum(n, rd))
-        return FAIL(FRM_FAIL, "def constants size");
+    if(!readnum(i, rd.in))
+        return FAIL(RD_FAIL, "def constants begin idx");
+    if(!readnum(n, rd.in))
+        return FAIL(RD_FAIL, "def constants size");
     u64 end;
     if(add_check_overflow(&end, i, n))
-        return FAIL(FRM_FAIL, "def constants size overflow");
+        return FAIL(RD_FAIL, "def constants size overflow");
 
-    return readConstantTableBegin(rd, i, end);
+    unsigned r = rd.expect(n) && emit.Constants(i, end);
+
+    // either fail or noval
+    return BjReadResult(r << 1u);
 }
 
-// like readval(), but fails when the value is not a string. for reading map keys.
-// never returns FRM_PUSH.
-static BjFrameReadResult readstrval(Var& dst, BjReadState& rd)
+
+template<typename Emit>
+static BjReadResult readval(Emit& emit, BjReader& rd)
 {
-    if(rd.src.done())
-        return FAIL(FRM_FAIL, "readstrval end of stream");
-    u8 a = rd.src.Take();
-    const Op op = Op(a >> 5);
-    /*if(op == OP_VALUE)
-    {
-        if(a == 0b01000) // Define constants
-            return consttable(rd);
-    }
-    else*/
-    {
-        a &= 0b11111;
-
-        u64 n;
-        if(!smallnum5(n, rd, a))
-            return FAIL(FRM_FAIL, "readstrval num5 decode");
-
-        switch(op)
-        {
-            case OP_STRING:
-                return readstrN(dst, rd, n);
-            case OP_COPY_CONST:
-                if(copyconst(dst, rd, n) == FRM_DONE && dst.type() == Var::TYPE_STRING)
-                    return FRM_DONE;
-        }
-    }
-    return FAIL(FRM_FAIL, "readstrval not a string");
-}
-
-// read one value. may push a new frame.
-// protocol:
-// when FRM_DONE is returned, dst was written do.
-// when FRM_PUSH is returned, dst is initialized with a valid (but yet unfilled) map/array, unless we're defining constants
-// if we're defining constants, dst is a nullref (technically invalid but we're not touching it, so whatever), and the frame is popped without a write
-static BjFrameReadResult readval(Var& dst, BjReadState& rd)
-{
-    if(rd.src.done())
-        return FAIL(FRM_FAIL, "end of stream");
-    u8 a = rd.src.Take();
+    if(rd.in.done())
+        return FAIL(RD_FAIL, "end of stream");
+    u8 a = rd.in.Take();
     const Op op = Op(a >> 5);
 
     if(!op) // OP_VALUE -- lower 5 bits have specialized encodings, upper 3 bits are known to be 0
     {
         if(!a) // None
-        {
-            dst.clear(rd.mem);
-            return FRM_DONE;
-        }
+            return BjReadResult(emit.Null());
         if((a & 0b11110) == 0b00010) // Bool
-        {
-            dst.setBool(rd.mem, a & 1);
-            return FRM_DONE;
-        }
+            return BjReadResult(emit.Bool(a & 1));
         if((a & 0b11100) == 0b00100) // Float
         {
             double f = 0;
@@ -594,36 +505,35 @@ static BjFrameReadResult readval(Var& dst, BjReadState& rd)
                 case 0: // Float32
                 {
                     float ff;
-                    if(readLE(ff, rd))
+                    if(readLE(ff, rd.in))
                         f = ff;
                     else
-                        return FAIL(FRM_FAIL, "read float32");
+                        return FAIL(RD_FAIL, "read float32");
                 }
                 break;
                 case 1: // Double
-                    if (!readLE(f, rd))
-                        return FAIL(FRM_FAIL, "read double");
+                    if (!readLE(f, rd.in))
+                        return FAIL(RD_FAIL, "read double");
                 break;
                 case 2: // Read +int, cast to f
                 {
                     u64 tmp;
-                    if(!readnum(tmp, rd))
-                        return FAIL(FRM_FAIL, "read +int -> f");
+                    if(!readnum(tmp, rd.in))
+                        return FAIL(RD_FAIL, "read +int -> f");
                     f = (double)tmp;
                     break;
                 }
                 case 3: // Read -int, cast to f
                     u64 tmp;
-                    if(!readnum(tmp, rd))
-                        return FAIL(FRM_FAIL, "read -int -> f");
+                    if(!readnum(tmp, rd.in))
+                        return FAIL(RD_FAIL, "read -int -> f");
                     f = -(double)tmp;
                     break;
             }
-            dst.setFloat(rd.mem, f);
-            return FRM_DONE;
+            return BjReadResult(emit.Double(f));
         }
         if(a == 0b01000) // Define constants
-            return consttable(rd);
+            return consttable(emit, rd);
 
         // Reserved:
         // 0b01xxx
@@ -636,116 +546,117 @@ static BjFrameReadResult readval(Var& dst, BjReadState& rd)
         // Unused / for user extensions:
         // 0b1xxxx
 
-        return FAIL(FRM_FAIL, "OP_VALUE unknown bits");
+        return FAIL(RD_FAIL, "OP_VALUE unknown bits");
     }
 
     // some other op. the lower 5 bits are always a length.
     a &= 0b11111;
     u64 n;
-    if(!smallnum5(n, rd, a))
-        return FAIL(FRM_FAIL, "num5 decode");
+    if(!smallnum5(n, rd.in, a))
+        return FAIL(RD_FAIL, "num5 decode");
 
     switch(op)
     {
         case OP_INT_POS:
-        {
-            dst.setUint(rd.mem, n);
-            return FRM_DONE;
-        }
+            return BjReadResult(emit.Uint(n));
+
         case OP_INT_NEG:
         {
             s64 neg = -s64(n);
             if(n && (s64(n) < 0) == (neg < 0)) // -n MUST flip the sign if != 0
-                return FAIL(FRM_FAIL, "OP_INT_NEG consistency");
+                return FAIL(RD_FAIL, "OP_INT_NEG consistency");
             if(neg > 0) // underflow? But tolerate -0 (reads as simply 0 here)
-                return FAIL(FRM_FAIL, "OP_INT_NEG ended up > 0, should be negative");
-            dst.setInt(rd.mem, neg);
-            return FRM_DONE;
+                return FAIL(RD_FAIL, "OP_INT_NEG ended up > 0, should be negative");
+            return BjReadResult(emit.Int(neg));
         }
+
         case OP_STRING:
-        {
-            if(n > rd.lim.maxsize) // FIXME: this and the next few should be solved via limiting the memory allocator, not per-object
-                return FAIL(FRM_FAIL, "string size exceeds limit");
+            return BjReadResult(readstrN(emit, rd, n));
 
-            return readstrN(dst, rd, n);
-        }
         case OP_ARRAY:
-        {
-            if(n > rd.lim.maxsize)
-                return FAIL(FRM_FAIL, "OP_ARRAY size exceeds limit");
+            return BjReadResult(rd.expect(n) && emit.Array(n));
 
-            return readArrayBegin(dst, rd, n);
-        }
         case OP_MAP:
         {
-            if(n > rd.lim.maxsize)
-                return FAIL(FRM_FAIL, "OP_MAP size exceeds limit");
-
-            return readMapBegin(dst, rd, n);
+            size_t e = n; // e = 2*n but with overflow check
+            return BjReadResult(!add_check_overflow(&e, e, e) && rd.expect(e) && emit.Map(n));
         }
+
         case OP_COPY_CONST:
-            return copyconst(dst, rd, n);
+            return BjReadResult(emit.EmitConstant(n));
     }
 
-    return FAIL(FRM_FAIL, "unhandled OP");
+    return FAIL(RD_FAIL, "unhandled OP");
 }
 
-// to begin the iteration and to init the first frame
-static BjFrameReadResult readInitialSingleValue(BjReadState& rd)
+
+bool decode_json(VarRef dst, BufferedReadStream& src)
 {
-    BjReadFrame& frm = rd.currentFrame();
-    Var *dst = frm.dst;
-    BjFrameReadResult res;
+    BjReader rd(*dst.mem, src);
+    BjEmit emit(*dst.mem);
+
+    BjReadResult res;
     do
-        res = readval(*dst, rd);
-    while(res == FRM_NO_VALUE);
-    if(res == FRM_PUSH && !frm.dst)
-        frm.dst = dst; // new frame gets our root node
+        res = readval(emit, rd);
+    while(res && (rd.remain -= (res & 1)));
 
-    assert(res != FRM_NO_VALUE);
-    return res;
-}
+    if(res == RD_FAIL)
+        return false;
 
+    /*
 
-bool decode_json(VarRef dst, BufferedReadStream& src, const Limits& lim)
-{
-    Var tmp; // keep this in a local until we're sure the entire thing was read in without errors
-    BjReadState rd(src, *dst.mem, lim);
-    // init the bottom frame so that a later pushFrame() doesn't try to clone something entirely invalid
-    BjReadFrame& frm = rd.currentFrame();
-    frm.dst = &tmp;
-    frm.f = readInitialSingleValue;
-    frm.fail = readSingleValueFail;
-
-    for(;;)
     {
-        switch(frm.f(rd))
-        {
-            case FRM_DONE:
-            case FRM_NO_VALUE:
-                if(!rd._framestack.empty())
-                {
-                    rd.popFrame(); // continue with next frame
-                    break;
-                }
-                dst.clear(); // everything finished, assign output properly
-                *dst.v = std::move(tmp);
-                return true;
-            case FRM_PUSH:
-                assert(!rd._framestack.empty()); // something was pushed, so this can't be empty
-                break; // got a new frame on top, continue with it. (frm was modified)
+        BjReadResult res;
+        do
+            res = readval(emit, rd);
+        while(res == RD_NOVAL); // keep reading until we get something. may open multiple frames.
 
-            case FRM_FAIL:
-                // top frame failed. fail all frames that still exist to unroll cleanly
-                while(!rd._framestack.empty())
-                {
-                    frm.fail(rd);
-                    rd.popFrame();
-                }
-                frm.fail(rd); // last frame
+        if(res == RD_FAIL)
+            return false;
+    }
+
+    while(size_t top = rd.frames.size())
+    {
+        if(size_t todo = rd.frames[top-1].todo)
+        {
+            BjReadResult res = readval(emit, rd); // may push ONE frame
+            if(res == RD_FAIL)
                 return false;
+            size_t done = res & 1;
+            assert(done); // TEMP
+            BjReader::Frame& f = rd.frames[top-1];
+            f.todo = todo - done;
+            f.n += done;
+        }
+        else
+        {
+            BjReader::Frame f = rd.frames.pop_back_move();
+            size_t done = 0;
+            switch(f.type)
+            {
+                case BjReader::Frame::ARRAY:
+                    emit.EndArray(f.n);
+                    done = 1;
+                    break;
+                case BjReader::Frame::MAP:
+                    assert(!(f.n & 1)); // must be even
+                    emit.EndMap(f.n / 2u);
+                    done = 1;
+                    break;
+                case BjReader::Frame::CONSTTAB:
+                    emit.EndConstants(f.n);
+                    rd.definingConstants = false;
+                    break;
+            }
+            if(rd.frames.size())
+                rd.frames.back().n += done;
         }
     }
+    */
+
+    assert(res == RD_OK);
+
+    return emit.finalize(*dst.v);
 }
 
 // -----------------------------------------------------------

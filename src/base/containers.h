@@ -15,21 +15,24 @@ struct ContainerDefaultPolicy
     inline static void OnDestroy(Allocator&, T&) {}
 };
 
+struct LVectorBase
+{
+    struct ReserveTag {}; // just reserve space but don't init
+    struct InitTag {}; // resize+init behavior
+};
+
 // Light vector -- needs external allocator
 template<
     typename T,
     typename SZ = size_t,
     typename Policy = ContainerDefaultPolicy<T>
 >
-class LVector
+class LVector : public LVectorBase
 {
     typedef typename Policy::Allocator Allocator;
 public:
     typedef T value_type;
     typedef SZ size_type;
-
-    struct ReserveTag {}; // just reserve space but don't init
-    struct InitTag {}; // resize+init behavior
 
     // this is the most lazy thing and should suffice
     typedef T* iterator;
