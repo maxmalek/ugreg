@@ -372,6 +372,7 @@ void RequestHandler::prepareHeader(const char* mimetype)
             "Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0\r\n"
             "Expires: 0\r\n"
             "Pragma: no-cache\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
             "Content-Type: " << mimetype << "\r\n";
     preparedHdr = os.str();
 
