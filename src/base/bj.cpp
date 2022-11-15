@@ -7,6 +7,7 @@
 
 #include <assert.h>
 #include <math.h>
+#include <string.h>
 #include <algorithm>
 
 #include "treemem.h"
@@ -88,7 +89,6 @@ struct BjEmit
         outputValue.clear(mem);
     }
 
-
     bool finalize(Var& dst)
     {
         assert(currentFrame.ty == FRM_SENTINEL);
@@ -111,7 +111,7 @@ struct BjEmit
             return false;
 
         bool ret = _emit(std::move(v));
-        if(size && ret)
+        if(size && ret) // empty arrays don't need to be pushed
         {
             pushFrame();
             currentFrame.ty = FRM_ARRAY;
@@ -188,7 +188,7 @@ struct BjEmit
     bool _emit(Var&& v)
     {
         const size_t idx = currentFrame.idx++;
-        assert(!currentFrame.size || idx < currentFrame.size);
+        assert(!currentFrame.size || idx < currentFrame.size); // unknown size target has size=0
 
         switch(currentFrame.ty)
         {
@@ -301,12 +301,12 @@ inline static constexpr u8 encodeOp(Op op, u8 bits)
 
 // Chosen to be decode-able but effectively a nop when placed at the start of a bj stream.
 // For format autodetection.
-static const char s_magic[4] =
+static const u8 s_magic[4] =
 {
     encodeOp(OP_VALUE, 0b01000), // define constants
-    0,                           // at index 0
-    1,                           // 1 constant
-    encodeOp(OP_INT_NEG, 0)      // -0 (valid to decode but not used by encoder)
+    0x80, 0,                     // two-byte encoding for index 0
+    0                            // one-byte size=0 makes this an empty constant table,
+                                 // and the decoder skips it.
 };
 
 
@@ -317,27 +317,6 @@ bool checkMagic4(const char* p)
 
 //-------------------------------------------------------
 
-/*
-    struct Frame
-    {
-        enum Type { ARRAY, MAP, CONSTTAB };
-        Type type;
-        size_t n; // reported frame size upon closing
-        size_t todo; // actual # of values to read
-    };
-
-    Frame &begin(Frame::Type type, size_t todo)
-    {
-        Frame frm { type, 0, todo };
-        return frames.push_back(alloc, std::move(frm));
-    }
-
-    ~BjReader()
-    {
-        frames.dealloc(alloc);
-    }
-
-*/
 
 /* This reader does the bare minimal parsing work. Doesn't keep track of object boundaries and sizes,
 * and only announces objects when they are created (so no closing callback). */
@@ -369,19 +348,22 @@ static bool _readnum_add(u64& dst, BufferedReadStream& in)
 {
     u64 sh = 0;
     u8 c;
+    goto beginloop;
     do
     {
-        if(in.done())
-            return FAIL(false, "stream end");
         if(sh >= MaxSizeBits)
             return FAIL(false, "too many bits");
+        sh += 7;
+beginloop:
+        if(in.done())
+            return FAIL(false, "stream end");
         c = in.Take();
         const u64 add = u64(c & 0x7f) << sh;
         if(add_check_overflow(&dst, dst, add))
             return FAIL(false, "overflow");
-        sh += 7;
+
     }
-    while((c & 0x80) && !in.done());
+    while(c & 0x80);
 
     return true;
 }
@@ -410,12 +392,19 @@ static bool readLE(T& dst, BufferedReadStream& in)
 
     if(nativeendian.little)
     {
-        for(size_t i = 0; i < sizeof(T); ++i)
+        if(in.availBuffered() >= sizeof(T)) // fast path: system is LE, and the stream has enough bytes
         {
-            if(in.done())
-                return FAIL(false, "stream end");
-            u.b[i] = in.Take();
+            memcpy(&dst, in.ptr(), sizeof(T));
+            in.advanceBuffered(sizeof(T));
+            return true;
         }
+        else
+            for(size_t i = 0; i < sizeof(T); ++i)
+            {
+                if(in.done())
+                    return FAIL(false, "stream end");
+                u.b[i] = in.Take();
+            }
     }
     else
     {
@@ -472,6 +461,8 @@ static BjReadResult consttable(Emit& emit, BjReader& rd)
         return FAIL(RD_FAIL, "def constants begin idx");
     if(!readnum(n, rd.in))
         return FAIL(RD_FAIL, "def constants size");
+    if(!n) // ignore empty constant table
+        return RD_NOVAL;
     u64 end;
     if(add_check_overflow(&end, i, n))
         return FAIL(RD_FAIL, "def constants size overflow");
@@ -491,13 +482,14 @@ static BjReadResult readval(Emit& emit, BjReader& rd)
     u8 a = rd.in.Take();
     const Op op = Op(a >> 5);
 
-    if(!op) // OP_VALUE -- lower 5 bits have specialized encodings, upper 3 bits are known to be 0
+    static_assert(OP_VALUE == 0, "no");
+    if(op == OP_VALUE) // lower 5 bits have specialized encodings, upper 3 bits are known to be 0
     {
         if(!a) // None
             return BjReadResult(emit.Null());
-        if((a & 0b11110) == 0b00010) // Bool
+        if((a & 0b11110) == 0b00010) // [0001x] Bool (lowest bit is true/false)
             return BjReadResult(emit.Bool(a & 1));
-        if((a & 0b11100) == 0b00100) // Float
+        if((a & 0b11100) == 0b00100) // [001xx] Float (lowest 2 bits decide how it's encoded)
         {
             double f = 0;
             switch(a & 0b11)
@@ -532,7 +524,7 @@ static BjReadResult readval(Emit& emit, BjReader& rd)
             }
             return BjReadResult(emit.Double(f));
         }
-        if(a == 0b01000) // Define constants
+        if(a == 0b01000) // [01000] Define constants
             return consttable(emit, rd);
 
         // Reserved:
@@ -557,18 +549,8 @@ static BjReadResult readval(Emit& emit, BjReader& rd)
 
     switch(op)
     {
-        case OP_INT_POS:
-            return BjReadResult(emit.Uint(n));
-
-        case OP_INT_NEG:
-        {
-            s64 neg = -s64(n);
-            if(n && (s64(n) < 0) == (neg < 0)) // -n MUST flip the sign if != 0
-                return FAIL(RD_FAIL, "OP_INT_NEG consistency");
-            if(neg > 0) // underflow? But tolerate -0 (reads as simply 0 here)
-                return FAIL(RD_FAIL, "OP_INT_NEG ended up > 0, should be negative");
-            return BjReadResult(emit.Int(neg));
-        }
+        case OP_COPY_CONST:
+            return BjReadResult(emit.EmitConstant(n));
 
         case OP_STRING:
             return BjReadResult(readstrN(emit, rd, n));
@@ -578,12 +560,22 @@ static BjReadResult readval(Emit& emit, BjReader& rd)
 
         case OP_MAP:
         {
-            size_t e = n; // e = 2*n but with overflow check
-            return BjReadResult(!add_check_overflow(&e, e, e) && rd.expect(e) && emit.Map(n));
+            size_t e; // e = 2*n but with overflow check
+            return BjReadResult(!add_check_overflow(&e, n, n) && rd.expect(e) && emit.Map(n));
         }
 
-        case OP_COPY_CONST:
-            return BjReadResult(emit.EmitConstant(n));
+        case OP_INT_POS:
+            return BjReadResult(emit.Uint(n));
+
+        case OP_INT_NEG:
+        {
+            s64 neg = -s64(n);
+            if (n && (s64(n) < 0) == (neg < 0)) // -n MUST flip the sign if != 0
+                return FAIL(RD_FAIL, "OP_INT_NEG consistency");
+            if (neg > 0) // underflow? But tolerate -0 (reads as simply 0 here)
+                return FAIL(RD_FAIL, "OP_INT_NEG ended up > 0, should be negative");
+            return BjReadResult(emit.Int(neg));
+        }
     }
 
     return FAIL(RD_FAIL, "unhandled OP");
@@ -603,59 +595,7 @@ bool decode_json(VarRef dst, BufferedReadStream& src)
     if(res == RD_FAIL)
         return false;
 
-    /*
-
-    {
-        BjReadResult res;
-        do
-            res = readval(emit, rd);
-        while(res == RD_NOVAL); // keep reading until we get something. may open multiple frames.
-
-        if(res == RD_FAIL)
-            return false;
-    }
-
-    while(size_t top = rd.frames.size())
-    {
-        if(size_t todo = rd.frames[top-1].todo)
-        {
-            BjReadResult res = readval(emit, rd); // may push ONE frame
-            if(res == RD_FAIL)
-                return false;
-            size_t done = res & 1;
-            assert(done); // TEMP
-            BjReader::Frame& f = rd.frames[top-1];
-            f.todo = todo - done;
-            f.n += done;
-        }
-        else
-        {
-            BjReader::Frame f = rd.frames.pop_back_move();
-            size_t done = 0;
-            switch(f.type)
-            {
-                case BjReader::Frame::ARRAY:
-                    emit.EndArray(f.n);
-                    done = 1;
-                    break;
-                case BjReader::Frame::MAP:
-                    assert(!(f.n & 1)); // must be even
-                    emit.EndMap(f.n / 2u);
-                    done = 1;
-                    break;
-                case BjReader::Frame::CONSTTAB:
-                    emit.EndConstants(f.n);
-                    rd.definingConstants = false;
-                    break;
-            }
-            if(rd.frames.size())
-                rd.frames.back().n += done;
-        }
-    }
-    */
-
     assert(res == RD_OK);
-
     return emit.finalize(*dst.v);
 }
 
@@ -924,7 +864,7 @@ static size_t encodeVal(WriteState& wr, const Var& in)
 size_t encode(BufferedWriteStream& dst, const VarCRef& json, BlockAllocator *tmpalloc)
 {
     WriteState wr(dst, *json.mem, tmpalloc);
-    wr.dst.Write(s_magic, sizeof(s_magic)); // magic, for format autodetection
+    wr.dst.Write((const char*)&s_magic[0], sizeof(s_magic)); // magic, for format autodetection
     size_t strsize = wr.poolAndEmitStrings();
     return 4 + strsize + encodeVal(wr, *json.v);
 }

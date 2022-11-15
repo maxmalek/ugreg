@@ -122,7 +122,6 @@ int main(int argc, char **argv)
     fh = fopen("citylots.json", "rb");
     if(!fh)
         abort();
-
     {
         ScopeTimer t;
         BufferedFILEReadStream json(fh, buf, sizeof(buf));
@@ -131,8 +130,9 @@ int main(int argc, char **argv)
         printf("Loaded JSON in %llu ms\n", t.ms());
     }
     fclose(fh);
+    */
 
-    fh = fopen("test.bj", "wb");
+   /* fh = fopen("test.bj", "wb");
     if(!fh)
         abort();
 
@@ -146,11 +146,13 @@ int main(int argc, char **argv)
     fclose(fh);
     tre.root().clear();
     */
+    
 
-    for(int i = 1; i < argc; ++i)
+    //for(int i = 1; i < argc; ++i)
     {
-        printf("File: %s\n", argv[i]);
-        fh = fopen(argv[i], "rb");
+        //printf("File: %s\n", argv[i]);
+        //fh = fopen(argv[i], "rb");
+        fh = fopen("test.bj", "rb");
         if(!fh)
         {
             puts("File not found!");
