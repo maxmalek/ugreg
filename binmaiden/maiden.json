@@ -45,7 +45,9 @@
                     "homeserver": { "host": "localhost", "port": 8008, "ssl": false },
                     "reverseproxy": true,
                     "ask_homeserver": false, // forward search requests to homeserver
-                    "check_homeserver": false, // require homeserver to return a valid search result before we merge in our own
+                    "check_homeserver": false, // require homeserver to return a valid search result before we merge in our own.
+                    // Note: if this is disabled, there is no checking, ie. any unauthenticated user can just curl the search API!
+                    // The config is only secure if ask+check are both on!
                     "ask_homeserver_timeout": "3s",
                 },
             },
@@ -80,7 +82,13 @@
     ],
     
     // -- Global database ---
-    "matrix": {
+    "storage": {
+        
+        // Directory name where we store our database upon quitting, and load it when starting.
+        // Leave away, set None or "" to not store anything on disk. Use "." to use working directory.
+        // If you run multiple instances for whatever reason, each instance needs its own storage directory.
+        "directory": ".",
+        
         "hashcache": {
             "pepperTime": "1h", // hash pepper is rotated after this time
             "pepperLen": [24, 40], // each hash pepper is this long; in [min, max]

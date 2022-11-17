@@ -17,7 +17,8 @@ class MxSources
 public:
     MxSources(MxStore& mxs);
     ~MxSources();
-    bool init(VarCRef cfg, VarCRef env);
+    bool initConfig(VarCRef cfg, VarCRef env);
+    void initPopulate(); // load initial data + start bg maintenance thread when that is done
 
     struct Config
     {

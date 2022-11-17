@@ -20,6 +20,7 @@
 #include "subprocess.h"
 #include "mxsources.h"
 #include "mxservices.h"
+#include "scopetimer.h"
 
 std::atomic<bool> s_quit;
 
@@ -29,16 +30,16 @@ static void sigquit(int)
     handlesigs(NULL);
 }
 
-static std::string sDumpFn;
-static bool sDump;
+//static std::string sDumpFn;
+//static bool sDump;
 static bool sExit;
 
 static const char *usage =
 "Usage: ./maiden <switches> config1.json configN.json <switches> ...\n"
 "Supported switches:\n"
 "-h --help    This help\n"
-"--dump       Dump 3pid storage to stdout after populating it\n"
-"--dump=file  Dump 3pid storage to file instead\n"
+//"--dump       Dump 3pid storage to stdout after populating it\n"
+//"--dump=file  Dump 3pid storage to file instead\n"
 "--exit       Exit successfully after loading instead of starting webserver\n"
 "--           Stop parsing switches"
 "";
@@ -53,14 +54,14 @@ static size_t argsCallback(char **argv, size_t idx, void* ud)
         puts(usage);
         exit(0);
     }
-    else if (!strncmp(sw, "dump", 4))
+    /*else if (!strncmp(sw, "dump", 4))
     {
         sDump = true;
         sw += 4;
         if (*sw == '=')
             sDumpFn = sw + 1;
         return 1;
-    }
+    }*/
     else if (!strcmp(sw, "exit"))
     {
         sExit = true;
@@ -69,7 +70,7 @@ static size_t argsCallback(char **argv, size_t idx, void* ud)
     return 0;
 }
 
-static void dump(MxStore& mxs)
+/*static void dump(MxStore& mxs)
 {
     FILE* out = stdout;
     bool close = false;
@@ -95,7 +96,7 @@ static void dump(MxStore& mxs)
         fclose(out);
     else
         puts("--- END 3PID DUMP ---");
-}
+}*/
 
 // mg_request_handler, part of "identity_v2"
 static const char * const URL_versions = "/_matrix/identity/versions";
@@ -204,13 +205,9 @@ private:
     ServerAndConfig() {}
 };
 
-int main(int argc, char** argv)
+static int main2(MxStore& mxs, int argc, char** argv)
 {
-    hash_testall();
-    srand(unsigned(time(NULL)));
-    handlesigs(sigquit);
-
-    MxStore mxs;
+    ScopeTimer timer;
     MxSources sources(mxs);
 
     std::vector<ServerAndConfig*> servers;
@@ -221,7 +218,7 @@ int main(int argc, char** argv)
             bail("Failed to handle cmdline. Exiting.", "");
 
         // matrix/storage global config, populate this first
-        if(!mxs.apply(cfgtree.subtree("/matrix")))
+        if(!mxs.apply(cfgtree.subtree("/storage")))
             bail("Invalid matrix config. Exiting.", "");
 
         // ... then init all servers, but don't start them...
@@ -246,37 +243,57 @@ int main(int argc, char** argv)
         }
 
         // This may take a while to populate the initial 3pid tree
-        if(!sources.init(cfgtree.subtree("/sources"), cfgtree.subtree("/env")))
+        if(!sources.initConfig(cfgtree.subtree("/sources"), cfgtree.subtree("/env")))
             bail("Invalid sources config. Exiting.", "");
 
-        if(sDump)
-            dump(mxs);
-
-        if(sExit)
-            return 0;
     }
 
-    mxs.rotateHashPepper();
+    const bool loaded = mxs.load();
 
-    WebServer::StaticInit();
+    // need data to operate on. this takes a while so if we already have data, start up with those
+    if(!loaded)
+        sources.initPopulate();
 
-    for(size_t i = 0; i < servers.size(); ++i)
-        if(!servers[i]->start())
-            bail("Failed to start a server component, exiting", "");
-
-    puts("Ready!");
-
-    while (!s_quit)
-        sleepMS(200);
-
-    for (size_t i = 0; i < servers.size(); ++i)
+    if(!sExit)
     {
-        servers[i]->stop();
-        delete servers[i];
-    }
+        mxs.rotateHashPepper();
 
-    WebServer::StaticShutdown();
-    //mxs.save();
+        WebServer::StaticInit();
+
+        for(size_t i = 0; i < servers.size(); ++i)
+            if(!servers[i]->start())
+                bail("Failed to start a server component, exiting", "");
+
+        printf("Ready; all servers up after %u ms\n", (unsigned)timer.ms());
+
+        if(loaded)
+            sources.initPopulate();
+
+        while (!s_quit)
+            sleepMS(200);
+
+        for (size_t i = 0; i < servers.size(); ++i)
+        {
+            servers[i]->stop();
+            delete servers[i];
+        }
+
+        WebServer::StaticShutdown();
+    }
 
     return 0;
+}
+
+int main(int argc, char** argv)
+{
+    hash_testall();
+    srand(unsigned(time(NULL)));
+    handlesigs(sigquit);
+
+    MxStore mxs;
+    int ret = main2(mxs, argc, argv);
+
+    mxs.save();
+
+    return ret;
 }

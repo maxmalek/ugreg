@@ -73,3 +73,41 @@ size_t ZstdWriteStream::_Write(const void* src, size_t bytes, BufferedWriteStrea
     }
     return bytes;
 }
+
+
+ZstdReadStream::ZstdReadStream(BufferedReadStream & src, char * buf, size_t bufsize)
+    : BufferedReadStream(NULL, _Read, buf, bufsize)
+    , zd(ZSTD_createDStream())
+    , _src(src)
+{
+
+}
+
+ZstdReadStream::~ZstdReadStream()
+{
+    ZSTD_freeDStream((ZSTD_DStream*)zd);
+}
+
+size_t ZstdReadStream::_Read(void * dst, size_t bytes, BufferedReadStream * self)
+{
+    ZstdReadStream *my = static_cast<ZstdReadStream*>(self);
+    ZSTD_outBuffer ob = { dst, bytes, 0 };
+
+    my->_src.advanceBuffered(0); // make sure the buffer starts in a state that has data
+
+    for(;;)
+    {
+        ZSTD_inBuffer ib = { self->ptr(), self->availBuffered(), 0 };
+        size_t res = ZSTD_decompressStream((ZSTD_DStream*)my->zd, &ob, &ib);
+        my->_src.advanceBuffered(ib.pos);
+        if(ZSTD_isError(res))
+            break;
+        if(ob.pos == bytes)
+            break; // output buffer full, done here
+        if(!ib.size && my->_src.done())
+            my->setEOF();
+            break; // input exhausted
+    }
+
+    return ob.pos;
+}

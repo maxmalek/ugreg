@@ -14,12 +14,17 @@ enum Format
     BJ
 };
 
-Format formatFromFileName(const char *fn); // returns AUTO when we can't deduct it from the file extension
+enum Compression
+{
+    AUTOC,
+    RAW,
+    ZSTD
+};
 
-bool load(VarRef dst, const char *fn, Format fmt = AUTO);
+bool load(VarRef dst, const char *fn, Compression comp = AUTOC, Format fmt = AUTO);
 bool load(VarRef dst, BufferedReadStream& rs, Format fmt = AUTO);
 
-bool save(const char *fn, VarCRef src, Format fmt = AUTO);
-bool save(BufferedWriteStream& ws, VarCRef src, Format fmt = AUTO);
+bool save(const char *fn, VarCRef src, Compression comp = AUTOC, Format fmt = AUTO, int level = 3);
+bool save(BufferedWriteStream& ws, VarCRef src, Format fmt);
 
 } // end namespace serialize

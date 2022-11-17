@@ -5,6 +5,7 @@
 #include "mxdefines.h"
 #include "cachetable.h"
 #include <unordered_map>
+#include "serialize.h"
 
 class MxStore
 {
@@ -49,9 +50,15 @@ public:
     void _clearHashCache_nolock();
     void markForRehash_nolock();
 
+    // create files in path with specified settings
+    //bool save(const char *path, serialize::Compression comp, serialize::Format fmt) const;
+    //bool load(const char *path, serialize::Compression comp, serialize::Format fmt);
 
-    bool save(const char *fn) const;
-    bool load(const char *fn);
+    // use storage directory and settings from config
+    bool save() const;
+    bool load();
+
+    bool usePersistentStorage() const { return !config.directory.empty(); }
 
     struct SearchConfig
     {
@@ -83,8 +90,6 @@ public:
     MxError search(std::vector<SearchResult>& results, const SearchConfig& scfg, const char *term);
 
 private:
-    bool save_nolock(const char *fn) const;
-    bool load_nolock(const char *fn);
     std::string getHashPepper_nolock(bool allowUpdate);
     void rotateHashPepper_nolock(u64 now);
     MxError _generateHashCache_nolock(VarRef cache, const char *algo);
@@ -95,10 +100,13 @@ private:
     // and entry that is to be used as a medium; so dst is likely some map stored under <medium> as a key, but the caller has to take care of that
     static void _Rebuild3pidMap(VarRef dst, VarCRef src, const char* fromkey);
 
+    DataTree authdata; // stores auth tokens. small. saved to disk.
+    DataTree wellknown; // cache wellknown data for other servers. small. RAM only.
 
-    DataTree authdata;
-    DataTree wellknown;
+    // large. RAM only
     DataTree hashcache; // {base64(hash) => mxid} // TODO: maybe don't store the mxid here, it's a duplicate and wastes mem
+
+    // large, stored to disk.
     DataTree threepid; // {medium => {3pid => mxid}}
 
     std::string hashPepper;
@@ -136,6 +144,7 @@ public:
             bool lazy;
         };
 
+        std::string directory;
         size_t minSearchLen;
 
         typedef std::unordered_map<std::string, Hash> Hashes;

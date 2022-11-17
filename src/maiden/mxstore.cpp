@@ -7,14 +7,7 @@
 #include "tomcrypt.h"
 #include "scopetimer.h"
 #include "fts_fuzzy_match.h"
-
-// Yes, the entries in authdata are stringly typed.
-// But this way saving/restoring the entire structure is very simple if we ever need it
-// (just dump as json, then load later)
-
-#ifdef _DEBUG
-#define DEBUG_SAVE // <-- define this to serialize auth state to disk every time. intended for actively debugging/developing
-#endif
+#include <future>
 
 static const u64 second = 1000;
 static const u64 minute = second * 60;
@@ -43,9 +36,6 @@ MxStore::MxStore()
     : authdata(DataTree::SMALL), wellknown(DataTree::SMALL), hashcache(DataTree::DEFAULT)
     , hashPepperTS(0)
 {
-#ifdef DEBUG_SAVE
-    load("debug.mxstore");
-#endif
     authdata.root().makeMap();
     threepid.root().makeMap()["_data"].clear(); // { _data = None }
 
@@ -109,6 +99,7 @@ bool MxStore::apply(VarCRef config)
     VarCRef xregister = config.lookup("register");
     VarCRef xhashes = config.lookup("hashes");
     VarCRef xmedia = config.lookup("media");
+    VarCRef xdirectory = config.lookup("directory");
 
     bool ok =
            readTimeKey(cfg.hashcache.pepperTime, xhashcache, "pepperTime")
@@ -118,6 +109,13 @@ bool MxStore::apply(VarCRef config)
         && readUintKey(cfg.wellknown.requestMaxSize, xwellknown, "requestMaxSize")
         && readTimeKey(cfg.register_.maxTime, xregister, "maxTime")
         && readUintKey(cfg.minSearchLen, config, "minSearchLen");
+
+    if(ok && xdirectory && xdirectory.type() == Var::TYPE_STRING)
+    {
+        cfg.directory = xdirectory.asCString();
+        if(!cfg.directory.empty() && cfg.directory.back() != '/')
+            cfg.directory += '/';
+    }
 
     if(ok && xhashcache)
         if(VarCRef xpepperlen = xhashcache.lookup("pepperLen"))
@@ -183,8 +181,12 @@ bool MxStore::apply(VarCRef config)
         return false;
     }
 
-
     // config looks good, apply
+    if(cfg.directory.empty())
+        printf("MxStore: Not touching the disk. RAM only.\n");
+    else
+        printf("MxStore: directory = %s\n", cfg.directory.c_str());
+
     printf("MxStore: minSearchLen = %zu\n", cfg.minSearchLen);
     printf("MxStore: pepper len = %ju .. %ju\n", cfg.hashcache.pepperLenMin, cfg.hashcache.pepperLenMax);
     printf("MxStore: pepper time = %ju seconds\n", cfg.hashcache.pepperTime / 1000);
@@ -228,10 +230,6 @@ bool MxStore::register_(const char* token, size_t tokenLen, u64 expireInMS, cons
         return false;
     u["expiry"] = expiryTime;
     u["account"] = account;
-
-#ifdef DEBUG_SAVE
-    save_nolock("debug.mxstore");
-#endif
 
     return true;
 }
@@ -617,57 +615,53 @@ DataTree::LockedRoot MxStore::get3pidRoot()
     return threepid.lockedRoot();
 }
 
-bool MxStore::save(const char* fn) const
+static bool _lockAndSave(const DataTree *tree, std::string fn)
 {
-    std::shared_lock lock(authdata.mutex);
-    //---------------------------------------
-    return save_nolock(fn);
+    std::unique_lock lock(tree->mutex);
+    return serialize::save(fn.c_str(), tree->root(), serialize::ZSTD, serialize::BJ);
 }
 
-bool MxStore::load(const char* fn)
+static bool _lockAndLoad(DataTree *tree, std::string fn)
 {
-    std::unique_lock lock(authdata.mutex);
-    //---------------------------------------
-    return load_nolock(fn);
+    std::unique_lock lock(tree->mutex);
+    return serialize::load(tree->root(), fn.c_str(), serialize::ZSTD, serialize::BJ);
+}
+
+bool MxStore::save() const
+{
+    if(config.directory.empty())
+        return false;
+
+    ScopeTimer timer;
+    bool ok = false;
+    {
+        auto authF     = std::async(_lockAndSave, &authdata, config.directory + "auth.mxs");
+        auto threepidF = std::async(_lockAndSave, &threepid, config.directory + "threepid.mxs");
+        ok = authF.get() && threepidF.get();
+    }
+    printf("MxStore::save() done in %u ms, success = %d\n", (unsigned)timer.ms(), ok);
+    return ok;
+}
+
+bool MxStore::load()
+{
+    if(config.directory.empty())
+        return false;
+
+    ScopeTimer timer;
+    bool ok = false;
+    {
+        auto authF     = std::async(_lockAndLoad, &authdata, config.directory + "auth.mxs");
+        auto threepidF = std::async(_lockAndLoad, &threepid, config.directory + "threepid.mxs");
+        ok = authF.get() && threepidF.get();
+    }
+    printf("MxStore::load() done in %u ms, success = %d\n", (unsigned)timer.ms(), ok);
+    return ok;
 }
 
 
 // TODO periodic defragment auth to get rid of leftover map keys
 
-bool MxStore::save_nolock(const char *fn) const
-{
-    bool ok = false;
-    std::string tmp = fn;
-    tmp += ".new";
-    if(FILE* f = fopen(tmp.c_str(), "wb"))
-    {
-        {
-            char buf[12*1024];
-            BufferedFILEWriteStream wr(f, buf, sizeof(buf));
-            writeJson(wr, authdata.root(), true);
-            wr.Flush();
-            printf("MxStore::save: Wrote %zu bytes\n", wr.Tell());
-        }
-        fclose(f);
-        remove(fn);
-        ok = !rename(tmp.c_str(), fn);
-    }
-    return ok;
-}
-
-bool MxStore::load_nolock(const char *fn)
-{
-    bool ok = false;
-    if(FILE* f = fopen(fn, "rb"))
-    {
-        char buf[12*1024];
-        BufferedFILEReadStream fs(f, buf, sizeof(buf));
-        ok = loadJsonDestructive(authdata.root(), fs);
-        printf("MxStore::load: Read %zu bytes, success = %u\n", fs.Tell(), ok);
-        fclose(f);
-    }
-    return ok;
-}
 
 void MxStore::rotateHashPepper_nolock(u64 now)
 {

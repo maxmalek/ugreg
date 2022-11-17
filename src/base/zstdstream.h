@@ -16,3 +16,17 @@ private:
     /* ZSTD_CStream* */ void * zc;
     const int _level;
 };
+
+
+// Reads compressed data from another stream and decompresses on the fly
+class ZstdReadStream : public BufferedReadStream
+{
+public:
+    ZstdReadStream(BufferedReadStream& src, char* buf, size_t bufsize);
+    ~ZstdReadStream();
+private:
+    /* ZSTD_DStream* */ void * zd;
+    BufferedReadStream& _src;
+    static size_t _Read(void* dst, size_t bytes, BufferedReadStream* self);
+
+};

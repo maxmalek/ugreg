@@ -91,7 +91,7 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std:
     return entry;
 }
 
-bool MxSources::init(VarCRef src, VarCRef env)
+bool MxSources::initConfig(VarCRef src, VarCRef env)
 {
     _updateEnv(env);
 
@@ -135,13 +135,18 @@ bool MxSources::init(VarCRef src, VarCRef env)
 
     printf("MxSources: %u sources configured\n", (unsigned)_cfg.list.size());
     printf("MxSources: Purge tree every %ju seconds\n", _cfg.purgeEvery / 1000);
+    return true;
+}
+
+void MxSources::initPopulate()
+{
+    assert(!_th.joinable());
 
     printf("MxSources: Populating initial tree...\n");
     _rebuildTree();
 
     _th = std::thread(_Loop_th, this);
     printf("MxSources: ... done & spawned background thread\n");
-    return true;
 }
 
 void MxSources::_loop_th_untilPurge()
