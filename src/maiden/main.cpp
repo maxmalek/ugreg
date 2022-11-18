@@ -205,6 +205,12 @@ private:
     ServerAndConfig() {}
 };
 
+static void stopAndDelete(ServerAndConfig *s)
+{
+    s->srv.stop();
+    delete s;
+}
+
 static int main2(MxStore& mxs, int argc, char** argv)
 {
     ScopeTimer timer;
@@ -251,7 +257,9 @@ static int main2(MxStore& mxs, int argc, char** argv)
     const bool loaded = mxs.load();
 
     // need data to operate on. this takes a while so if we already have data, start up with those
-    if(!loaded)
+    if(loaded)
+        printf("Loaded cached data; doing fast startup by skippiping pre-start populate\n");
+    else
         sources.initPopulate();
 
     if(!sExit)
@@ -272,10 +280,12 @@ static int main2(MxStore& mxs, int argc, char** argv)
         while (!s_quit)
             sleepMS(200);
 
-        for (size_t i = 0; i < servers.size(); ++i)
+        // parallel shutdown to save time
         {
-            servers[i]->stop();
-            delete servers[i];
+            std::vector<std::future<void> > tmp;
+            for (size_t i = 0; i < servers.size(); ++i)
+                tmp.push_back(std::move(std::async(stopAndDelete, servers[i])));
+            servers.clear();
         }
 
         WebServer::StaticShutdown();
@@ -294,6 +304,6 @@ int main(int argc, char** argv)
     int ret = main2(mxs, argc, argv);
 
     mxs.save();
-
+    printf("Exiting.\n");
     return ret;
 }
