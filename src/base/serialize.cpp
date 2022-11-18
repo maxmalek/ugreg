@@ -57,6 +57,7 @@ static bool loadZstd(VarRef dst, BufferedReadStream& rs, Format fmt)
 {
     char buf[1024 * 8];
     ZstdReadStream zs(rs, buf, sizeof(buf));
+    zs.init();
     return load(dst, zs, fmt);
 }
 
@@ -111,6 +112,8 @@ bool load(VarRef dst, BufferedReadStream& rs, Format fmt)
 
 bool save(BufferedWriteStream& ws, VarCRef src, Format fmt)
 {
+    ws.init();
+
     switch(fmt)
     {
         case AUTO:
@@ -132,6 +135,7 @@ static bool saveZstd(BufferedWriteStream& ws, VarCRef src, Format fmt, int level
 {
     char buf[8*1024];
     ZstdWriteStream zs(ws, level, buf, sizeof(buf));
+    zs.init();
     return save(zs, src, fmt);
 }
 
@@ -143,6 +147,7 @@ bool save(const char* fn, VarCRef src, Compression comp, Format fmt, int level)
 
     char buf[8*1024];
     BufferedFILEWriteStream fs(fh, buf, sizeof(buf));
+    fs.init();
 
     deduceFromFileName(&fmt, &comp, fn);
 

@@ -62,7 +62,7 @@ public:
     // Check whether all consumable bytes were consumed
     inline bool done() const
     {
-        return _eof;
+        return _eof && _cur == _end;
     }
 
     void setEOF();
