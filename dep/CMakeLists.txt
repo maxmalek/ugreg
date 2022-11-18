@@ -48,6 +48,7 @@ add_definitions(-DNO_FILESYSTEMS) # not required. makes request handling faster,
 add_definitions(-DMG_EXTERNAL_FUNCTION_mg_cry_internal_impl) # required for NO_FILESYSTEMS
 add_definitions(-DMG_EXTERNAL_FUNCTION_log_access) # required for NO_FILESYSTEMS
 #add_definitions(-DALTERNATIVE_QUEUE) # doesn't seem to do anything good
+add_definitions(-DSOCKET_TIMEOUT_QUANTUM=100)
 
 # for miniz: disable extra stuff we don't need
 add_definitions(-DMINIZ_NO_TIME)
