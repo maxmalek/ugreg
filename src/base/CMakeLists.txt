@@ -65,6 +65,8 @@ set(src
     serialize.h
     zstdstream.cpp
     zstdstream.h
+    strmatch.cpp
+    strmatch.h
 )
 
 if(MSVC)
