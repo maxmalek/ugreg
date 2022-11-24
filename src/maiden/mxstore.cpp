@@ -8,6 +8,7 @@
 #include "scopetimer.h"
 #include "fts_fuzzy_match.h"
 #include <future>
+#include "strmatch.h"
 
 static const u64 second = 1000;
 static const u64 minute = second * 60;
@@ -515,11 +516,14 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
     return M_OK;
 }
 
+#if 0
 MxError MxStore::search(std::vector<SearchResult>& results, const SearchConfig& scfg, const char* term)
 {
     const size_t len = strlen(term);
     if(len < config.minSearchLen)
         return M_OK;
+
+    const TwoWayMatcher matcher(term, strlen(term));
 
     size_t oldsize = results.size();
     u64 timeMS = 0;
@@ -555,6 +559,8 @@ MxError MxStore::search(std::vector<SearchResult>& results, const SearchConfig& 
 
         // TODO: this could be parallelized over all keys[]
 
+        // one user in _data is a map
+        // The key StrRefs we want to check for a match are in keys[].
         for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             if(const Var::Map *user = it.value().map())
                 for(size_t i = 0; i < N; ++i)
@@ -565,7 +571,6 @@ MxError MxStore::search(std::vector<SearchResult>& results, const SearchConfig& 
                             int score = 0;
                             if (fts::fuzzy_match(term, s, score))
                             {
-                                std::string d = dumpjson(VarCRef(threepid, &it.value()));
                                 SearchResult res;
                                 res.score = score;
                                 res.str = threepid.getS(it.key());
@@ -584,6 +589,48 @@ MxError MxStore::search(std::vector<SearchResult>& results, const SearchConfig& 
         term, unsigned(results.size() - oldsize), unsigned(timeMS));
 
     return M_OK;
+}
+#endif
+
+MxStore::SearchResults MxStore::formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n) const
+{
+    ScopeTimer timer;
+    std::vector<SearchResult> res;
+    res.reserve(n);
+
+    {
+        std::shared_lock lock(threepid.mutex);
+        //---------------------------------------
+
+        const VarCRef data = threepid.root().lookup("_data");
+        const StrRef displaynameRef = data.mem->lookup(scfg.displaynameField.c_str(), scfg.displaynameField.length());
+        const Var::Map * const m = data.v->map();
+
+        for(size_t i = 0; i < n; ++i)
+        {
+            const StrRef key = matches[i].key;
+            if(const Var *user = m->get(key))
+                if(const Var::Map *um = user->map())
+                {
+                    PoolStr mxid = data.mem->getSL(key);
+                    assert(mxid.s); // we just got the map key. this must exist.
+
+                    SearchResult sr;
+                    sr.str.assign(mxid.s, mxid.len);
+
+                    if(const Var *xdn = um->get(displaynameRef))
+                        if(const char *dn = xdn->asCString(threepid))
+                            sr.displayname = dn;
+
+                    res.push_back(std::move(sr));
+                }
+        }
+    }
+
+    printf("MxStore::formatMatches(): %zu/%zu results in %u ms\n",
+        res, n, unsigned(timer.ms()));
+
+    return res;
 }
 
 void MxStore::merge3pid(VarCRef root)
@@ -613,6 +660,11 @@ void MxStore::merge3pid_nolock(VarCRef root)
 DataTree::LockedRoot MxStore::get3pidRoot()
 {
     return threepid.lockedRoot();
+}
+
+DataTree::LockedCRoot MxStore::get3pidCRoot() const
+{
+    return threepid.lockedCRoot();
 }
 
 static bool _lockAndSave(const DataTree *tree, std::string fn)

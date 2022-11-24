@@ -480,6 +480,7 @@ public:
         }
 
         StrRef key() const { return _it.key(); }
+        size_t valueIndex() const { return _it.value() - 1; }
         T& value() { assert(_it.value()); return _a[_it.value() - 1]; }
         const T& value() const { assert(_it.value()); return _a[_it.value() - 1]; }
 

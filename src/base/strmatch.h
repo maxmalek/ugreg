@@ -10,6 +10,7 @@
 
 class TwoWayMatcher
 {
+public:
     TwoWayMatcher(const char *needle, size_t len);
 
     const char *match(const char *haystack, size_t len) const;

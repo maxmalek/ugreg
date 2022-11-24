@@ -339,6 +339,20 @@ void MxSources::_rebuildTree()
     const u64 mergedMS = timer.ms();
 
     printf("MxSources: Tree rebuilt, merged in %ju ms\n", mergedMS - loadedMS);
+
+    _sendTreeRebuiltEvent();
+}
+
+static void _OnTreeRebuilt(EvTreeRebuilt *ev, const MxStore *mxs)
+{
+    ev->onTreeRebuilt(*mxs);
+}
+
+void MxSources::_sendTreeRebuiltEvent() const
+{
+    std::vector<std::future<void> > futs(_evRebuilt.size());
+    for(size_t i = 0; i < _evRebuilt.size(); ++i)
+        futs[i] = std::move(std::async(_OnTreeRebuilt, _evRebuilt[i], &_store));
 }
 
 void MxSources::_updateEnv(VarCRef xenv)
@@ -376,6 +390,14 @@ void MxSources::_updateEnv(VarCRef xenv)
     _envPtrs.push_back(NULL); // terminator
 }
 
+
+void MxSources::addListener(EvTreeRebuilt* ev)
+{
+    for(size_t i = 0; i < _evRebuilt.size(); ++i)
+        if(_evRebuilt[i] == ev)
+            return;
+    _evRebuilt.push_back(ev);
+}
 
 void MxSources::_loop_th()
 {

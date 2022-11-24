@@ -120,7 +120,7 @@ static int handler_identity_v1_min(struct mg_connection *conn, void *ud)
     return 200;
 }
 
-static bool attachService(WebServer& srv, const char *name, MxStore& mxs, VarCRef serviceConfig)
+static bool attachService(WebServer& srv, const char *name, MxStore& mxs, MxSources& sources, VarCRef serviceConfig)
 {
     printf("attach service [%s]\n", name);
 
@@ -140,7 +140,7 @@ static bool attachService(WebServer& srv, const char *name, MxStore& mxs, VarCRe
     }
     else if(!strcmp(name, "search"))
     {
-        h = new MxSearchHandler(mxs, serviceConfig);
+        h = new MxSearchHandler(mxs, serviceConfig, sources);
     }
     else if(!strcmp(name, "wellknown"))
     {
@@ -162,7 +162,7 @@ static bool attachService(WebServer& srv, const char *name, MxStore& mxs, VarCRe
 class ServerAndConfig
 {
 public:
-    static ServerAndConfig *New(VarCRef json, MxStore& mxs)
+    static ServerAndConfig *New(VarCRef json, MxStore& mxs, MxSources& sources)
     {
         ServerAndConfig *ret = new ServerAndConfig;
         bool ok = true;
@@ -174,7 +174,7 @@ public:
             {
                 const char *serviceName = servicesRef.mem->getS(it.key());
                 VarCRef serviceConfig(servicesRef.mem, &it.value());
-                if(!attachService(ret->srv, serviceName, mxs, serviceConfig))
+                if(!attachService(ret->srv, serviceName, mxs, sources, serviceConfig))
                 {
                     ok = false;
                     break;
@@ -239,7 +239,7 @@ static int main2(MxStore& mxs, int argc, char** argv)
                 bail("Entry in Config->servers[] is not map, exiting", "");
 
             printf("Create new server, index %u\n", (unsigned)i);
-            ServerAndConfig *sc = ServerAndConfig::New(serv, mxs);
+            ServerAndConfig *sc = ServerAndConfig::New(serv, mxs, sources);
             if(!sc)
                 bail("Invalid config after processing options. Fix your config file(s). Try --help.\nCurrent config:\n",
                     dumpjson(cfgtree.root(), true).c_str()
@@ -258,7 +258,7 @@ static int main2(MxStore& mxs, int argc, char** argv)
 
     // need data to operate on. this takes a while so if we already have data, start up with those
     if(loaded)
-        printf("Loaded cached data; doing fast startup by skippiping pre-start populate\n");
+        printf("Loaded cached data; doing fast startup by skipping pre-start populate\n");
     else
         sources.initPopulate();
 

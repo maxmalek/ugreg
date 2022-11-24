@@ -6,6 +6,8 @@
 #include "cachetable.h"
 #include <unordered_map>
 #include "serialize.h"
+#include "mxsearchalgo.h"
+#include "mxsearch.h"
 
 class MxStore
 {
@@ -47,6 +49,7 @@ public:
     void merge3pid(VarCRef root);
     void merge3pid_nolock(VarCRef root);
     DataTree::LockedRoot get3pidRoot();
+    DataTree::LockedCRoot get3pidCRoot() const;
     void _clearHashCache_nolock();
     void markForRehash_nolock();
 
@@ -60,34 +63,15 @@ public:
 
     bool usePersistentStorage() const { return !config.directory.empty(); }
 
-    struct SearchConfig
-    {
-        struct Field
-        {
-            bool fuzzy = false;
-        };
-        typedef std::unordered_map<std::string, Field> Fields;
-        Fields fields;
-        std::string displaynameField;
-
-        // -- below here is not used by mxstore --
-        std::string avatar_url;
-        size_t maxsize = 1024; // max. size of search request, json and all
-    };
-
     struct SearchResult
     {
         std::string str, displayname;
-        int score;
-
-        // highest score first, then alphabetically
-        inline bool operator<(const SearchResult& o) const
-        {
-            return score > o.score || (score == o.score && str < o.str);
-        }
     };
 
-    MxError search(std::vector<SearchResult>& results, const SearchConfig& scfg, const char *term);
+    typedef std::vector<SearchResult> SearchResults;
+
+    // resolve matches to actual, ready-to-display search results
+    SearchResults formatMatches(const MxSearchConfig& scfg, const MxSearch::Match *matches, size_t n) const;
 
 private:
     std::string getHashPepper_nolock(bool allowUpdate);

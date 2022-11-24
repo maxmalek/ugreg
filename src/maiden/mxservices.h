@@ -4,8 +4,10 @@
 #include "webserver.h"
 #include "datatree.h"
 #include "mxstore.h"
+#include "mxsearch.h"
 #include "webstuff.h"
 
+class MxSources;
 
 
 class MxWellknownHandler : public RequestHandler
@@ -32,7 +34,7 @@ protected:
 class MxSearchHandler : public MxReverseProxyHandler
 {
 public:
-    MxSearchHandler(MxStore& store, VarCRef cfg);
+    MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources);
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 
     MxStore& _store;
@@ -40,7 +42,8 @@ public:
     bool checkHS;
     bool askHS;
     int hsTimeout;
-    MxStore::SearchConfig searchcfg;
+    MxSearchConfig searchcfg;
+    MxSearch search;
 
 protected:
     void doSearch(VarRef dst, const char* term, size_t limit) const;

@@ -30,3 +30,9 @@ struct PoolStr
     const char* s;
     size_t len;
 };
+
+struct MutStr
+{
+    char* s;
+    size_t len;
+};

@@ -9,6 +9,9 @@
 #include "mxhttprequest.h"
 #include <future>
 #include "util.h"
+#include "mxsearch.h"
+#include "strmatch.h"
+#include "mxsources.h"
 
 static const char *MimeType = "application/json";
 static const char  WellknownPrefix[] = "/.well-known/matrix";
@@ -63,8 +66,8 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
     return 200;
 }
 
-MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg)
-    : MxReverseProxyHandler(cfg), _store(store)
+MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources)
+    : MxReverseProxyHandler(cfg), _store(store), search(searchcfg)
 {
     if(VarCRef xfields = cfg.lookup("fields"))
     {
@@ -76,7 +79,7 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg)
                 const Var& val = it.value();
                 if(ps.s)
                 {
-                    MxStore::SearchConfig::Field &fcfg = searchcfg.fields[ps.s];
+                    MxSearchConfig::Field &fcfg = searchcfg.fields[ps.s];
                     if(val.asBool())
                     {
                         // use defaults, nothing else to do
@@ -144,32 +147,44 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg)
     printf("MxSearchHandler: avatar_url = %s\n", searchcfg.avatar_url.c_str());
     printf("MxSearchHandler: displayname = %s\n", searchcfg.displaynameField.c_str());
     printf("MxSearchHandler: searching %u fields:\n", (unsigned)searchcfg.fields.size());
-    for(MxStore::SearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
+    for(MxSearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
         printf(" + %s [fuzzy = %u]\n", it->first.c_str(), it->second.fuzzy);
     printf("MxSearchHandler: Reverse proxy enabled: %s\n", reverseproxy ? "yes" : "no");
     printf("MxSearchHandler: Ask homeserver: %s\n", askHS ? "yes" : "no");
     printf("MxSearchHandler: Ask homeserver timeout: %d ms\n", hsTimeout);
     printf("MxSearchHandler: Check homeserver: %s\n", checkHS ? "yes" : "no");
+
+    // FIXME: remove this again in dtor
+    sources.addListener(&this->search);
 }
 
 void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
 {
-    std::vector<MxStore::SearchResult> results;
-    _store.search(results, searchcfg, term);
+    // TODO: normalize term
 
-    std::sort(results.begin(), results.end());
+    const TwoWayMatcher matcher(term, strlen(term));
 
-    size_t N = results.size();
-    if (limit && limit < N)
-        N = limit;
+    MxSearch::Matches hits = search.searchExact(matcher);
+
+    // keep best matches, drop the rest if above the limit
+    bool limited = false;
+    std::sort(hits.begin(), hits.end());
+    if(hits.size() > limit)
+    {
+        hits.resize(limit);
+        limited = true;
+    }
+
+    // resolve matches to something readable
+    const MxStore::SearchResults results = _store.formatMatches(searchcfg, hits.data(), hits.size());
 
     dst.makeMap().v->map()->clear(*dst.mem); // make sure it's an empty map
 
-    dst["limited"] = N < results.size();
-    VarRef ra = dst["results"].makeArray(N);
+    dst["limited"] = limited;
+    VarRef ra = dst["results"].makeArray(results.size());
 
     const bool useAvatar = !searchcfg.avatar_url.empty();
-    for (size_t i = 0; i < N; ++i)
+    for (size_t i = 0; i < results.size(); ++i)
     {
         VarRef d = ra.at(i).makeMap();
         const MxStore::SearchResult& r = results[i];

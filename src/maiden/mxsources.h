@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <future>
+#include "mxvirtual.h"
 
 class MxStore;
 class DataTree;
@@ -37,6 +38,8 @@ public:
         std::vector<InputEntry> list;
     };
 
+    void addListener(EvTreeRebuilt *ev);
+
 private:
     std::vector<std::string> _argstrs;
     void _loop_th();
@@ -47,6 +50,7 @@ private:
     std::future<void> _ingestDataAndMergeAsync(const Config::InputEntry& entry);
 
     void _rebuildTree();
+    void _sendTreeRebuiltEvent() const;
     void _updateEnv(VarCRef env);
     static void _Loop_th(MxSources *self);
     MxStore& _store; // this lives in MxStore
@@ -57,5 +61,6 @@ private:
     std::mutex _waitlock;
     std::vector<std::string> _envStrings;
     std::vector<const char*> _envPtrs;
+    std::vector<EvTreeRebuilt*> _evRebuilt;
 };
 

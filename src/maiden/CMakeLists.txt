@@ -16,6 +16,11 @@ set(src
     mxsources.h
     mxservices.cpp
     mxservices.h
+    mxsearchalgo.cpp
+    mxsearchalgo.h
+    mxsearch.cpp
+    mxsearch.h
+    mxvirtual.h
 )
 
 set(extra_libs)
