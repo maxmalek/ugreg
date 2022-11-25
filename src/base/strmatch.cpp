@@ -40,7 +40,9 @@ static char* fourbyte_memmem(const unsigned char* h, size_t k, const unsigned ch
 TwoWayMatcher::TwoWayMatcher(const char* needle, size_t len)
 {
     const unsigned char *n = (const unsigned char*)needle;
+    _needle.reserve(len + 1);
     _needle.assign(needle, needle + len);
+    _needle.push_back(0);
     init();
 }
 
@@ -50,7 +52,7 @@ TwoWayMatcher::TwoWayMatcher()
 
 void TwoWayMatcher::init()
 {
-    size_t l = _needle.size();
+    size_t l = needleSize();
     if(l <= 4)
         return; // leaves a bunch of stuff uninitialized, this is fine
 
@@ -123,7 +125,7 @@ void TwoWayMatcher::init()
 const unsigned char* TwoWayMatcher::twoway_match(const unsigned char* h, const unsigned char* z) const
 {
     const unsigned char * const n = _needle.data();
-    const size_t l = _needle.size();
+    const size_t l = needleSize();
 
     const size_t p = this->p;
     const size_t ms = this->ms;
@@ -169,7 +171,7 @@ const unsigned char* TwoWayMatcher::twoway_match(const unsigned char* h, const u
 
 const char* TwoWayMatcher::match(const char* haystack, size_t len) const
 {
-    const size_t l = _needle.size();
+    const size_t l = needleSize();
     size_t k = len;
 
     /* Return immediately on empty needle */
@@ -195,6 +197,8 @@ const char* TwoWayMatcher::match(const char* haystack, size_t len) const
 
 TwoWayCasefoldMatcher::TwoWayCasefoldMatcher(const char* needle, size_t len)
 {
+    _needle.reserve(len + 1);
     utf8casefoldcopy(_needle, needle, len);
+    _needle.push_back(0);
     init();
 }

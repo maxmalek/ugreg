@@ -15,13 +15,13 @@ public:
 
     const char *match(const char *haystack, size_t len) const;
 
+    inline const char *needle() const { return (const char*)_needle.data(); }
+    inline size_t needleSize() const { return _needle.size() - 1; }
+
 protected:
     TwoWayMatcher();
     void init();
-    std::vector<unsigned char> _needle;
-private:
-    TwoWayMatcher& operator=(const TwoWayMatcher&) = delete;
-    TwoWayMatcher(const TwoWayMatcher&) = delete;
+    std::vector<unsigned char> _needle; // ends with \0 that is not part of the search
 
     size_t mem0, p, ms;
     size_t byteset[32 / sizeof(size_t)];

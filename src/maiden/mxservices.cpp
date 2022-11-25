@@ -12,6 +12,7 @@
 #include "mxsearch.h"
 #include "strmatch.h"
 #include "mxsources.h"
+#include <sstream>
 
 static const char *MimeType = "application/json";
 static const char  WellknownPrefix[] = "/.well-known/matrix";
@@ -160,9 +161,15 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources
 
 void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
 {
-    const TwoWayCasefoldMatcher matcher(term, strlen(term));
+    const std::vector<TwoWayCasefoldMatcher> matchers = mxBuildMatchersForTerm(term);
+    std::ostringstream os;
+    os << "MxSearchHandler [" << term << "] -> " << matchers.size() << " matchers: ";
+    for(size_t i = 0; i < matchers.size(); ++i)
+        os << '[' << matchers[i].needle() << ']';
+    puts(os.str().c_str());
 
-    MxSearch::Matches hits = search.searchExact(matcher);
+
+    MxSearch::Matches hits = search.searchExact(matchers);
 
     // keep best matches, drop the rest if above the limit
     bool limited = false;

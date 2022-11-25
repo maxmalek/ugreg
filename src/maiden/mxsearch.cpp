@@ -84,7 +84,7 @@ void MxSearch::rebuildCache(const MxStore & mxs)
     printf("MxSearch::rebuildCache() done after %u ms\n", (unsigned)timer.ms());
 }
 
-MxSearch::Matches MxSearch::searchExact(const TwoWayMatcher& matcher) const
+MxSearch::Matches MxSearch::searchExact(const MxMatcherList& matchers) const
 {
     std::shared_lock lock(mutex);
     //-----------------------------------------------------------
@@ -94,13 +94,12 @@ MxSearch::Matches MxSearch::searchExact(const TwoWayMatcher& matcher) const
     const size_t N = _strings.size();
     for(size_t i = 0; i < N; ++i)
     {
-        // like strstr() but faster and doesn't stop on \0
-        const char *s = matcher.match(_strings[i].s, _strings[i].len);
-        if(s)
+        int score = mxMatchAndScore_Exact(_strings[i].s, _strings[i].len, matchers.data(), matchers.size());
+        if(score > 0)
         {
             Match m;
             m.key = _keys[i];
-            m.score = 10000; // TODO: make configurable?
+            m.score = score;
             hits.push_back(m);
         }
     }

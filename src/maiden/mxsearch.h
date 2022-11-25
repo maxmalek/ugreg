@@ -56,7 +56,7 @@ public:
 
     typedef std::vector<Match> Matches;
 
-    Matches searchExact(const TwoWayMatcher& matcher) const;
+    Matches searchExact(const MxMatcherList& matchers) const;
 
     // Inherited via EvTreeRebuilt
     virtual void onTreeRebuilt(const MxStore& mxs) override;

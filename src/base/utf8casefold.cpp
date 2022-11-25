@@ -176,3 +176,18 @@ int utf8casefoldcopy(std::vector<unsigned char>& vec, const char* s, size_t len)
     }
     return ret;
 }
+
+const char* utf8FindBeginBackward(const char* where, const char* first)
+{
+    for(;;)
+    {
+        if(where < first)
+            return NULL;
+
+        unsigned char c = *where;
+        if(c < 128 || c >= 0xc0)
+            return where;
+        --where;
+    }
+
+}
