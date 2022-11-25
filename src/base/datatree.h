@@ -20,29 +20,33 @@ public:
     VarCRef root() const;
 
     // Used to keep the tree locked while it's accessed. Intended for writing.
-    struct LockedRoot
+    struct LockedRef
     {
         friend class DataTree;
-        VarRef ref;
+        const VarRef ref;
     private:
         std::unique_lock<acme::upgrade_mutex> _lock; // lock R+W
-        LockedRoot(DataTree& tree)
+        LockedRef(DataTree& tree)
             :_lock(tree.mutex), ref(tree.root()) {}
+        LockedRef(DataTree& tree, const char *path)
+            :_lock(tree.mutex), ref(tree.subtree(path)) {}
     };
 
-    inline LockedRoot lockedRoot() { return LockedRoot(*this); }
+    inline LockedRef lockedRef() { return LockedRef(*this); }
 
-    struct LockedCRoot
+    struct LockedCRef
     {
         friend class DataTree;
-        VarCRef ref;
+        const VarCRef ref;
     private:
         std::shared_lock<acme::upgrade_mutex> _lock; // lock R
-        LockedCRoot(const DataTree& tree)
+        LockedCRef(const DataTree& tree)
             :_lock(tree.mutex), ref(tree.root()) {}
+        LockedCRef(const DataTree& tree, const char *path)
+            :_lock(tree.mutex), ref(tree.subtreeConst(path)) {}
     };
 
-    inline LockedCRoot lockedCRoot() const { return LockedCRoot(*this); }
+    inline LockedCRef lockedCRef() const { return LockedCRef(*this); }
 
     // Use stringly typed JSON pointer (returns an invalid ref for malformed json pointers)
     // See https://rapidjson.org/md_doc_pointer.html#JsonPointer

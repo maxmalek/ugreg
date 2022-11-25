@@ -160,9 +160,7 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources
 
 void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
 {
-    // TODO: normalize term
-
-    const TwoWayMatcher matcher(term, strlen(term));
+    const TwoWayCasefoldMatcher matcher(term, strlen(term));
 
     MxSearch::Matches hits = search.searchExact(matcher);
 

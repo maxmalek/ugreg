@@ -4,6 +4,7 @@
 
 #include <string.h>
 #include <stdint.h>
+#include "utf8casefold.h"
 
 static char* twobyte_memmem(const unsigned char* h, size_t k, const unsigned char* n)
 {
@@ -36,13 +37,24 @@ static char* fourbyte_memmem(const unsigned char* h, size_t k, const unsigned ch
 
 
 
-TwoWayMatcher::TwoWayMatcher(const char* needle, size_t l)
+TwoWayMatcher::TwoWayMatcher(const char* needle, size_t len)
 {
     const unsigned char *n = (const unsigned char*)needle;
-    _needle.assign(needle, needle + l);
+    _needle.assign(needle, needle + len);
+    init();
+}
 
+TwoWayMatcher::TwoWayMatcher()
+{
+}
+
+void TwoWayMatcher::init()
+{
+    size_t l = _needle.size();
     if(l <= 4)
         return; // leaves a bunch of stuff uninitialized, this is fine
+
+    const unsigned char *n = _needle.data();
 
     memset(byteset, 0, sizeof(byteset));
 
@@ -179,4 +191,10 @@ const char* TwoWayMatcher::match(const char* haystack, size_t len) const
     if (l == 4) return fourbyte_memmem(h, k, n);
 
     return (const char*)twoway_match(h, h + k);
+}
+
+TwoWayCasefoldMatcher::TwoWayCasefoldMatcher(const char* needle, size_t len)
+{
+    utf8casefoldcopy(_needle, needle, len);
+    init();
 }

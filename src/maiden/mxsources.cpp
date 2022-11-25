@@ -274,7 +274,7 @@ void MxSources::_ingestDataAndMerge(const Config::InputEntry& entry)
         //_store.merge3pid(tre->root()); // could do this, but below is better -- defrag goes a long way to keep up perf
         u64 ms;
         {
-            DataTree::LockedRoot lockroot = _store.get3pidRoot();
+            DataTree::LockedRef lockroot = _store.get3pidRoot();
             ScopeTimer timer;
             _store.merge3pid_nolock(tre->root());
             lockroot.ref.mem->defrag();
@@ -321,7 +321,7 @@ void MxSources::_rebuildTree()
 
     // swap in atomically
     {
-        DataTree::LockedRoot lockroot = _store.get3pidRoot();
+        DataTree::LockedRef lockroot = _store.get3pidRoot();
         // -------------------------------------
         lockroot.ref.clear();
         for (size_t i = 0; i < N; ++i)
@@ -397,6 +397,11 @@ void MxSources::addListener(EvTreeRebuilt* ev)
         if(_evRebuilt[i] == ev)
             return;
     _evRebuilt.push_back(ev);
+}
+
+void MxSources::removeListener(EvTreeRebuilt* ev)
+{
+    _evRebuilt.erase(std::remove(_evRebuilt.begin(), _evRebuilt.end(), ev));
 }
 
 void MxSources::_loop_th()

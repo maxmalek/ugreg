@@ -21,7 +21,7 @@ bool MxSearch::init(VarCRef cfg)
 void MxSearch::rebuildCache(const MxStore & mxs)
 {
     std::unique_lock lock(mutex);       // R+W
-    DataTree::LockedCRoot cr = mxs.get3pidCRoot();  // R only
+    DataTree::LockedCRef cr = mxs.get3pidCRoot();  // R only
     //-----------------------------------------------------------
 
     ScopeTimer timer;
@@ -56,7 +56,7 @@ void MxSearch::rebuildCache(const MxStore & mxs)
     _strings.reserve(m->size());
     _keys.reserve(m->size());
 
-    std::vector<char> tmp;
+    std::vector<unsigned char> tmp;
 
     for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
         if(const Var::Map *user = it.value().map())
@@ -66,7 +66,8 @@ void MxSearch::rebuildCache(const MxStore & mxs)
                 {
                     PoolStr ps = v->asString(*cr.ref.mem);
                     if(ps.len)
-                        mxSearchNormalizeAppend(tmp, ps.s, ps.len);
+                        if(!mxSearchNormalizeAppend(tmp, ps.s, ps.len))
+                            printf("MxSearch: Got invalid UTF-8: %s\n", ps.s);
                 }
             if(!tmp.empty())
             {

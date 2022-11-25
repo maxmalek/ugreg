@@ -3,4 +3,4 @@
 #include <vector>
 
 
-void mxSearchNormalizeAppend(std::vector<char>& vec, const char *s, size_t len);
+bool mxSearchNormalizeAppend(std::vector<unsigned char>& vec, const char *s, size_t len);

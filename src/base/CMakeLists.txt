@@ -67,6 +67,8 @@ set(src
     zstdstream.h
     strmatch.cpp
     strmatch.h
+    utf8casefold.cpp
+    utf8casefold.h
 )
 
 if(MSVC)

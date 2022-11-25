@@ -628,7 +628,7 @@ MxStore::SearchResults MxStore::formatMatches(const MxSearchConfig& scfg, const 
     }
 
     printf("MxStore::formatMatches(): %zu/%zu results in %u ms\n",
-        res, n, unsigned(timer.ms()));
+        res.size(), n, unsigned(timer.ms()));
 
     return res;
 }
@@ -657,14 +657,14 @@ void MxStore::merge3pid_nolock(VarCRef root)
     }
 }
 
-DataTree::LockedRoot MxStore::get3pidRoot()
+DataTree::LockedRef MxStore::get3pidRoot()
 {
-    return threepid.lockedRoot();
+    return threepid.lockedRef();
 }
 
-DataTree::LockedCRoot MxStore::get3pidCRoot() const
+DataTree::LockedCRef MxStore::get3pidCRoot() const
 {
-    return threepid.lockedCRoot();
+    return threepid.lockedCRef();
 }
 
 static bool _lockAndSave(const DataTree *tree, std::string fn)

@@ -39,6 +39,7 @@ public:
     };
 
     void addListener(EvTreeRebuilt *ev);
+    void removeListener(EvTreeRebuilt *ev);
 
 private:
     std::vector<std::string> _argstrs;

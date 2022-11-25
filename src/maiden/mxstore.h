@@ -48,8 +48,8 @@ public:
     // -- update --
     void merge3pid(VarCRef root);
     void merge3pid_nolock(VarCRef root);
-    DataTree::LockedRoot get3pidRoot();
-    DataTree::LockedCRoot get3pidCRoot() const;
+    DataTree::LockedRef get3pidRoot();
+    DataTree::LockedCRef get3pidCRoot() const;
     void _clearHashCache_nolock();
     void markForRehash_nolock();
 
