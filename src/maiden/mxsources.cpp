@@ -393,6 +393,7 @@ void MxSources::_updateEnv(VarCRef xenv)
 
 void MxSources::addListener(EvTreeRebuilt* ev)
 {
+    std::unique_lock lock(_eventlock);
     for(size_t i = 0; i < _evRebuilt.size(); ++i)
         if(_evRebuilt[i] == ev)
             return;
@@ -401,6 +402,7 @@ void MxSources::addListener(EvTreeRebuilt* ev)
 
 void MxSources::removeListener(EvTreeRebuilt* ev)
 {
+    std::unique_lock lock(_eventlock);
     _evRebuilt.erase(std::remove(_evRebuilt.begin(), _evRebuilt.end(), ev));
 }
 

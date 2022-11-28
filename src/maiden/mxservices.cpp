@@ -68,7 +68,7 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
 }
 
 MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources)
-    : MxReverseProxyHandler(cfg), _store(store), search(searchcfg)
+    : MxReverseProxyHandler(cfg), _store(store), search(searchcfg), _sources(sources)
 {
     if(VarCRef xfields = cfg.lookup("fields"))
     {
@@ -157,6 +157,11 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources
 
     // FIXME: remove this again in dtor
     sources.addListener(&this->search);
+}
+
+MxSearchHandler::~MxSearchHandler()
+{
+    _sources.removeListener(&this->search);
 }
 
 void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const

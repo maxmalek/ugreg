@@ -35,6 +35,7 @@ class MxSearchHandler : public MxReverseProxyHandler
 {
 public:
     MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources);
+    virtual ~MxSearchHandler();
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 
     MxStore& _store;
@@ -47,5 +48,8 @@ public:
 
 protected:
     void doSearch(VarRef dst, const char* term, size_t limit) const;
+
+private:
+    MxSources& _sources;
 };
 
