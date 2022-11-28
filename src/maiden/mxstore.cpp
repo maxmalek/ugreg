@@ -516,82 +516,6 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
     return M_OK;
 }
 
-#if 0
-MxError MxStore::search(std::vector<SearchResult>& results, const SearchConfig& scfg, const char* term)
-{
-    const size_t len = strlen(term);
-    if(len < config.minSearchLen)
-        return M_OK;
-
-    const TwoWayMatcher matcher(term, strlen(term));
-
-    size_t oldsize = results.size();
-    u64 timeMS = 0;
-
-    struct SearchKeyCache
-    {
-        StrRef ref;
-        SearchConfig::Field f;
-    };
-    std::vector<SearchKeyCache> keys;
-
-    {
-        std::shared_lock lock(threepid.mutex);
-        //---------------------------------------
-
-        // cache the keys so we don't need to do string->StrRef lookups all the time
-        for (SearchConfig::Fields::const_iterator it = scfg.fields.begin(); it != scfg.fields.end(); ++it)
-        {
-            SearchKeyCache kc;
-            kc.ref = threepid.lookup(it->first.c_str(), it->first.length());
-            if(kc.ref)
-            {
-                kc.f = it->second;
-                keys.push_back(kc);
-            }
-        }
-        const StrRef displaynameRef = threepid.lookup(scfg.displaynameField.c_str(), scfg.displaynameField.length());
-
-        ScopeTimer timer;
-        VarCRef data = threepid.root().lookup("_data");
-        const Var::Map *m = data.v->map();
-        size_t N = keys.size();
-
-        // TODO: this could be parallelized over all keys[]
-
-        // one user in _data is a map
-        // The key StrRefs we want to check for a match are in keys[].
-        for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
-            if(const Var::Map *user = it.value().map())
-                for(size_t i = 0; i < N; ++i)
-                    if(const Var *v =  user->get(keys[i].ref))
-                        if(const char *s = v->asCString(threepid))
-                        {
-                            // TODO: search modes, fuzzy on/off
-                            int score = 0;
-                            if (fts::fuzzy_match(term, s, score))
-                            {
-                                SearchResult res;
-                                res.score = score;
-                                res.str = threepid.getS(it.key());
-                                if(const Var *xdn = user->get(displaynameRef))
-                                    if(const char *dn = xdn->asCString(threepid))
-                                        res.displayname = dn;
-                                results.push_back(std::move(res));
-                                // FIXME: make sure list entries are unique
-                            }
-                        }
-
-        timeMS = timer.ms();
-    }
-
-    printf("MxStore::search[%s]: %u results in %u ms\n",
-        term, unsigned(results.size() - oldsize), unsigned(timeMS));
-
-    return M_OK;
-}
-#endif
-
 MxStore::SearchResults MxStore::formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n) const
 {
     ScopeTimer timer;
@@ -669,7 +593,7 @@ DataTree::LockedCRef MxStore::get3pidCRoot() const
 
 static bool _lockAndSave(const DataTree *tree, std::string fn)
 {
-    std::unique_lock lock(tree->mutex);
+    std::shared_lock lock(tree->mutex);
     return serialize::save(fn.c_str(), tree->root(), serialize::ZSTD, serialize::BJ);
 }
 
@@ -683,6 +607,8 @@ bool MxStore::save() const
 {
     if(config.directory.empty())
         return false;
+
+    printf("MxStore::save() starting...\n");
 
     ScopeTimer timer;
     bool ok = false;
