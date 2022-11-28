@@ -56,12 +56,14 @@ unsigned utf8casefold1(unsigned x)
 }
 
 // valid codepoint if >= 0; < 0 on error
-int utf8read(const char *& s, size_t& len)
+int utf8read(const char *& sRef, size_t& lenRef)
 {
+    const char *s = sRef;
     unsigned char a = *s++;
     if(a < 128) // 1 byte, ASCII
     {
-        --len;
+        --lenRef;
+        sRef = s;
         return (int)(unsigned)a;
     }
 
@@ -85,10 +87,12 @@ int utf8read(const char *& s, size_t& len)
     else
         return -1; // wrong encoding or s was the middle of a codepoint
 
+    size_t len = lenRef;
     if(len < n)
         return -1; // truncated
 
     len -= n;
+    --n;
 
     do
     {
@@ -99,7 +103,8 @@ int utf8read(const char *& s, size_t& len)
         ret |= (x & 0x3f);
     }
     while(--n);
-
+    sRef = s;
+    lenRef = len;
     return (int)ret;
 }
 

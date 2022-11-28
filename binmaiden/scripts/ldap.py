@@ -27,6 +27,9 @@ import argparse
 import collections
 from collections.abc import Mapping
 
+# Make sure everything is utf-8, especially when piping
+sys.stdout.reconfigure(encoding='utf-8')
+
 # this is the startup check. Make sure the script can load all dependencies and get here, then we can exit.
 if len(sys.argv) > 1 and sys.argv[1] == "--check":
     exit(0)
@@ -184,7 +187,12 @@ json.dump(FIELDS, sys.stdout)
 
 # -- begin actual data
 sys.stdout.write(",\n\"data\":\n")
-json.dump(OutputFakeDict(LDAPFetcher(env).fetch(args.base, used.missing)), sys.stdout, separators=(",",":"), check_circular=False)
+json.dump(OutputFakeDict(LDAPFetcher(env).fetch(args.base, used.missing)),
+    sys.stdout,
+    separators=(",",":"), # Reduce whitespace
+    check_circular=False, # Saves some time
+    ensure_ascii=False    # Forward UTF-8 as-is
+)
 # -- end actual data
 
 sys.stdout.write("\n}\n")

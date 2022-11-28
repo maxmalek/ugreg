@@ -4,6 +4,10 @@
 
 import ldap3
 
+# set sane defaults
+ldap3.set_config_parameter("DEFAULT_CLIENT_ENCODING", "utf-8")
+ldap3.set_config_parameter("DEFAULT_SERVER_ENCODING", "utf-8")
+
 class LDAPFetcher:
     def __init__(self, env):
         self.host = env["LDAP_HOST"]
