@@ -87,9 +87,10 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources
                     }
                     else if(const Var::Map *fm = val.map())
                     {
-                        VarCRef f(xfields.mem, &val);
+                        /*VarCRef f(xfields.mem, &val);
                         VarCRef xfuzzy = f.lookup("fuzzy");
-                        fcfg.fuzzy = xfuzzy && xfuzzy.asBool();
+                        fcfg.fuzzy = xfuzzy && xfuzzy.asBool();*/
+                        assert(false); // atm not supported
                     }
                     else
                     {
@@ -107,6 +108,12 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources
             printf("search->fields is present but not map, ignoring\n");
         }
     }
+
+    if (VarCRef xfuzzy = cfg.lookup("fuzzy"))
+        searchcfg.fuzzy = xfuzzy && xfuzzy.asBool();
+
+    if (VarCRef xeh = cfg.lookup("element_hack"))
+        searchcfg.element_hack = xeh && xeh.asBool();
 
     if(VarCRef xurl = cfg.lookup("avatar_url"))
         if(const char *url = xurl.asCString())
@@ -147,15 +154,16 @@ MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources
     printf("MxSearchHandler: max. client request size = %u\n", (unsigned)searchcfg.maxsize);
     printf("MxSearchHandler: avatar_url = %s\n", searchcfg.avatar_url.c_str());
     printf("MxSearchHandler: displayname = %s\n", searchcfg.displaynameField.c_str());
+    printf("MxSearchHandler: fuzzy global search = %d\n", searchcfg.fuzzy);
+    printf("MxSearchHandler: Element substring HACK = %d\n", searchcfg.element_hack);
     printf("MxSearchHandler: searching %u fields:\n", (unsigned)searchcfg.fields.size());
     for(MxSearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
-        printf(" + %s [fuzzy = %u]\n", it->first.c_str(), it->second.fuzzy);
+        printf(" + %s\n", it->first.c_str());
     printf("MxSearchHandler: Reverse proxy enabled: %s\n", reverseproxy ? "yes" : "no");
     printf("MxSearchHandler: Ask homeserver: %s\n", askHS ? "yes" : "no");
     printf("MxSearchHandler: Ask homeserver timeout: %d ms\n", hsTimeout);
     printf("MxSearchHandler: Check homeserver: %s\n", checkHS ? "yes" : "no");
 
-    // FIXME: remove this again in dtor
     sources.addListener(&this->search);
 }
 
@@ -174,7 +182,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     puts(os.str().c_str());
 
 
-    MxSearch::Matches hits = search.searchExact(matchers);
+    MxSearch::Matches hits = search.search(matchers, searchcfg.fuzzy);
 
     // keep best matches, drop the rest if above the limit
     bool limited = false;
@@ -186,7 +194,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     }
 
     // resolve matches to something readable
-    const MxStore::SearchResults results = _store.formatMatches(searchcfg, hits.data(), hits.size());
+    MxStore::SearchResults results = _store.formatMatches(searchcfg, hits.data(), hits.size());
 
     dst.makeMap().v->map()->clear(*dst.mem); // make sure it's an empty map
 
@@ -194,12 +202,15 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     VarRef ra = dst["results"].makeArray(results.size());
 
     const bool useAvatar = !searchcfg.avatar_url.empty();
+    const bool elementHack = searchcfg.element_hack;
     for (size_t i = 0; i < results.size(); ++i)
     {
         VarRef d = ra.at(i).makeMap();
-        const MxStore::SearchResult& r = results[i];
+        MxStore::SearchResult& r = results[i];
         if (useAvatar)
             d["avatar_url"] = searchcfg.avatar_url.c_str();
+        if(elementHack && !strstr(r.displayname.c_str(), term))
+            r.displayname = r.displayname + "  // " + term;
         if (!r.displayname.empty())
             d["display_name"] = r.displayname.c_str();
         d["user_id"] = r.str.c_str();

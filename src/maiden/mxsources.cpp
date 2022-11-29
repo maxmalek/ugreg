@@ -350,9 +350,15 @@ static void _OnTreeRebuilt(EvTreeRebuilt *ev, const MxStore *mxs)
 
 void MxSources::_sendTreeRebuiltEvent() const
 {
-    std::vector<std::future<void> > futs(_evRebuilt.size());
-    for(size_t i = 0; i < _evRebuilt.size(); ++i)
-        futs[i] = std::move(std::async(_OnTreeRebuilt, _evRebuilt[i], &_store));
+    std::vector<std::future<void> > futs;
+    {
+        std::unique_lock lock(_eventlock);
+        //----------------------------------
+        futs.resize(_evRebuilt.size());
+        for(size_t i = 0; i < _evRebuilt.size(); ++i)
+            futs[i] = std::move(std::async(_OnTreeRebuilt, _evRebuilt[i], &_store));
+    }
+    // don't keep it locked while the futures finish
 }
 
 void MxSources::_updateEnv(VarCRef xenv)
@@ -394,6 +400,7 @@ void MxSources::_updateEnv(VarCRef xenv)
 void MxSources::addListener(EvTreeRebuilt* ev)
 {
     std::unique_lock lock(_eventlock);
+    //----------------------------------
     for(size_t i = 0; i < _evRebuilt.size(); ++i)
         if(_evRebuilt[i] == ev)
             return;
@@ -403,6 +410,7 @@ void MxSources::addListener(EvTreeRebuilt* ev)
 void MxSources::removeListener(EvTreeRebuilt* ev)
 {
     std::unique_lock lock(_eventlock);
+    //----------------------------------
     _evRebuilt.erase(std::remove(_evRebuilt.begin(), _evRebuilt.end(), ev));
 }
 

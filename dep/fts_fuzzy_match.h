@@ -32,7 +32,7 @@
 
 
 #include <cstdint> // uint8_t
-#include <ctype.h> // ::tolower, ::toupper
+//#include <ctype.h> // ::tolower, ::toupper
 #include <cstring> // memcpy
 
 #include <cstdio>
@@ -58,7 +58,8 @@ namespace fts {
     // Public interface
     bool fuzzy_match_simple(char const * pattern, char const * str) {
         while (*pattern != '\0' && *str != '\0')  {
-            if (tolower(*pattern) == tolower(*str))
+            //if (tolower(*pattern) == tolower(*str))
+            if ((*pattern) == (*str))
                 ++pattern;
             ++str;
         }
@@ -103,7 +104,8 @@ namespace fts {
         while (*pattern != '\0' && *str != '\0') {
 
             // Found match
-            if (tolower(*pattern) == tolower(*str)) {
+            //if (tolower(*pattern) == tolower(*str)) {
+            if ((*pattern) == (*str)) {
 
                 // Supplied matches buffer was too short
                 if (nextMatch >= maxMatches)
@@ -183,8 +185,8 @@ namespace fts {
                     // Camel case
                     char neighbor = strBegin[currIdx - 1];
                     char curr = strBegin[currIdx];
-                    if (curr > 0 && neighbor > 0 && ::islower(neighbor) && ::isupper(curr))
-                        outScore += camel_bonus;
+                    //if (curr > 0 && neighbor > 0 && ::islower(neighbor) && ::isupper(curr))
+                    //    outScore += camel_bonus;
 
                     // Separator
                     bool neighborSeparator = neighbor == '_' || neighbor == ' ';

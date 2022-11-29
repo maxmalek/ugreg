@@ -32,15 +32,13 @@
                 "search": {
                     "fields": {
                         // field => true to search with default params
-                        // - default is partial/substring search
-                        // field => {configs} for extended search
-                        // config fields:
-                        // - fuzzy: true to enable fuzzy search for this key
                         "mail": true,
                         "phone": true,
-                        "realname": { "fuzzy": true }
+                        "realname": true,
                     },
-                    "displayname": "displayname",
+                    "fuzzy": false, // Makes the search fuzzy. Best matches first. Useless+confusing if clients apply their own sort order.
+                    "element_hack": true, // If query is not part of a result, add it. Reqired to show mismatched result in Element.
+                    "displayname": "displayname", // Field to show as the display name
                     //"avatar_url": "mxc://...",
                     "homeserver": { "host": "localhost", "port": 8008, "ssl": false },
                     "reverseproxy": true,
@@ -53,7 +51,7 @@
             },
         },
         // Optionally, serve .well-known if no other service is serving it already
-        // Clients espect this on https (port 443) with a valid cert.
+        // Clients expect this on https (port 443) with a valid cert.
         {
             "listen": [
                 { "port": 443, "ssl": true },

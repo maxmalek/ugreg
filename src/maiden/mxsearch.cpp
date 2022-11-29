@@ -84,7 +84,7 @@ void MxSearch::rebuildCache(const MxStore & mxs)
     printf("MxSearch::rebuildCache() done after %u ms\n", (unsigned)timer.ms());
 }
 
-MxSearch::Matches MxSearch::searchExact(const MxMatcherList& matchers) const
+MxSearch::Matches MxSearch::search(const MxMatcherList& matchers, bool fuzzy) const
 {
     std::shared_lock lock(mutex);
     //-----------------------------------------------------------
@@ -95,6 +95,8 @@ MxSearch::Matches MxSearch::searchExact(const MxMatcherList& matchers) const
     for(size_t i = 0; i < N; ++i)
     {
         int score = mxMatchAndScore_Exact(_strings[i].s, _strings[i].len, matchers.data(), matchers.size());
+        if(fuzzy)
+            score += mxMatchAndScore_Fuzzy(_strings[i].s, matchers.data(), matchers.size());
         if(score > 0)
         {
             Match m;
@@ -103,7 +105,7 @@ MxSearch::Matches MxSearch::searchExact(const MxMatcherList& matchers) const
             hits.push_back(m);
         }
     }
-    printf("MxSearch::searchExact() took %u ms\n", (unsigned)timer.ms());
+    printf("MxSearch::search() took %u ms\n", (unsigned)timer.ms());
     return hits;
 }
 

@@ -3,6 +3,7 @@
 #include "strmatch.h"
 #include <assert.h>
 #include <ctype.h>
+#include "fts_fuzzy_match.h"
 
 // TODO: this should be using some variation of two-way string matching
 // see https://git.musl-libc.org/cgit/musl/tree/src/string/memmem.c
@@ -84,6 +85,18 @@ int mxMatchAndScore_Exact(const char *haystack, size_t haylen, const TwoWayCasef
         if(!bestmatch)
             return 0;
         score += bestmatch;
+    }
+    return score;
+}
+
+int mxMatchAndScore_Fuzzy(const char* haystack, const TwoWayCasefoldMatcher* matchers, size_t nummatchers)
+{
+    int score = 0;
+    for (size_t i = 0; i < nummatchers; ++i)
+    {
+        int bestmatch = 0;
+        if(fts::fuzzy_match(matchers[i].needle(), haystack, bestmatch))
+            score += bestmatch;
     }
     return score;
 }

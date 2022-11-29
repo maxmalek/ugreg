@@ -14,9 +14,9 @@ class TwoWayMatcher;
 
 struct MxSearchConfig
 {
-    struct Field
+    struct Field // Affects how the search cache is generated from each field
     {
-        bool fuzzy = false;
+        //bool fuzzy = false; // No longer possible because we're not searching individual fields anymore
     };
     typedef std::unordered_map<std::string, Field> Fields;
     Fields fields;
@@ -25,6 +25,8 @@ struct MxSearchConfig
     // -- below here is not used by mxstore --
     std::string avatar_url;
     size_t maxsize = 1024; // max. size of search request, json and all
+    bool fuzzy = false;
+    bool element_hack = false;
 };
 
 
@@ -56,7 +58,7 @@ public:
 
     typedef std::vector<Match> Matches;
 
-    Matches searchExact(const MxMatcherList& matchers) const;
+    Matches search(const MxMatcherList& matchers, bool fuzzy) const;
 
     // Inherited via EvTreeRebuilt
     virtual void onTreeRebuilt(const MxStore& mxs) override;

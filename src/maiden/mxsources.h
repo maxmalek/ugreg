@@ -59,7 +59,8 @@ private:
     std::thread _th;
     std::atomic<bool> _quit;
     std::condition_variable _waiter;
-    std::mutex _waitlock, _eventlock;
+    std::mutex _waitlock;
+    mutable std::mutex _eventlock;
     std::vector<std::string> _envStrings;
     std::vector<const char*> _envPtrs;
     std::vector<EvTreeRebuilt*> _evRebuilt;

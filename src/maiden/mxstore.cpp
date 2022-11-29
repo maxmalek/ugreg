@@ -6,7 +6,6 @@
 #include "rng.h"
 #include "tomcrypt.h"
 #include "scopetimer.h"
-#include "fts_fuzzy_match.h"
 #include <future>
 #include "strmatch.h"
 
