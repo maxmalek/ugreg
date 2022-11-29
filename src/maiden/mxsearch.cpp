@@ -58,6 +58,7 @@ void MxSearch::rebuildCache(const MxStore & mxs)
 
     std::vector<unsigned char> tmp;
 
+    size_t stringmem = 0;
     for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
         if(const Var::Map *user = it.value().map())
         {
@@ -75,13 +76,15 @@ void MxSearch::rebuildCache(const MxStore & mxs)
                 ms.len = tmp.size();
                 ms.s = (char*)_stralloc.Alloc(ms.len);
                 memcpy(ms.s, tmp.data(), ms.len);
+                stringmem += ms.len;
                 _strings.push_back(ms);
                 _keys.push_back(it.key()); // this is the StrRef of the mxid
                 tmp.clear();
             }
         }
 
-    printf("MxSearch::rebuildCache() done after %u ms\n", (unsigned)timer.ms());
+    printf("MxSearch::rebuildCache() done after %u ms, using %zu KB for %zu strings\n",
+        (unsigned)timer.ms(), stringmem/1024, _strings.size());
 }
 
 MxSearch::Matches MxSearch::search(const MxMatcherList& matchers, bool fuzzy) const
