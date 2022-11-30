@@ -48,6 +48,7 @@ public:
     {
         StrRef key; // key in mxstore user table
         int score;
+        bool full; // match is a direct substring of the search term. used only if element_hack is enabled
 
         // highest score first
         inline bool operator<(const Match& o) const
@@ -58,7 +59,7 @@ public:
 
     typedef std::vector<Match> Matches;
 
-    Matches search(const MxMatcherList& matchers, bool fuzzy) const;
+    Matches search(const MxMatcherList& matchers, bool fuzzy, const TwoWayCasefoldMatcher *fullmatch) const; // fullmatch is only for the element_hack
 
     // Inherited via EvTreeRebuilt
     virtual void onTreeRebuilt(const MxStore& mxs) override;

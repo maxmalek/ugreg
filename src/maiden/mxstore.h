@@ -71,7 +71,7 @@ public:
     typedef std::vector<SearchResult> SearchResults;
 
     // resolve matches to actual, ready-to-display search results
-    SearchResults formatMatches(const MxSearchConfig& scfg, const MxSearch::Match *matches, size_t n) const;
+    SearchResults formatMatches(const MxSearchConfig& scfg, const MxSearch::Match *matches, size_t n, const char *term) const;
 
 private:
     std::string getHashPepper_nolock(bool allowUpdate);

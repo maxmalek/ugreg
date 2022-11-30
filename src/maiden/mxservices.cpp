@@ -181,8 +181,8 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
         os << '[' << matchers[i].needle() << ']';
     puts(os.str().c_str());
 
-
-    MxSearch::Matches hits = search.search(matchers, searchcfg.fuzzy);
+    TwoWayCasefoldMatcher fullmatch(term, strlen(term));
+    MxSearch::Matches hits = search.search(matchers, searchcfg.fuzzy, searchcfg.element_hack ? &fullmatch : NULL);
 
     // keep best matches, drop the rest if above the limit
     bool limited = false;
@@ -194,7 +194,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     }
 
     // resolve matches to something readable
-    MxStore::SearchResults results = _store.formatMatches(searchcfg, hits.data(), hits.size());
+    MxStore::SearchResults results = _store.formatMatches(searchcfg, hits.data(), hits.size(), term);
 
     dst.makeMap().v->map()->clear(*dst.mem); // make sure it's an empty map
 
@@ -209,8 +209,6 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
         MxStore::SearchResult& r = results[i];
         if (useAvatar)
             d["avatar_url"] = searchcfg.avatar_url.c_str();
-        if(elementHack && !strstr(r.displayname.c_str(), term))
-            r.displayname = r.displayname + "  // " + term;
         if (!r.displayname.empty())
             d["display_name"] = r.displayname.c_str();
         d["user_id"] = r.str.c_str();

@@ -515,7 +515,7 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
     return M_OK;
 }
 
-MxStore::SearchResults MxStore::formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n) const
+MxStore::SearchResults MxStore::formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char *term) const
 {
     ScopeTimer timer;
     std::vector<SearchResult> res;
@@ -544,6 +544,9 @@ MxStore::SearchResults MxStore::formatMatches(const MxSearchConfig& scfg, const 
                     if(const Var *xdn = um->get(displaynameRef))
                         if(const char *dn = xdn->asCString(threepid))
                             sr.displayname = dn;
+
+                    if(scfg.element_hack && !matches[i].full)
+                        sr.displayname = sr.displayname + "  // " + term;
 
                     res.push_back(std::move(sr));
                 }

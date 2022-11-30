@@ -87,7 +87,7 @@ void MxSearch::rebuildCache(const MxStore & mxs)
         (unsigned)timer.ms(), stringmem/1024, _strings.size());
 }
 
-MxSearch::Matches MxSearch::search(const MxMatcherList& matchers, bool fuzzy) const
+MxSearch::Matches MxSearch::search(const MxMatcherList& matchers, bool fuzzy, const TwoWayCasefoldMatcher *fullmatch) const
 {
     std::shared_lock lock(mutex);
     //-----------------------------------------------------------
@@ -105,6 +105,7 @@ MxSearch::Matches MxSearch::search(const MxMatcherList& matchers, bool fuzzy) co
             Match m;
             m.key = _keys[i];
             m.score = score;
+            m.full = fullmatch && fullmatch->match(_strings[i].s, _strings[i].len);
             hits.push_back(m);
         }
     }
