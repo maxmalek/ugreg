@@ -2,6 +2,7 @@
 #include "mxstore.h"
 #include "scopetimer.h"
 #include "strmatch.h"
+#include <string.h>
 
 MxSearch::MxSearch(const MxSearchConfig& scfg)
     : scfg(scfg)

@@ -6,6 +6,7 @@
 #include <assert.h>
 #include "scopetimer.h"
 #include "env.h"
+#include <algorithm>
 
 MxSources::MxSources(MxStore& mxs)
     : _store(mxs)
