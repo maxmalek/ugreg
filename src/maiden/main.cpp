@@ -139,7 +139,7 @@ static bool attachService(WebServer& srv, const char *name, MxStore& mxs, MxSour
     }
     else if(!strcmp(name, "search"))
     {
-        h = new MxSearchHandler(mxs, serviceConfig, sources);
+        h = new MxSearchHandler(sources, serviceConfig);
     }
     else if(!strcmp(name, "wellknown"))
     {
@@ -210,10 +210,10 @@ static void stopAndDelete(ServerAndConfig *s)
     delete s;
 }
 
-static int main2(MxStore& mxs, int argc, char** argv)
+static int main2(MxSources& sources, int argc, char** argv)
 {
     ScopeTimer timer;
-    MxSources sources(mxs);
+    MxStore mxs; // FIXME: this should be split fully into 3pid-only and only created if needed
 
     std::vector<ServerAndConfig*> servers;
 
@@ -223,7 +223,7 @@ static int main2(MxStore& mxs, int argc, char** argv)
             bail("Failed to handle cmdline. Exiting.", "");
 
         // matrix/storage global config, populate this first
-        if(!mxs.apply(cfgtree.subtree("/storage")))
+        if(!mxs.apply(cfgtree.subtree("/3pid")))
             bail("Invalid matrix config. Exiting.", "");
 
         // ... then init all servers, but don't start them...
@@ -251,7 +251,7 @@ static int main2(MxStore& mxs, int argc, char** argv)
             bail("Invalid sources config. Exiting.", "");
     }
 
-    const bool loaded = mxs.load();
+    const bool loaded = sources.load();
 
     // need data to operate on. this takes a while so if we already have data, start up with those
     if(loaded)
@@ -299,10 +299,10 @@ int main(int argc, char** argv)
     srand(unsigned(time(NULL)));
     handlesigs(sigquit);
 
-    MxStore mxs;
-    int ret = main2(mxs, argc, argv);
+    MxSources sources; 
+    int ret = main2(sources, argc, argv);
 
-    mxs.save();
+    sources.save();
     printf("Exiting.\n");
     return ret;
 }

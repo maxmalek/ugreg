@@ -34,11 +34,10 @@ protected:
 class MxSearchHandler : public MxReverseProxyHandler
 {
 public:
-    MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources);
+    MxSearchHandler(MxSources& store, VarCRef cfg);
     virtual ~MxSearchHandler();
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 
-    MxStore& _store;
     bool reverseproxy;
     bool checkHS;
     bool askHS;

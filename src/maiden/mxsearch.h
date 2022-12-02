@@ -37,7 +37,7 @@ public:
     ~MxSearch();
     bool init(VarCRef cfg);
 
-    void rebuildCache(const MxStore& mxs);
+    void rebuildCache(VarCRef src);
 
 
     // First step is to search in the prepared cache.
@@ -62,7 +62,7 @@ public:
     Matches search(const MxMatcherList& matchers, bool fuzzy, const TwoWayCasefoldMatcher *fullmatch) const; // fullmatch is only for the element_hack
 
     // Inherited via EvTreeRebuilt
-    virtual void onTreeRebuilt(const MxStore& mxs) override;
+    virtual void onTreeRebuilt(VarCRef src) override;
 
 private:
 

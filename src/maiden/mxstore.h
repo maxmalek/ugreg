@@ -8,8 +8,9 @@
 #include "serialize.h"
 #include "mxsearchalgo.h"
 #include "mxsearch.h"
+#include "mxvirtual.h"
 
-class MxStore
+class MxStore : public EvTreeRebuilt
 {
 public:
     MxStore();
@@ -46,10 +47,6 @@ public:
     MxError hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, const char *pepper); // dst is made a map, in is an array
 
     // -- update --
-    void merge3pid(VarCRef root);
-    void merge3pid_nolock(VarCRef root);
-    DataTree::LockedRef get3pidRoot();
-    DataTree::LockedCRef get3pidCRoot() const;
     void _clearHashCache_nolock();
     void markForRehash_nolock();
 
@@ -61,23 +58,12 @@ public:
     bool save() const;
     bool load();
 
-    bool usePersistentStorage() const { return !config.directory.empty(); }
-
-    struct SearchResult
-    {
-        std::string str, displayname;
-    };
-
-    typedef std::vector<SearchResult> SearchResults;
-
-    // resolve matches to actual, ready-to-display search results
-    SearchResults formatMatches(const MxSearchConfig& scfg, const MxSearch::Match *matches, size_t n, const char *term) const;
-
 private:
     std::string getHashPepper_nolock(bool allowUpdate);
     void rotateHashPepper_nolock(u64 now);
     MxError _generateHashCache_nolock(VarRef cache, const char *algo);
     MxError unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in); // only for algo == "none"
+    void rebuildHashCache_nolock();
 
     // dst becomes { 3pid => mxid }, where src is a list of { mxid => { ..., <fromkey>=3pid, ... }
     // Actually src is the large user-to-data table returned by an import script, and ffromkey is the key under which to look up
@@ -128,8 +114,7 @@ public:
             bool lazy;
         };
 
-        std::string directory;
-        size_t minSearchLen;
+        size_t minSearchLen; // TODO: move this to search and use it there
 
         typedef std::unordered_map<std::string, Hash> Hashes;
         Hashes hashes;
@@ -142,5 +127,10 @@ public:
 
 private:
     Config config;
+
+
+public:
+    // Inherited via EvTreeRebuilt
+    virtual void onTreeRebuilt(VarCRef src) override;
 
 };

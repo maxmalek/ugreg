@@ -19,10 +19,9 @@ bool MxSearch::init(VarCRef cfg)
     return true;
 }
 
-void MxSearch::rebuildCache(const MxStore & mxs)
+void MxSearch::rebuildCache(VarCRef src)
 {
     std::unique_lock lock(mutex);       // R+W
-    DataTree::LockedCRef cr = mxs.get3pidCRoot();  // R only
     //-----------------------------------------------------------
 
     ScopeTimer timer;
@@ -38,7 +37,7 @@ void MxSearch::rebuildCache(const MxStore & mxs)
     for (MxSearchConfig::Fields::const_iterator it = scfg.fields.begin(); it != scfg.fields.end(); ++it)
     {
         SearchKeyCache kc;
-        kc.ref = cr.ref.mem->lookup(it->first.c_str(), it->first.length());
+        kc.ref = src.mem->lookup(it->first.c_str(), it->first.length());
         if(kc.ref)
         {
             kc.f = it->second;
@@ -49,8 +48,7 @@ void MxSearch::rebuildCache(const MxStore & mxs)
     size_t N = keys.size();
     assert(N);
 
-    VarCRef dataroot = cr.ref.lookup("_data"); // FIXME: make this a cleaner accessor and not all over the place
-    const Var::Map *m = dataroot ? dataroot.v->map() : NULL;
+    const Var::Map *m = src.v->map();
     assert(m);
 
     clear();
@@ -66,7 +64,7 @@ void MxSearch::rebuildCache(const MxStore & mxs)
             for(size_t i = 0; i < N; ++i)
                 if(const Var *v =  user->get(keys[i].ref))
                 {
-                    PoolStr ps = v->asString(*cr.ref.mem);
+                    PoolStr ps = v->asString(*src.mem);
                     if(ps.len)
                         if(!mxSearchNormalizeAppend(tmp, ps.s, ps.len))
                             printf("MxSearch: Got invalid UTF-8: %s\n", ps.s);
@@ -122,7 +120,7 @@ void MxSearch::clear()
     _keys.clear();
 }
 
-void MxSearch::onTreeRebuilt(const MxStore& mxs)
+void MxSearch::onTreeRebuilt(VarCRef src)
 {
-    this->rebuildCache(mxs);
+    this->rebuildCache(src);
 }

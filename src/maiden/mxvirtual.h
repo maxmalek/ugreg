@@ -1,9 +1,8 @@
 #pragma once
 
-class MxStore;
-struct MxSearchConfig;
+#include "variant.h"
 
 struct EvTreeRebuilt
 {
-    virtual void onTreeRebuilt(const MxStore& mxs) = 0;
+    virtual void onTreeRebuilt(VarCRef src) = 0;
 };

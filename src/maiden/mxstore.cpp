@@ -99,7 +99,6 @@ bool MxStore::apply(VarCRef config)
     VarCRef xregister = config.lookup("register");
     VarCRef xhashes = config.lookup("hashes");
     VarCRef xmedia = config.lookup("media");
-    VarCRef xdirectory = config.lookup("directory");
 
     bool ok =
            readTimeKey(cfg.hashcache.pepperTime, xhashcache, "pepperTime")
@@ -109,13 +108,6 @@ bool MxStore::apply(VarCRef config)
         && readUintKey(cfg.wellknown.requestMaxSize, xwellknown, "requestMaxSize")
         && readTimeKey(cfg.register_.maxTime, xregister, "maxTime")
         && readUintKey(cfg.minSearchLen, config, "minSearchLen");
-
-    if(ok && xdirectory && xdirectory.type() == Var::TYPE_STRING)
-    {
-        cfg.directory = xdirectory.asCString();
-        if(!cfg.directory.empty() && cfg.directory.back() != '/')
-            cfg.directory += '/';
-    }
 
     if(ok && xhashcache)
         if(VarCRef xpepperlen = xhashcache.lookup("pepperLen"))
@@ -182,11 +174,6 @@ bool MxStore::apply(VarCRef config)
     }
 
     // config looks good, apply
-    if(cfg.directory.empty())
-        printf("MxStore: Not touching the disk. RAM only.\n");
-    else
-        printf("MxStore: directory = %s\n", cfg.directory.c_str());
-
     printf("MxStore: minSearchLen = %zu\n", cfg.minSearchLen);
     printf("MxStore: pepper len = %ju .. %ju\n", cfg.hashcache.pepperLenMin, cfg.hashcache.pepperLenMax);
     printf("MxStore: pepper time = %ju seconds\n", cfg.hashcache.pepperTime / 1000);
@@ -515,130 +502,18 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
     return M_OK;
 }
 
-MxStore::SearchResults MxStore::formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char *term) const
+void MxStore::rebuildHashCache_nolock()
 {
-    ScopeTimer timer;
-    std::vector<SearchResult> res;
-    res.reserve(n);
+    _clearHashCache_nolock();
 
+    // rehash for all hashes with lazy==false
+    for (Config::Hashes::const_iterator it = config.hashes.begin(); it != config.hashes.end(); ++it)
     {
-        std::shared_lock lock(threepid.mutex);
-        //---------------------------------------
-
-        const VarCRef data = threepid.root().lookup("_data");
-        const StrRef displaynameRef = data.mem->lookup(scfg.displaynameField.c_str(), scfg.displaynameField.length());
-        const Var::Map * const m = data.v->map();
-
-        for(size_t i = 0; i < n; ++i)
-        {
-            const StrRef key = matches[i].key;
-            if(const Var *user = m->get(key))
-                if(const Var::Map *um = user->map())
-                {
-                    PoolStr mxid = data.mem->getSL(key);
-                    assert(mxid.s); // we just got the map key. this must exist.
-
-                    SearchResult sr;
-                    sr.str.assign(mxid.s, mxid.len);
-
-                    if(const Var *xdn = um->get(displaynameRef))
-                        if(const char *dn = xdn->asCString(threepid))
-                            sr.displayname = dn;
-
-                    if(scfg.element_hack && !matches[i].full)
-                        sr.displayname = sr.displayname + "  // " + term;
-
-                    res.push_back(std::move(sr));
-                }
-        }
-    }
-
-    printf("MxStore::formatMatches(): %zu/%zu results in %u ms\n",
-        res.size(), n, unsigned(timer.ms()));
-
-    return res;
-}
-
-void MxStore::merge3pid(VarCRef root)
-{
-    std::unique_lock lock(threepid.mutex);
-    //---------------------------------------
-    return merge3pid_nolock(root);
-}
-
-void MxStore::merge3pid_nolock(VarCRef root)
-{
-    VarRef mergedst = threepid.root()["_data"].makeMap();
-    if(VarCRef src = root.lookup("data"))
-        mergedst.merge(src, MERGE_RECURSIVE);
-    else
-        printf("MxStore: WARNING: merge3pid got map without 'data' key, using stale values");
-
-    for(Config::Media::iterator it = config.media.begin(); it != config.media.end(); ++it)
-    {
-        const char *nameOfField = it->first.c_str();
-        const char *nameOf3pid = it->second.c_str();
-        VarRef dst = threepid.root()[nameOf3pid].makeMap();
-        _Rebuild3pidMap(dst, mergedst, nameOfField);
+        const Config::Hash& h = it->second;
+        if (!h.lazy)
+            _generateHashCache_nolock(hashcache.root(), it->first.c_str());
     }
 }
-
-DataTree::LockedRef MxStore::get3pidRoot()
-{
-    return threepid.lockedRef();
-}
-
-DataTree::LockedCRef MxStore::get3pidCRoot() const
-{
-    return threepid.lockedCRef();
-}
-
-static bool _lockAndSave(const DataTree *tree, std::string fn)
-{
-    std::shared_lock lock(tree->mutex);
-    return serialize::save(fn.c_str(), tree->root(), serialize::ZSTD, serialize::BJ);
-}
-
-static bool _lockAndLoad(DataTree *tree, std::string fn)
-{
-    std::unique_lock lock(tree->mutex);
-    return serialize::load(tree->root(), fn.c_str(), serialize::ZSTD, serialize::BJ);
-}
-
-bool MxStore::save() const
-{
-    if(config.directory.empty())
-        return false;
-
-    printf("MxStore::save() starting...\n");
-
-    ScopeTimer timer;
-    bool ok = false;
-    {
-        auto authF     = std::async(_lockAndSave, &authdata, config.directory + "auth.mxs");
-        auto threepidF = std::async(_lockAndSave, &threepid, config.directory + "threepid.mxs");
-        ok = authF.get() && threepidF.get();
-    }
-    printf("MxStore::save() done in %u ms, success = %d\n", (unsigned)timer.ms(), ok);
-    return ok;
-}
-
-bool MxStore::load()
-{
-    if(config.directory.empty())
-        return false;
-
-    ScopeTimer timer;
-    bool ok = false;
-    {
-        auto authF     = std::async(_lockAndLoad, &authdata, config.directory + "auth.mxs");
-        auto threepidF = std::async(_lockAndLoad, &threepid, config.directory + "threepid.mxs");
-        ok = authF.get() && threepidF.get();
-    }
-    printf("MxStore::load() done in %u ms, success = %d\n", (unsigned)timer.ms(), ok);
-    return ok;
-}
-
 
 // TODO periodic defragment auth to get rid of leftover map keys
 
@@ -649,15 +524,8 @@ void MxStore::rotateHashPepper_nolock(u64 now)
     hashPepper = GenerateHashPepper(r);
     hashPepperTS = now;
     printf("Hash pepper update, is now [%s]\n", hashPepper.c_str());
-    _clearHashCache_nolock();
 
-    // rehash for all hashes with lazy==false
-    for(Config::Hashes::const_iterator it = config.hashes.begin(); it != config.hashes.end(); ++it)
-    {
-        const Config::Hash &h = it->second;
-        if(!h.lazy)
-            _generateHashCache_nolock(hashcache.root(), it->first.c_str());
-    }
+    rebuildHashCache_nolock();
 }
 
 static const unsigned char s_space = ' ';
@@ -798,4 +666,28 @@ void MxStore::_Rebuild3pidMap(VarRef dst, VarCRef src, const char* fromkey)
     }
 
     printf("MxStore: Rebuilt 3pid from [%s], %zu entries in %llu ms\n", fromkey, n, timer.ms());
+}
+
+void MxStore::onTreeRebuilt(VarCRef src)
+{
+    DataTree::LockedRef lockdst = threepid.lockedRef();
+    //-------------------------------------------
+    ScopeTimer timer;
+
+    // update configured 3pid media from source fields
+    for (Config::Media::iterator it = config.media.begin(); it != config.media.end(); ++it)
+    {
+        const char* nameOfField = it->first.c_str();
+        const char* nameOf3pid = it->second.c_str();
+        VarRef dst = threepid.root()[nameOf3pid].makeMap();
+        _Rebuild3pidMap(dst, src, nameOfField);
+    }
+    lockdst.ref.mem->defrag();
+
+    // FIXME: could unlock R+W and re-lock for reading only,
+    // since the hash cache requires only reading at this point.
+    // But it would be better to integrate the hash cache so that
+    // it uses the same mem as the threepid, to same some extra RAM.
+    std::unique_lock hlock(hashcache.mutex);
+    rebuildHashCache_nolock();
 }

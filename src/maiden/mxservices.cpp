@@ -67,8 +67,8 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
     return 200;
 }
 
-MxSearchHandler::MxSearchHandler(MxStore& store, VarCRef cfg, MxSources& sources)
-    : MxReverseProxyHandler(cfg), _store(store), search(searchcfg), _sources(sources)
+MxSearchHandler::MxSearchHandler(MxSources& sources, VarCRef cfg)
+    : MxReverseProxyHandler(cfg), search(searchcfg), _sources(sources)
 {
     if(VarCRef xfields = cfg.lookup("fields"))
     {
@@ -194,7 +194,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     }
 
     // resolve matches to something readable
-    MxStore::SearchResults results = _store.formatMatches(searchcfg, hits.data(), hits.size(), term);
+    MxSources::SearchResults results = _sources.formatMatches(searchcfg, hits.data(), hits.size(), term);
 
     dst.makeMap().v->map()->clear(*dst.mem); // make sure it's an empty map
 
@@ -206,7 +206,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     for (size_t i = 0; i < results.size(); ++i)
     {
         VarRef d = ra.at(i).makeMap();
-        MxStore::SearchResult& r = results[i];
+        MxSources::SearchResult& r = results[i];
         if (useAvatar)
             d["avatar_url"] = searchcfg.avatar_url.c_str();
         if (!r.displayname.empty())

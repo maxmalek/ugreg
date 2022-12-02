@@ -38,9 +38,9 @@
                     },
                     "fuzzy": false, // Makes the search fuzzy. Best matches first. Useless+confusing if clients apply their own sort order.
                     "element_hack": true, // If query is not part of a result, add it. Reqired to show mismatched result in Element.
-                    "displayname": "displayname", // Field to show as the display name
+                    "displayname": "displayname",
                     //"avatar_url": "mxc://...",
-                    "homeserver": { "host": "localhost", "port": 8008, "ssl": false },
+                    //"homeserver": { "host": "localhost", "port": 8008, "ssl": false },
                     "reverseproxy": true,
                     "ask_homeserver": false, // forward search requests to homeserver
                     "check_homeserver": false, // require homeserver to return a valid search result before we merge in our own.
@@ -79,14 +79,8 @@
         },
     ],
     
-    // -- Global database ---
-    "storage": {
-        
-        // Directory name where we store our database upon quitting, and load it when starting.
-        // Leave away, set None or "" to not store anything on disk. Use "." to use working directory.
-        // If you run multiple instances for whatever reason, each instance needs its own storage directory.
-        "directory": ".",
-        
+    // -- Global 3pid database ---
+    "3pid": {
         "hashcache": {
             "pepperTime": "1h", // hash pepper is rotated after this time
             "pepperLen": [24, 40], // each hash pepper is this long; in [min, max]
@@ -115,7 +109,13 @@
         }
     },
 
+    // -- Global data storage and acquisition ---
     "sources": {
+        // Directory name where we store our database upon quitting, and load it when starting.
+        // Leave away, set None or "" to not store anything on disk. Use "." to use working directory.
+        // If you run multiple instances for whatever reason, each instance needs its own storage directory.
+        "directory": ".",
+        
         /* Completely purge & reload the entire 3pid tree every now and then.
            Fetches all sources as if on program startup, then atomically replaces the tree once everything is loaded.
            Gets rid of stale entries. Clears hash caches. Comment out to never purge (not recommended). */
