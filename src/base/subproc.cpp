@@ -128,55 +128,6 @@ bool loadJsonFromProcess(VarRef root, subprocess_s* proc, const char* procname)
     return ok;
 }
 
-/*
-// unused
-bool loadJsonFromProcess_StrOrArray(VarRef root, VarCRef param, const char **env)
-{
-    size_t n = 0;
-    const char **args = NULL;
-    switch(param.type())
-    {
-        case Var::TYPE_STRING:
-        {
-            n = 1;
-            const size_t sz = (n + 1) * sizeof(const char*);
-            args = (const char**)_malloca(sz);
-            if(args)
-                args[0] = param.asCString();
-        }
-        break;
-
-        case Var::TYPE_ARRAY:
-        n = param.size();
-        if(n)
-        {
-            const size_t sz = (n + 1) * sizeof(const char*);
-            args = (const char**)_malloca(sz);
-            if(args)
-                for(size_t i = 0; i < n; ++i)
-                {
-                    const char *p = NULL;
-                    if(VarCRef xarg = param.at(i))
-                        p = xarg.asCString();
-                    args[i] = p;
-                    if(!p)
-                        return false;
-                }
-        }
-        break;
-    }
-
-    if(!n || !args)
-        return false;
-
-    args[n] = NULL;
-
-    bool ok = loadJsonFromProcess(root, args, env);
-    _freea(args);
-    return ok;
-}
-*/
-
 DataTree * loadJsonFromProcessSync(AsyncLaunchConfig&& cfg)
 {
     const size_t sz = (cfg.args.size() + 1) * sizeof(const char*);
