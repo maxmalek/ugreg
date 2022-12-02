@@ -23,7 +23,7 @@ public:
     struct LockedRef
     {
         friend class DataTree;
-        const VarRef ref;
+        VarRef ref;
     private:
         std::unique_lock<acme::upgrade_mutex> _lock; // lock R+W
         LockedRef(DataTree& tree)
@@ -37,7 +37,7 @@ public:
     struct LockedCRef
     {
         friend class DataTree;
-        const VarCRef ref;
+        VarCRef const ref;
     private:
         std::shared_lock<acme::upgrade_mutex> _lock; // lock R
         LockedCRef(const DataTree& tree)

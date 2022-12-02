@@ -419,7 +419,7 @@ class VarRef
 {
 public:
     Var * const v;
-    TreeMem *mem;
+    TreeMem * const mem;
 
     VarRef() : v(0), mem(0) {}
     VarRef(TreeMem& mem, Var *x) : v(x), mem(&mem) {}
