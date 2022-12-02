@@ -82,6 +82,9 @@ bool load(VarRef dst, const char* fn, Compression comp, Format fmt)
     return false;
 }
 
+// TODO: autodetect compression?
+// zstd starts with 28 b5 2f fd
+// deflate starts with 78 followed by one of: 01/9c/da
 bool load(VarRef dst, BufferedReadStream& rs, Format fmt)
 {
     rs.init(); // just in case

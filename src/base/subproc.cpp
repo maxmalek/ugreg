@@ -7,7 +7,7 @@
 
 #include <assert.h>
 #include "datatree.h"
-#include "json_in.h"
+#include "serialize.h"
 
 static void procfail(ProcessReadStream& ps, const char *procname)
 {
@@ -80,7 +80,7 @@ bool loadJsonFromProcess(VarRef root, subprocess_s* proc, const char* procname)
     char buf[12*1024];
     ProcessReadStream ps(proc, ProcessReadStream::DONTTOUCH, &buf[0], sizeof(buf));
 
-    bool ok = loadJsonDestructive(root, ps);
+    bool ok = serialize::load(root, ps, serialize::AUTO);
 
     if(ok)
     {
