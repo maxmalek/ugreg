@@ -9,7 +9,7 @@
 #include <algorithm>
 
 MxSources::MxSources(MxStore& mxs)
-    : _store(mxs)
+    : _store(mxs), _quit(false)
 {
 }
 

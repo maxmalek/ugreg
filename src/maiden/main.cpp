@@ -32,7 +32,6 @@ static void sigquit(int)
 
 //static std::string sDumpFn;
 //static bool sDump;
-static bool sExit;
 
 static const char *usage =
 "Usage: ./maiden <switches> config1.json configN.json <switches> ...\n"
@@ -64,7 +63,7 @@ static size_t argsCallback(char **argv, size_t idx, void* ud)
     }*/
     else if (!strcmp(sw, "exit"))
     {
-        sExit = true;
+        s_quit = true;
         return 1;
     }
     return 0;
@@ -248,10 +247,8 @@ static int main2(MxStore& mxs, int argc, char** argv)
             servers.push_back(sc);
         }
 
-        // This may take a while to populate the initial 3pid tree
         if(!sources.initConfig(cfgtree.subtree("/sources"), cfgtree.subtree("/env")))
             bail("Invalid sources config. Exiting.", "");
-
     }
 
     const bool loaded = mxs.load();
@@ -262,7 +259,7 @@ static int main2(MxStore& mxs, int argc, char** argv)
     else
         sources.initPopulate();
 
-    if(!sExit)
+    if(!s_quit)
     {
         mxs.rotateHashPepper();
 
@@ -279,6 +276,8 @@ static int main2(MxStore& mxs, int argc, char** argv)
 
         while (!s_quit)
             sleepMS(200);
+
+        printf("Main loop exited, shutting down...\n");
 
         // parallel shutdown to save time
         {
