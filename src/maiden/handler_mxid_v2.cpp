@@ -86,8 +86,18 @@ MxidHandler_v2::MxidHandler_v2(MxStore& mxs, const char* prefix)
     , _store(mxs)
     , _handlers(DataTree::TINY)
     , _port(8448)
+    , fake_v1(false)
+
 {
     _setupHandlers();
+}
+
+bool MxidHandler_v2::init(VarCRef cfg)
+{
+    if(VarCRef xv1 = cfg.lookup("fake_v1"))
+        fake_v1 = xv1 && xv1.asBool();
+
+    return true;
 }
 
 MxidHandler_v2::~MxidHandler_v2()

@@ -97,7 +97,7 @@ static size_t argsCallback(char **argv, size_t idx, void* ud)
         puts("--- END 3PID DUMP ---");
 }*/
 
-// mg_request_handler, part of "identity_v2"
+// mg_request_handler, part of identity server
 static const char * const URL_versions = "/_matrix/identity/versions";
 static int handler_versions(struct mg_connection* conn, void*)
 {
@@ -108,9 +108,9 @@ static int handler_versions(struct mg_connection* conn, void*)
     return 200;
 }
 
-// mg_request_handler, part of "identity_v1_min"
+// mg_request_handler, enabled if fake_v1 is enabled
 static const char * const URL_identity_v1_min = "/_matrix/identity/api/v1";
-static int handler_identity_v1_min(struct mg_connection *conn, void *ud)
+static int handler_identity_v1_min(struct mg_connection *conn, void *)
 {
     static const char resp[] = "{}";
     mg_send_http_ok(conn, "application/json", sizeof(resp) - 1);
@@ -119,68 +119,14 @@ static int handler_identity_v1_min(struct mg_connection *conn, void *ud)
     return 200;
 }
 
-static bool attachService(WebServer& srv, const char *name, MxStore& mxs, MxSources& sources, VarCRef serviceConfig)
-{
-    printf("attach service [%s]\n", name);
-
-    RequestHandler *h = NULL;
-
-    if(!strcmp(name, "versions"))
-    {
-        srv.registerHandler(URL_versions, handler_versions, NULL);
-    }
-    else if(!strcmp(name, "identity_v2"))
-    {
-        h = new MxidHandler_v2(mxs, "/_matrix/identity/v2");
-    }
-    else if(!strcmp(name, "identity_v1_min"))
-    {
-        srv.registerHandler(URL_identity_v1_min, handler_identity_v1_min, NULL);
-    }
-    else if(!strcmp(name, "search"))
-    {
-        h = new MxSearchHandler(sources, serviceConfig);
-    }
-    else if(!strcmp(name, "wellknown"))
-    {
-        h = new MxWellknownHandler(serviceConfig);
-    }
-    else if(!strcmp(name, "hsproxy"))
-    {
-        //h = new MxReverseProxyHandler;
-    }
-    else
-        bail("Unkown service: ", name);
-
-    if(h)
-        srv.registerHandler(h, true);
-
-    return true;
-}
 
 class ServerAndConfig
 {
 public:
-    static ServerAndConfig *New(VarCRef json, MxStore& mxs, MxSources& sources)
+    static ServerAndConfig *New(VarCRef json)
     {
         ServerAndConfig *ret = new ServerAndConfig;
-        bool ok = true;
-        if(ret->cfg.apply(json))
-        {
-            VarCRef servicesRef = json.lookup("services");
-            const Var::Map *m = servicesRef.v->map();
-            for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
-            {
-                const char *serviceName = servicesRef.mem->getS(it.key());
-                VarCRef serviceConfig(servicesRef.mem, &it.value());
-                if(!attachService(ret->srv, serviceName, mxs, sources, serviceConfig))
-                {
-                    ok = false;
-                    break;
-                }
-            }
-        }
-        if(!ok)
+        if(!ret->cfg.apply(json))
         {
             delete ret;
             ret = NULL;
@@ -204,11 +150,79 @@ private:
     ServerAndConfig() {}
 };
 
+WebServer *prepareServer(std::vector<ServerAndConfig*> servers, RequestHandler *h, VarCRef cfg)
+{
+    ServerAndConfig *sc = ServerAndConfig::New(cfg);
+    if(!sc)
+        return NULL;
+    sc->srv.registerHandler(*h);
+    servers.push_back(sc);
+    return &sc->srv;
+}
+
+static MxidHandler_v2 *identity;
+static MxSearchHandler *search;
+static MxWellknownHandler *wellknown;
+
+static bool initServices(std::vector<ServerAndConfig*> servers, MxSources& sources, MxStore& mxs, VarCRef cfg)
+{
+    if(VarCRef x = cfg.lookup("identity"))
+    {
+        identity = new MxidHandler_v2(mxs, "/_matrix/identity/v2");
+        if(!identity->init(x))
+            return false;
+        if(WebServer *ws = prepareServer(servers, identity, x))
+        {
+            ws->registerHandler(URL_versions, handler_versions, NULL);
+            if(identity->fake_v1)
+                ws->registerHandler(URL_identity_v1_min, handler_identity_v1_min, NULL);
+        }
+    }
+
+    if(VarCRef x = cfg.lookup("usersearch"))
+    {
+        search = new MxSearchHandler(sources);
+        if(!search->init(x))
+            return false;
+        if(!prepareServer(servers, search, x))
+            return false;
+    }
+
+    if(VarCRef x = cfg.lookup("wellknown"))
+    {
+        wellknown = new MxWellknownHandler;
+        if(!wellknown->init(x))
+            return false;
+        if(!prepareServer(servers, wellknown, x))
+            return false;
+    }
+
+    return true;
+}
+
+
+static bool startServers(const std::vector<ServerAndConfig*>& srv)
+{
+    for(size_t i = 0; i < srv.size(); ++i)
+        if(!srv[i]->start())
+            return false;
+    return true;
+}
+
 static void stopAndDelete(ServerAndConfig *s)
 {
     s->srv.stop();
     delete s;
 }
+static void stopServers(std::vector<ServerAndConfig*>&& srv)
+{
+    // parallel shutdown to save time
+    std::vector<std::future<void> > tmp;
+    for (size_t i = 0; i < srv.size(); ++i)
+        tmp.push_back(std::move(std::async(std::launch::async, stopAndDelete, srv[i])));
+    srv.clear();
+}
+
 
 static int main2(MxSources& sources, int argc, char** argv)
 {
@@ -226,29 +240,12 @@ static int main2(MxSources& sources, int argc, char** argv)
         if(!mxs.apply(cfgtree.subtree("/3pid")))
             bail("Invalid matrix config. Exiting.", "");
 
-        // ... then init all servers, but don't start them...
-        VarCRef serversRef = cfgtree.subtree("/servers");
-        if(serversRef.type() != Var::TYPE_ARRAY)
-            bail("Config->servers should be array, but is: ", serversRef ? serversRef.typestr() : "(not-existent)");
-
-        for(size_t i = 0; i < serversRef.size(); ++i)
-        {
-            VarCRef serv = serversRef.at(i);
-            if(serv.type() != Var::TYPE_MAP)
-                bail("Entry in Config->servers[] is not map, exiting", "");
-
-            printf("Create new server, index %u\n", (unsigned)i);
-            ServerAndConfig *sc = ServerAndConfig::New(serv, mxs, sources);
-            if(!sc)
-                bail("Invalid config after processing options. Fix your config file(s). Try --help.\nCurrent config:\n",
-                    dumpjson(cfgtree.root(), true).c_str()
-                );
-
-            servers.push_back(sc);
-        }
-
         if(!sources.initConfig(cfgtree.subtree("/sources"), cfgtree.subtree("/env")))
             bail("Invalid sources config. Exiting.", "");
+
+        // ... then init all servers, but don't start them...
+        if(!initServices(servers, sources, mxs, cfgtree.root()))
+            bail("Failed to init services. Exiting.", "");
     }
 
     const bool loaded = sources.load();
@@ -257,7 +254,7 @@ static int main2(MxSources& sources, int argc, char** argv)
     if(loaded)
         printf("Loaded cached data; doing fast startup by skipping pre-start populate\n");
     else
-        sources.initPopulate();
+        sources.initPopulate(false);
 
     if(!s_quit)
     {
@@ -265,28 +262,20 @@ static int main2(MxSources& sources, int argc, char** argv)
 
         WebServer::StaticInit();
 
-        for(size_t i = 0; i < servers.size(); ++i)
-            if(!servers[i]->start())
-                bail("Failed to start a server component, exiting", "");
+        if(!startServers(servers))
+            bail("Failed to start a server component, exiting", "");
 
         printf("Ready; all servers up after %u ms\n", (unsigned)timer.ms());
 
+        // If we have the cached data, we can slowly start loading in new data in background
         if(loaded)
-            sources.initPopulate();
+            sources.initPopulate(true);
 
         while (!s_quit)
             sleepMS(200);
 
         printf("Main loop exited, shutting down...\n");
-
-        // parallel shutdown to save time
-        {
-            std::vector<std::future<void> > tmp;
-            for (size_t i = 0; i < servers.size(); ++i)
-                tmp.push_back(std::move(std::async(stopAndDelete, servers[i])));
-            servers.clear();
-        }
-
+        stopServers(std::move(servers));
         WebServer::StaticShutdown();
     }
 
@@ -299,7 +288,7 @@ int main(int argc, char** argv)
     srand(unsigned(time(NULL)));
     handlesigs(sigquit);
 
-    MxSources sources; 
+    MxSources sources;
     int ret = main2(sources, argc, argv);
 
     sources.save();

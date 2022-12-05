@@ -10,9 +10,9 @@ class MxidHandler_v2 : public RequestHandler
 {
 public:
     MxidHandler_v2(MxStore& mxs, const char* prefix);
+    bool init(VarCRef cfg);
     virtual ~MxidHandler_v2();
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
-
 private:
     MxStore& _store;
     DataTree _handlers; // ptr entries are actually Endpoint*
@@ -76,4 +76,7 @@ private:
     int post_3pid_unbind                 (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
     int post_store_invite                (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
     int post_sign_ed25519                (BufferedWriteStream& dst, mg_connection* conn, const Request& rq, const UserInfo& u) const;
+
+public:
+    bool fake_v1;
 };

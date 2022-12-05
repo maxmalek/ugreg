@@ -1,83 +1,79 @@
 {
     // --- Hosted servers ---
     // This section configures different separate webservers that can all access the global database stored in this process.
-    "servers": [
-        // The identity server.
-        {
-            "listen": [
-                { "host": "0.0.0.0", "port": 8091, "ssl": true },
-                { "host": "0.0.0.0", "port": 8090, "ssl": false },
-            ],
-            "cert": "localhost.pem",
-            "listen_threads": 0,
-            "services": {
-                "versions": true,
-                "identity_v2": true,
-                "identity_v1_min": true, // Element checks for the v1 API only; enable this to suppress warnings about a non-functional identity server
-            },
-        },
-        
-        // Enable an interface to provide certain endpoints of interest that a matrix homeserver would serve.
-        // Use this to handle /_matrix/client/r0/user_directory/search that usually goes to the matrix server.
-        // Either use a reverse proxy to forward /_matrix/client/r0/user_directory/search to here and disable hsproxy
-        // Or enable hsproxy to forward to a homeserver if you don't have a separate reverse proxy (experimental)
-        {
-            "listen": [
-                { "host": "0.0.0.0", "port": 8088, "ssl": false },
-                { "host": "0.0.0.0", "port": 8089, "ssl": true },
-            ],
-            "cert": "localhost.pem",
-            "listen_threads": 0,
-            "services": {
-                "search": {
-                    "fields": {
-                        // field => true to search with default params
-                        "mail": true,
-                        "phone": true,
-                        "realname": true,
-                    },
-                    "fuzzy": false, // Makes the search fuzzy. Best matches first. Useless+confusing if clients apply their own sort order.
-                    "element_hack": true, // If query is not part of a result, add it. Reqired to show mismatched result in Element.
-                    "displayname": "displayname",
-                    //"avatar_url": "mxc://...",
-                    //"homeserver": { "host": "localhost", "port": 8008, "ssl": false },
-                    "reverseproxy": true,
-                    "ask_homeserver": false, // forward search requests to homeserver
-                    "check_homeserver": false, // require homeserver to return a valid search result before we merge in our own.
-                    // Note: if this is disabled, there is no checking, ie. any unauthenticated user can just curl the search API!
-                    // The config is only secure if ask+check are both on!
-                    "ask_homeserver_timeout": "3s",
-                },
-            },
-        },
-        // Optionally, serve .well-known if no other service is serving it already
-        // Clients expect this on https (port 443) with a valid cert.
-        {
-            "listen": [
-                { "port": 443, "ssl": true },
-            ],
-            "cert": "localhost.pem",
-            "listen_threads": 1,
-            "services": {
-                "wellknown": {
-                    // JSON data served under /.well-known/matrix/client
-                    "client": {
-                        "m.homeserver": {
-                            "base_url": "http://localhost:8008"
-                        },
-                        "m.identity_server": {
-                            "base_url": "http://localhost:8090"
-                        },
-                    },
 
-                    // JSON data served under /.well-known/matrix/server
-                    "server": {
-                        "m.server": "http://localhost:8008"
-                    },
-                },
+    // The identity server.
+    "identity": {
+        // webserver config
+        "listen": [
+            { "host": "0.0.0.0", "port": 8091, "ssl": true },
+            { "host": "0.0.0.0", "port": 8090, "ssl": false },
+        ],
+        "cert": "localhost.pem",
+        "listen_threads": 0,
+        // intentity config
+        
+        // Fake presence of v1 identity server
+        // Element checks for the v1 API only; enable this to suppress warnings about a non-functional identity server
+        "fake_v1": true,
+    },
+    
+    // Enable an interface to provide certain endpoints of interest that a matrix homeserver would serve.
+    // Use this to handle /_matrix/client/r0/user_directory/search that usually goes to the matrix server.
+    // Either use a reverse proxy to forward /_matrix/client/r0/user_directory/search to here and disable hsproxy
+    // Or enable hsproxy to forward to a homeserver if you don't have a separate reverse proxy (experimental)
+    "usersearch": {
+        // webserver config
+        "listen": [
+            { "host": "0.0.0.0", "port": 8088, "ssl": false },
+            { "host": "0.0.0.0", "port": 8089, "ssl": true },
+        ],
+        "cert": "localhost.pem",
+        "listen_threads": 0,
+        // search config
+        "fields": {
+            // field => true to search with default params
+            "mail": true,
+            "phone": true,
+            "realname": true,
+        },
+        "fuzzy": false, // Makes the search fuzzy. Best matches first. Useless+confusing if clients apply their own sort order.
+        "element_hack": true, // If query is not part of a result, add it. Reqired to show mismatched result in Element.
+        "displayname": "displayname", // Field to show as the display name
+        //"avatar_url": "mxc://...",
+        "homeserver": { "host": "localhost", "port": 8008, "ssl": false },
+        "reverseproxy": true,
+        "ask_homeserver": false, // forward search requests to homeserver
+        "check_homeserver": false, // require homeserver to return a valid search result before we merge in our own.
+        // Note: if this is disabled, there is no checking, ie. any unauthenticated user can just curl the search API!
+        // The config is only secure if ask+check are both on!
+        "ask_homeserver_timeout": "3s",
+    },
+
+    // Optionally, serve .well-known if no other service is serving it already
+    // Clients expect this on https (port 443) with a valid cert.
+    "wellknown": {
+        "listen": [
+            { "port": 443, "ssl": true },
+        ],
+        "cert": "localhost.pem",
+        "listen_threads": 1,
+        
+        // JSON data served under /.well-known/matrix/client
+        "client": {
+            "m.homeserver": {
+                "base_url": "http://localhost:8008"
+            },
+            "m.identity_server": {
+                "base_url": "http://localhost:8090"
             },
         },
-    ],
+        // JSON data served under /.well-known/matrix/server
+        "server": {
+            "m.server": "http://localhost:8008"
+        },
+    },
+
     
     // -- Global 3pid database ---
     "3pid": {
@@ -155,6 +151,7 @@
             // You can also provide multiple media in one go.
             
             //{ "exec": "3pid/fakeusers", "every": "30m", "check": false },
+            //{ "exec": "3pid/fakestud", "every": "30m", "check": false },
         ],
     },
     

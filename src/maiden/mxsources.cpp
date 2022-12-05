@@ -153,15 +153,19 @@ bool MxSources::initConfig(VarCRef src, VarCRef env)
     return true;
 }
 
-void MxSources::initPopulate()
+void MxSources::initPopulate(bool buildAsync)
 {
     assert(!_th.joinable());
 
-    printf("MxSources: Populating initial tree...\n");
-    _rebuildTree();
+    if(!buildAsync)
+    {
+        printf("MxSources: Populating initial tree...\n");
+        _rebuildTree();
+        printf("MxSources: ... done\n");
+    }
 
-    _th = std::thread(_Loop_th, this);
-    printf("MxSources: ... done & spawned background thread\n");
+    _th = std::thread(_Loop_th, this, buildAsync);
+    printf("MxSources: Spawned background thread\n");
 }
 
 void MxSources::_loop_th_untilPurge()
@@ -305,7 +309,7 @@ DataTree *MxSources::_ingestDataAndMerge(DataTree *dst, const Config::InputEntry
         }
         else
             printf("MxSources: WARNING: Ingest '%s' has no 'data' key, skipping\n", entry.args[0]);
-    
+
         delete tre;
     }
 
@@ -320,7 +324,7 @@ std::future<DataTree*> MxSources::_ingestDataAndMergeAsync(DataTree *dst, const 
 void MxSources::_rebuildTree()
 {
     ScopeTimer timer;
-    
+
     DataTree newtree;
 
     // get subtrees in parallel
@@ -368,7 +372,7 @@ void MxSources::_sendTreeRebuiltEvent() const
             //----------------------------------
             futs.resize(_evRebuilt.size());
             for(size_t i = 0; i < _evRebuilt.size(); ++i)
-                futs[i] = std::move(std::async(_OnTreeRebuilt, _evRebuilt[i], locked.ref));
+                futs[i] = std::move(std::async(std::launch::async, _OnTreeRebuilt, _evRebuilt[i], locked.ref));
         }
         // don't keep events locked while the futures finish
     }
@@ -428,24 +432,25 @@ void MxSources::removeListener(EvTreeRebuilt* ev)
     _evRebuilt.erase(std::remove(_evRebuilt.begin(), _evRebuilt.end(), ev));
 }
 
-void MxSources::_loop_th()
+void MxSources::_loop_th(bool buildAsync)
 {
-    goto begin; // initial tree is constructed in init(), skip this here
+    if(!buildAsync) // if buildAsync==false, _rebuilTree() was already called in initPopulate()
+        goto skip;
 
     while(!_quit)
     {
         // construct initial tree
         _rebuildTree();
 
-        begin:
+        skip:
         // do incremental updates
         _loop_th_untilPurge();
     }
 }
 
-void MxSources::_Loop_th(MxSources* self)
+void MxSources::_Loop_th(MxSources* self, bool buildAsync)
 {
-    self->_loop_th();
+    self->_loop_th(buildAsync);
     printf("MxSources: Background thread exiting\n");
 }
 

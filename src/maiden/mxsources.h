@@ -18,7 +18,7 @@ public:
     MxSources();
     ~MxSources();
     bool initConfig(VarCRef cfg, VarCRef env);
-    void initPopulate(); // load initial data + start bg maintenance thread when that is done
+    void initPopulate(bool buildAsync); // load initial data + start bg maintenance thread when that is done
 
     struct Config
     {
@@ -59,10 +59,10 @@ public:
 
 private:
     std::vector<std::string> _argstrs;
-    void _loop_th();
+    void _loop_th(bool buildAsync);
     void _loop_th_untilPurge();
     DataTree *_ingestData(const Config::InputEntry& entry) const; // must delete returned ptr
-    
+
     // dst is optional. Protocol:
     // - if dst is valid, merge results into dst and return NULL.
     // - if it's NULL, return new tree. Caller must delete it. On fail, return NULL.
@@ -72,7 +72,7 @@ private:
     void _rebuildTree();
     void _sendTreeRebuiltEvent() const;
     void _updateEnv(VarCRef env);
-    static void _Loop_th(MxSources *self);
+    static void _Loop_th(MxSources *self, bool buildAsync);
     DataTree _merged; // all configured sources merged together. purged every now and then.
     Config _cfg;
     std::thread _th;

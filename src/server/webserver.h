@@ -11,10 +11,6 @@ typedef int (*mg_request_handler)(struct mg_connection* conn, void* cbdata);
 class RequestHandler
 {
 public:
-    enum
-    {
-        HANDLER_FALLTHROUGH = -1
-    };
     typedef CacheTable<Request, const StoredReply> Cache;
 
     RequestHandler(const char *prefix, const char *mimetype);

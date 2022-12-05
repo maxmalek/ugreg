@@ -255,8 +255,6 @@ int RequestHandler::_onRequest(mg_connection* conn) const
                 mg_send_chunk(conn, "", 0); // terminating chunk
                 status = 200; // all good
             }
-            else if(status == HANDLER_FALLTHROUGH)
-                status = 0; // on 0 return, civetweb falls through to the next handler
         }
         catch (ThrowingSocketWriteStream::WriteFail ex)
         {

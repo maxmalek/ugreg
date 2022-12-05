@@ -25,16 +25,23 @@ static const char  ClientSearchPostfix[] = "/user_directory/search";
 //static const char SearchPrefix_v04[] = "/_matrix/client/r0/user_directory/search";
 //static const char SearchPrefix_v3[] = "/_matrix/client/v3/user_directory/search";
 
-MxWellknownHandler::MxWellknownHandler(VarCRef cfg)
+MxWellknownHandler::MxWellknownHandler()
     : RequestHandler(WellknownPrefix, MimeType)
 {
-    if(const Var::Map *m = cfg.v->map())
+
+}
+
+bool MxWellknownHandler::init(VarCRef cfg)
+{
+    const Var::Map *m = cfg ? cfg.v->map() : NULL;
+    if(m)
         for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
         {
             const char *key = cfg.mem->getS(it.key());
             VarCRef value(cfg.mem, &it.value());
             data[key] = dumpjson(value);
         }
+    return !!m;
 }
 
 int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
@@ -67,8 +74,18 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
     return 200;
 }
 
-MxSearchHandler::MxSearchHandler(MxSources& sources, VarCRef cfg)
-    : MxReverseProxyHandler(cfg), search(searchcfg), _sources(sources)
+MxSearchHandler::MxSearchHandler(MxSources& sources)
+    : RequestHandler(ClientPrefix, MimeType), search(searchcfg), _sources(sources)
+    , checkHS(true), askHS(true), hsTimeout(0)
+{
+}
+
+MxSearchHandler::~MxSearchHandler()
+{
+    _sources.removeListener(&this->search);
+}
+
+bool MxSearchHandler::init(VarCRef cfg)
 {
     if(VarCRef xfields = cfg.lookup("fields"))
     {
@@ -127,9 +144,6 @@ MxSearchHandler::MxSearchHandler(MxSources& sources, VarCRef cfg)
         if(const u64 *pmaxsize = xmaxsize.asUint())
             searchcfg.maxsize = size_t(*pmaxsize);
 
-    if (VarCRef xproxy = cfg.lookup("reverseproxy"))
-        reverseproxy = xproxy && xproxy.asBool();
-
     if (VarCRef xproxy = cfg.lookup("check_homeserver"))
         checkHS = xproxy && xproxy.asBool();
 
@@ -145,6 +159,15 @@ MxSearchHandler::MxSearchHandler(MxSources& sources, VarCRef cfg)
                 hsTimeout = int(tmp);
         }
 
+    if(VarCRef xhs = cfg.lookup("homeserver"))
+    {
+        if(!homeserver.load(xhs))
+        {
+            printf("MxSearchHandler: Failed to apply homeserver setting\n");
+            return false;
+        }
+    }
+
     if(!this->homeserver.isValid())
     {
         checkHS = false;
@@ -159,17 +182,12 @@ MxSearchHandler::MxSearchHandler(MxSources& sources, VarCRef cfg)
     printf("MxSearchHandler: searching %u fields:\n", (unsigned)searchcfg.fields.size());
     for(MxSearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
         printf(" + %s\n", it->first.c_str());
-    printf("MxSearchHandler: Reverse proxy enabled: %s\n", reverseproxy ? "yes" : "no");
     printf("MxSearchHandler: Ask homeserver: %s\n", askHS ? "yes" : "no");
     printf("MxSearchHandler: Ask homeserver timeout: %d ms\n", hsTimeout);
     printf("MxSearchHandler: Check homeserver: %s\n", checkHS ? "yes" : "no");
 
-    sources.addListener(&this->search);
-}
-
-MxSearchHandler::~MxSearchHandler()
-{
-    _sources.removeListener(&this->search);
+    _sources.addListener(&this->search);
+    return true;
 }
 
 void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
@@ -217,95 +235,83 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
 
 int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
-    if(rq.type == RQ_POST)
+    if(rq.type != RQ_POST)
     {
-        const char *q = rq.query.c_str();
-        if(*q == '/')
+        mg_send_http_error(conn, 405, "expected POST");
+        return 405;
+    }
+
+    const char *q = rq.query.c_str();
+    if(*q == '/')
+    {
+        ++q;
+        const char *tail = strchr(q, '/'); // skip 1 path component
+        if(tail && !strcmp(tail, ClientSearchPostfix))
         {
-            ++q;
-            const char *tail = strchr(q, '/'); // skip 1 path component
-            if(tail && !strcmp(tail, ClientSearchPostfix))
+            DataTree vars(DataTree::TINY);
+            //int rd = rq.AutoReadVars(vars.root(), conn);
+            int rd = rq.ReadJsonBodyVars(vars.root(), conn, true, false, searchcfg.maxsize);
+            if(rd > 0)
             {
-                DataTree vars(DataTree::TINY);
-                //int rd = rq.AutoReadVars(vars.root(), conn);
-                int rd = rq.ReadJsonBodyVars(vars.root(), conn, true, false, searchcfg.maxsize);
-                if(rd > 0)
+                size_t limit = 10;
+                std::string term; // not const char * on purpose!
+
+                if(VarCRef xlimit = vars.root().lookup("limit"))
+                    if(const u64 *plimit = xlimit.asUint())
+                        limit = size_t(*plimit);
+
+                if(VarCRef xterm = vars.root().lookup("search_term"))
+                    if(const char *pterm = xterm.asCString())
+                        term = pterm;
+
+                if(!term.length())
                 {
-                    size_t limit = 10;
-                    std::string term; // not const char * on purpose!
-
-                    if(VarCRef xlimit = vars.root().lookup("limit"))
-                        if(const u64 *plimit = xlimit.asUint())
-                            limit = size_t(*plimit);
-
-                    if(VarCRef xterm = vars.root().lookup("search_term"))
-                        if(const char *pterm = xterm.asCString())
-                            term = pterm;
-
-                    if(!term.length())
-                    {
-                        mg_send_http_error(conn, 400, "search_term not provided");
-                        return 400;
-                    }
-
-                    DataTree out(DataTree::TINY);
-
-                    if(askHS)
-                    {
-                        // kick off search in background + re-use vars
-                        // (this invalidates all strings, that's why term is std::string)
-                        vars.root().v->map()->clear(vars);
-                        auto fut = std::async(&MxSearchHandler::doSearch, this, vars.root(), term.c_str(), limit);
-
-                        // forward client request as-is
-                        MxGetJsonResult jr = mxRequestJson(RQ_POST, out.root(), this->homeserver, vars.root(), hsTimeout);
-                        bool useHS = jr.code == MXGJ_OK && !out.root().lookup("error");
-                        if(checkHS)
-                        {
-                            if(jr.code != MXGJ_OK)
-                            {
-                                mg_send_http_error(conn, 500, "Homeserver did not send usable JSON. Interally reported error:\n%d %s", jr.httpstatus, jr.errmsg.c_str());
-                                return 500;
-                            }
-                            if(!useHS)
-                            {
-                                std::string jsonerr = dumpjson(out.root());
-                                mg_send_http_error(conn, jr.httpstatus, "%s", jsonerr.c_str());
-                                return jr.httpstatus;
-                            }
-                        }
-
-                        if(!useHS)
-                            out.root().makeMap().v->map()->clear(out);
-
-                        fut.wait();
-                        out.root().merge(vars.root(), MERGE_APPEND_ARRAYS | MERGE_RECURSIVE);
-                    }
-                    else
-                        doSearch(out.root(), term.c_str(), limit);
-
-                    writeJson(dst, out.root(), false);
-                    return 0;
+                    mg_send_http_error(conn, 400, "search_term not provided");
+                    return 400;
                 }
+
+                DataTree out(DataTree::TINY);
+
+                if(askHS)
+                {
+                    // kick off search in background + re-use vars
+                    // (this invalidates all strings, that's why term is std::string)
+                    vars.root().v->map()->clear(vars);
+                    auto fut = std::async(std::launch::async, &MxSearchHandler::doSearch, this, vars.root(), term.c_str(), limit);
+
+                    // forward client request as-is
+                    MxGetJsonResult jr = mxRequestJson(RQ_POST, out.root(), this->homeserver, vars.root(), hsTimeout);
+                    bool useHS = jr.code == MXGJ_OK && !out.root().lookup("error");
+                    if(checkHS)
+                    {
+                        if(jr.code != MXGJ_OK)
+                        {
+                            mg_send_http_error(conn, 500, "Homeserver did not send usable JSON. Interally reported error:\n%d %s", jr.httpstatus, jr.errmsg.c_str());
+                            return 500;
+                        }
+                        if(!useHS)
+                        {
+                            std::string jsonerr = dumpjson(out.root());
+                            mg_send_http_error(conn, jr.httpstatus, "%s", jsonerr.c_str());
+                            return jr.httpstatus;
+                        }
+                    }
+
+                    if(!useHS)
+                        out.root().makeMap().v->map()->clear(out);
+
+                    fut.wait();
+                    out.root().merge(vars.root(), MERGE_APPEND_ARRAYS | MERGE_RECURSIVE);
+                }
+                else
+                    doSearch(out.root(), term.c_str(), limit);
+
+                writeJson(dst, out.root(), false);
+                return 0;
             }
         }
     }
 
-    if(reverseproxy)
-        return MxReverseProxyHandler::onRequest(dst, conn, rq);
-
-    return HANDLER_FALLTHROUGH;
-}
-
-MxReverseProxyHandler::MxReverseProxyHandler(VarCRef cfg)
-    : RequestHandler(ClientPrefix, MimeType)
-{
-    homeserver.load(cfg.lookup("homeserver"));
-}
-
-int MxReverseProxyHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
-{
-    printf("ReverseProxy: %s\n", rq.query.c_str());
-    mg_send_http_error(conn, 404, "");
+    mg_send_http_error(conn, 404, "MxSearchHandler: not found");
     return 404;
 }

@@ -13,37 +13,28 @@ class MxSources;
 class MxWellknownHandler : public RequestHandler
 {
 public:
-    MxWellknownHandler(VarCRef data);
+    MxWellknownHandler();
+    bool init(VarCRef cfg);
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 
 private:
     std::map<std::string, std::string> data;
 };
 
-class MxReverseProxyHandler : public RequestHandler
+class MxSearchHandler : public RequestHandler
 {
 public:
-    MxReverseProxyHandler(VarCRef cfg);
-    virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
-
-protected:
-    URLTarget homeserver;
-};
-
-
-class MxSearchHandler : public MxReverseProxyHandler
-{
-public:
-    MxSearchHandler(MxSources& store, VarCRef cfg);
+    MxSearchHandler(MxSources& sources);
     virtual ~MxSearchHandler();
-    virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
 
-    bool reverseproxy;
+    bool init(VarCRef cfg);
+    virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
     bool checkHS;
     bool askHS;
     int hsTimeout;
     MxSearchConfig searchcfg;
     MxSearch search;
+    URLTarget homeserver;
 
 protected:
     void doSearch(VarRef dst, const char* term, size_t limit) const;
