@@ -69,6 +69,8 @@ set(src
     strmatch.h
     utf8casefold.cpp
     utf8casefold.h
+    log.cpp
+    log.h
 )
 
 if(MSVC)
