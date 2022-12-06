@@ -163,12 +163,26 @@ WebServer *prepareServer(std::vector<ServerAndConfig*> servers, RequestHandler *
 static MxidHandler_v2 *identity;
 static MxSearchHandler *search;
 static MxWellknownHandler *wellknown;
+static MxStore *mxs; // needed by identity
 
-static bool initServices(std::vector<ServerAndConfig*> servers, MxSources& sources, MxStore& mxs, VarCRef cfg)
+static bool initServices(std::vector<ServerAndConfig*> servers, MxSources& sources, VarCRef cfg)
 {
     if(VarCRef x = cfg.lookup("identity"))
     {
-        identity = new MxidHandler_v2(mxs, "/_matrix/identity/v2");
+        hash_testall();
+
+        if(VarCRef x3pid = cfg.lookup("3pid"))
+        {
+            mxs = new MxStore;
+            if(!mxs->apply(x3pid))
+                return false;
+        }
+        if(!mxs)
+        {
+            logerror("Identity service requires 3pid store; make sure this is correctly configured");
+            return false;
+        }
+        identity = new MxidHandler_v2(*mxs, "/_matrix/identity/v2");
         if(!identity->init(x))
             return false;
         if(WebServer *ws = prepareServer(servers, identity, x))
@@ -227,7 +241,6 @@ static void stopServers(std::vector<ServerAndConfig*>&& srv)
 static int main2(MxSources& sources, int argc, char** argv)
 {
     ScopeTimer timer;
-    MxStore mxs; // FIXME: this should be split fully into 3pid-only and only created if needed
 
     std::vector<ServerAndConfig*> servers;
 
@@ -236,15 +249,12 @@ static int main2(MxSources& sources, int argc, char** argv)
         if (!doargs(cfgtree, argc, argv, argsCallback, NULL))
             bail("Failed to handle cmdline. Exiting.", "");
 
-        // matrix/storage global config, populate this first
-        if(!mxs.apply(cfgtree.subtree("/3pid")))
-            bail("Invalid matrix config. Exiting.", "");
 
         if(!sources.initConfig(cfgtree.subtree("/sources"), cfgtree.subtree("/env")))
             bail("Invalid sources config. Exiting.", "");
 
         // ... then init all servers, but don't start them...
-        if(!initServices(servers, sources, mxs, cfgtree.root()))
+        if(!initServices(servers, sources, cfgtree.root()))
             bail("Failed to init services. Exiting.", "");
     }
 
@@ -258,7 +268,8 @@ static int main2(MxSources& sources, int argc, char** argv)
 
     if(!s_quit)
     {
-        mxs.rotateHashPepper();
+        if(mxs)
+            mxs->rotateHashPepper();
 
         WebServer::StaticInit();
 
@@ -284,7 +295,6 @@ static int main2(MxSources& sources, int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-    hash_testall();
     srand(unsigned(time(NULL)));
     handlesigs(sigquit);
 
