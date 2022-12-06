@@ -10,10 +10,13 @@
 #include "mxsearch.h"
 #include "mxvirtual.h"
 
+class MxSources;
+
 class MxStore : public EvTreeRebuilt
 {
 public:
-    MxStore();
+    MxStore(MxSources& sources);
+    ~MxStore();
 
     enum LookupResult
     {
@@ -23,7 +26,7 @@ public:
         FAILED,  // cached, known invalid
     };
 
-    bool apply(VarCRef config);
+    bool init(VarCRef config);
     void defrag();
 
     // --- authentication ---
@@ -127,6 +130,7 @@ public:
 
 private:
     Config config;
+    MxSources& _sources;
 
 
 public:

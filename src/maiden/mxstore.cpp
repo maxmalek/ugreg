@@ -8,6 +8,7 @@
 #include "scopetimer.h"
 #include <future>
 #include "strmatch.h"
+#include "mxsources.h"
 
 static const u64 second = 1000;
 static const u64 minute = second * 60;
@@ -32,14 +33,20 @@ MxStore::Config::Config()
 }
 
 
-MxStore::MxStore()
+MxStore::MxStore(MxSources& sources)
     : authdata(DataTree::SMALL), wellknown(DataTree::SMALL), hashcache(DataTree::DEFAULT)
     , hashPepperTS(0)
+    , _sources(sources)
 {
     authdata.root().makeMap();
     threepid.root().makeMap()["_data"].clear(); // { _data = None }
 
     // TODO: enable hashcache entries from config
+}
+
+MxStore::~MxStore()
+{
+    _sources.removeListener(this);
 }
 
 static bool readUint(u64& dst, VarCRef ref)
@@ -87,7 +94,7 @@ static bool readTimeKey(u64& dst, VarCRef m, const char *key)
     return strToDurationMS_Safe(&dst, ps.s, ps.len);
 }
 
-bool MxStore::apply(VarCRef config)
+bool MxStore::init(VarCRef config)
 {
     if(config.type() != Var::TYPE_MAP)
         return false;
@@ -198,6 +205,9 @@ bool MxStore::apply(VarCRef config)
     }
 
     this->config = cfg;
+
+    _sources.addListener(this);
+
     return true;
 }
 
@@ -671,6 +681,8 @@ void MxStore::_Rebuild3pidMap(VarRef dst, VarCRef src, const char* fromkey)
 
 void MxStore::onTreeRebuilt(VarCRef src)
 {
+    logdev("MxStore::onTreeRebuilt() ...");
+
     DataTree::LockedRef lockdst = threepid.lockedRef();
     //-------------------------------------------
     ScopeTimer timer;

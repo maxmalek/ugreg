@@ -173,8 +173,8 @@ static bool initServices(std::vector<ServerAndConfig*> servers, MxSources& sourc
 
         if(VarCRef x3pid = cfg.lookup("3pid"))
         {
-            mxs = new MxStore;
-            if(!mxs->apply(x3pid))
+            mxs = new MxStore(sources);
+            if(!mxs->init(x3pid))
                 return false;
         }
         if(!mxs)
