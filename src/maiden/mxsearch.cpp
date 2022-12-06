@@ -84,6 +84,9 @@ void MxSearch::rebuildCache(VarCRef src)
 
     logdebug("MxSearch::rebuildCache() done after %u ms, using %zu KB for %zu strings",
         (unsigned)timer.ms(), stringmem/1024, _strings.size());
+
+    log("Updated search cache; %zu out of %zu users searchable (%zu failed)",
+        _strings.size(), m->size(), m->size() - _strings.size());
 }
 
 MxSearch::Matches MxSearch::search(const MxMatcherList& matchers, bool fuzzy, const TwoWayCasefoldMatcher *fullmatch) const
@@ -122,5 +125,6 @@ void MxSearch::clear()
 
 void MxSearch::onTreeRebuilt(VarCRef src)
 {
+    logdev("MxSearch::onTreeRebuilt()...");
     this->rebuildCache(src);
 }
