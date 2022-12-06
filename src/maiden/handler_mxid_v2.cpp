@@ -265,10 +265,10 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
     s64 exps = intor0(params.root().lookup("expires_in"));
     const char *tokty = str(params.root().lookup("token_type"));
     if(!tokty || strcmp(tokty, "Bearer"))
-        printf("MX-SPEC: Expected token_type == 'Bearer', got '%s'\n", tokty);
+        logerror("MX-SPEC: Expected token_type == 'Bearer', got '%s'\n", tokty);
     if(exps <= 0)
     {
-        printf("MX-SPEC: Expected expires_in > 0\n");
+        logerror("MX-SPEC: Expected expires_in > 0\n");
         exps = 0;
     }
     if(!sn || !tok || !*sn || !*tok)
@@ -309,7 +309,7 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
     for(size_t i = 0; i < list.size(); ++i)
     {
         resolv = list[i];
-        printf("Contacting homeserver %s for host %s [%u/%u] ...\n",
+        logdebug("Contacting homeserver %s for host %s [%u/%u] ...\n",
             resolv.target.host.c_str(), sn, unsigned(i+1), unsigned(list.size()));
         DataTree tmp(DataTree::TINY);
         std::ostringstream uri;

@@ -1,4 +1,12 @@
 {
+    // 0: Errors only
+    // 1: normal, low-volume
+    // 2: debug loglevel
+    // 3: developer log (spammy!)
+    // To increase the loglevel dynamically, you can also pass -v, -vv etc on the commandline
+    // (If not specified: loglevel = 0 for release builds and 3 for debug builds)
+    //"loglevel": 3,
+    
     // --- Hosted servers ---
     // This section configures different separate webservers that can all access the global database stored in this process.
 

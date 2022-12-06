@@ -6,6 +6,7 @@
 #include "request.h"
 #include "datatree.h"
 #include "mxhttprequest.h"
+#include "log.h"
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -44,7 +45,7 @@ static void srvLookup(MxResolvList &dst, const char *host)
     const size_t oldsize = dst.size();
     std::string lookup = "_matrix._tcp.";
     lookup += host;
-    printf("MxResolv/SRV: Looking up %s ...\n", lookup.c_str());
+    logdebug("MxResolv/SRV: Looking up %s ...", lookup.c_str());
 
 #ifdef _WIN32
     PDNS_RECORD prec = NULL;
@@ -53,10 +54,10 @@ static void srvLookup(MxResolvList &dst, const char *host)
     {
         for(PDNS_RECORD p = prec; p; p = p->pNext)
         {
-            printf("DNS: %s (type: %u)\n", p->pName, p->wType);
+            logdebug("DNS: %s (type: %u)", p->pName, p->wType);
             if(p->wType == DNS_TYPE_SRV)
             {
-                printf("SRV: %s:%u (prio=%d, weight=%d)\n",
+                logdebug("SRV: %s:%u (prio=%d, weight=%d)",
                     p->Data.Srv.pNameTarget, p->Data.Srv.wPort, p->Data.Srv.wPriority, p->Data.Srv.wWeight);
                 MxResolvResult res;
                 res.target.host = p->Data.Srv.pNameTarget;
@@ -70,7 +71,7 @@ static void srvLookup(MxResolvList &dst, const char *host)
         }
     }
     else
-        printf("srvLookup: Failed for '%s', error = %d\n", host, dns);
+        logerror("srvLookup: Failed for '%s', error = %d", host, dns);
 
     if(prec)
         DnsRecordListFree(prec, DnsFreeRecordListDeep);
@@ -81,7 +82,7 @@ static void srvLookup(MxResolvList &dst, const char *host)
     int rc = res_ninit(&rs);
     if (rc < 0)
     {
-        printf("srvLookup: res_ninit() failed, error = %d\n", rc);
+        logerror("srvLookup: res_ninit() failed, error = %d", rc);
         return;
     }
     //printf("rs.options = %d\n", rs.options);
@@ -119,7 +120,7 @@ static void srvLookup(MxResolvList &dst, const char *host)
             int weight = ns_get16(rdata);  rdata += NS_INT16SZ;
             unsigned port = ns_get16(rdata);  rdata += NS_INT16SZ;
 
-            printf("SRV: %s:%u (prio=%d, weight=%d)\n",
+            logdebug("SRV: %s:%u (prio=%d, weight=%d)",
                 name, port, priority, weight);
 
             MxResolvResult res;
@@ -146,7 +147,7 @@ MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t max
     // try .well-known first
     const char *what = "/.well-known/matrix/server";
 
-    printf("MxResolv/GET: Looking up %s%s ...\n", host, what);
+    logdebug("MxResolv/GET: Looking up %s%s ...", host, what);
 
     DataTree tmp(DataTree::TINY);
     URLTarget target;
@@ -168,7 +169,7 @@ MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t max
                 res.parse(s);
                 if(res.validate())
                 {
-                    printf("MxResolv/GET: Got %s:%u\n", res.target.host.c_str(), res.target.port);
+                    logdebug("MxResolv/GET: Got %s:%u", res.target.host.c_str(), res.target.port);
                     ret.push_back(res);
                 }
             }

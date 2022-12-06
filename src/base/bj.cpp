@@ -258,12 +258,12 @@ static const size_t MaxSizeBits = sizeof(u64) * CHAR_BIT;
 template<typename T>
 static T _fail(T val, const char *msg)
 {
-    puts(msg);
+    logerror("BJ loader failed: %s", msg);
     return val;
 }
 
 #define FAIL(ret, msg) _fail(ret, msg)
-#define FAILMSG(msg) do { puts(msg); } while(0)
+#define FAILMSG(msg) do { _fail(0, msg); } while(0)
 
 
 #define UNREACHABLE() unreachable();

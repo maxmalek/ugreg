@@ -5,6 +5,7 @@
 #include "upgrade_mutex.h"
 #include <utility>
 #include <type_traits>
+#include "util.h"
 
 TreeMergeResult::TreeMergeResult()
     : ok(false)/*, expiryTime(0)*/
@@ -42,7 +43,7 @@ static void finalizeAndMerge(TreeMergeResult& res, DataTree& dst, DataTree& t, c
     //res.expiryTime = getTreeMinExpiryTime(t.root());
     { // BEGIN WRITE LOCK
         std::unique_lock lock(dst.mutex);
-        printf("Begin merge into [%s], flags = %u\n", where.c_str(), merge);
+        logerror("Begin merge into [%s], flags = %u", where.c_str(), merge);
         if (VarRef sub = dst.subtree(where.c_str(), Var::SQ_CREATE))
             res.ok = sub.merge(t.root(), merge);
     } // END WRITE LOCK
@@ -51,7 +52,7 @@ static void finalizeAndMerge(TreeMergeResult& res, DataTree& dst, DataTree& t, c
 
 static TreeMergeResult _loadAndMergeJsonFromProcess(DataTree *dst, AsyncLaunchConfig cfg, std::string where, MergeFlags merge)
 {
-    printf("Begin loading proc [%s] to %s\n", cfg.args[0].c_str(), where.c_str());
+    logdebug("Begin loading proc [%s] to %s", cfg.args[0].c_str(), where.c_str());
     DataTree *t = loadJsonFromProcessSync(std::move(cfg));
 
     TreeMergeResult res;
@@ -61,17 +62,17 @@ static TreeMergeResult _loadAndMergeJsonFromProcess(DataTree *dst, AsyncLaunchCo
         finalizeAndMerge(res, *dst, *t, where, merge);
 
         if(res.ok)
-            printf("Merged proc [%s] to %s\n", cfg.args[0].c_str(), where.c_str());
+            log("Merged proc [%s] to %s", cfg.args[0].c_str(), where.c_str());
         else
-            printf("Failed to get subtree %s\n", where.c_str());
+            logerror("Failed to get subtree %s", where.c_str());
 
-        printf("Cleaning up [%s] ...\n", cfg.args[0].c_str());
+        logdebug("Cleaning up [%s] ...", cfg.args[0].c_str());
         delete t;
     }
     else
-        printf("Failed to load json from proc [%s] (bad json?)\n", cfg.args[0].c_str());
+        logerror("Failed to load json from proc [%s] (bad json?)", cfg.args[0].c_str());
 
-    printf("End loading proc [%s] to %s\n", cfg.args[0].c_str(), where.c_str());
+    logdebug("End loading proc [%s] to %s", cfg.args[0].c_str(), where.c_str());
 
     return res;
 }
@@ -82,10 +83,10 @@ static TreeMergeResult _loadAndMergeJsonFromFile(DataTree* dst, std::string file
     FILE* f = fopen(file.c_str(), "rb");
     if(!f)
     {
-        printf("Failed to open file [%s] to merge to %s\n", file.c_str(), where.c_str());
+        logerror("Failed to open file [%s] to merge to %s", file.c_str(), where.c_str());
         return res;
     }
-    printf("Begin loading file [%s] to %s\n", file.c_str(), where.c_str());
+    logdebug("Begin loading file [%s] to %s", file.c_str(), where.c_str());
 
     {
         DataTree tree;
@@ -96,22 +97,22 @@ static TreeMergeResult _loadAndMergeJsonFromFile(DataTree* dst, std::string file
 
         if(loaded)
         {
-            printf("Finished loading file [%s]\n", file.c_str());
+            logdebug("Finished loading file [%s]", file.c_str());
 
             finalizeAndMerge(res, *dst, tree, where, merge);
 
             if(res.ok)
-                printf("Merged file [%s] to %s\n", file.c_str(), where.c_str());
+                log("Merged file [%s] to %s", file.c_str(), where.c_str());
             else
-                printf("Failed to get subtree %s\n", where.c_str());
+                logerror("Failed to get subtree %s", where.c_str());
         }
         else
-            printf("Error loading file [%s] (bad json?)\n", file.c_str());
+            logerror("Error loading file [%s] (bad json?)", file.c_str());
 
-        printf("Cleaning up [%s] ...\n", file.c_str());
+        logdebug("Cleaning up [%s] ...", file.c_str());
     }
 
-    printf("End loading file [%s] to %s\n", file.c_str(), where.c_str());
+    logdebug("End loading file [%s] to %s", file.c_str(), where.c_str());
 
     return res;
 }

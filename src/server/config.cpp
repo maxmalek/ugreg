@@ -23,7 +23,7 @@ bool ServerConfig::apply(const VarCRef& root)
 
     if(!root)
     {
-        printf("C: ERROR: no root node present -- the config tree is empty?!\n");
+        logerror("C: ERROR: no root node present -- the config tree is empty?!");
         return false;
     }
 
@@ -42,7 +42,7 @@ bool ServerConfig::apply(const VarCRef& root)
                     listen.push_back(lis);
                 }
             }
-    
+
     if(VarCRef xcert = root.lookup("cert"))
         if(const char *pcert = xcert.asCString())
             cert = pcert;
@@ -71,16 +71,16 @@ bool ServerConfig::apply(const VarCRef& root)
         if (VarCRef x = xc.lookup("maxtime"))
             if(!strToDurationMS_Safe(&reply_cache.maxtime, x.asCString()))
             {
-                printf("C: ERROR: config.reply_cache.maxtime must be duration value\n");
+                logerror("C: ERROR: config.reply_cache.maxtime must be duration value");
                 return false;
             }
     }
 
     if(reply_cache.rows && reply_cache.columns)
-        printf("C: Using reply cache of (%u x %u) entries, maxtime = %" PRIu64 " ms\n",
+        logdebug("C: Using reply cache of (%u x %u) entries, maxtime = %" PRIu64 " ms",
             reply_cache.rows, reply_cache.columns, reply_cache.maxtime);
     else
-        printf("C: Reply cache disabled\n");
+        logdebug("C: Reply cache disabled");
 
     if (!listen_threads)
     {
@@ -88,7 +88,7 @@ bool ServerConfig::apply(const VarCRef& root)
         listen_threads = 2 * c;
         if (listen_threads < 5)
             listen_threads = 5;
-        printf("C: config.listen_threads is 0 or not set, autodetected %u cores --> %u threads\n",
+        logdebug("C: config.listen_threads is 0 or not set, autodetected %u cores --> %u threads",
             c, listen_threads);
     }
 

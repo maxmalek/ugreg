@@ -53,11 +53,11 @@ int main(int argc, char** argv)
             for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             {
                 const char *key = cfgtree.getS(it.key());
-                printf("Adding view [%s] ...\n", key);
+                logdebug("Adding view [%s] ...", key);
                 if(vmgr.addViewDef(key, VarCRef(cfgtree, &it.value())))
-                    printf("-> OK\n");
+                    logdebug("-> OK");
                 else
-                    printf("-> FAILED\n");
+                    printf("FAILED to add view [%s]", key);
             }
     }
 
@@ -80,7 +80,7 @@ int main(int argc, char** argv)
             for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
             {
                 const char *path = fetch.mem->getS(it.key());
-                printf("Init fetcher [%s] ...\n", path);
+                logdebug("Init fetcher [%s] ...", path);
                 if(Fetcher *f = Fetcher::New(VarCRef(cfgtree, &it.value())))
                     if(VarRef dst = tree.subtree(path, Var::SQ_CREATE))
                         dst.v->makeMap(tree)->ensureExtra(tree, tree.mutex)->fetcher = f;
@@ -128,7 +128,7 @@ int main(int argc, char** argv)
     if (cfg.expose_debug_apis)
         srv.registerHandler(hclean);
 
-    puts("Ready!");
+    log("Ready!");
 
     while (!s_quit)
         sleepMS(200);

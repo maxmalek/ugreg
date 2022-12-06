@@ -83,7 +83,7 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std:
         if(const char *p = xevery.asCString())
             if(!strToDurationMS_Safe(&entry.every, p))
             {
-                printf("MxSources ERROR: every '%s' is not a valid duration", p);
+                logerror("MxSources ERROR: every '%s' is not a valid duration", p);
                 return entry; // still invalid here and will be skipped by caller
             }
 
@@ -107,13 +107,13 @@ bool MxSources::initConfig(VarCRef src, VarCRef env)
             if(!e.args.empty())
                 _cfg.list.push_back(std::move(e));
             else
-                printf("MxSources: Failed to parse entry[%u] in sources list\n", unsigned(N));
+                logerror("MxSources: Failed to parse entry[%u] in sources list", unsigned(N));
         }
     }
 
     if(_cfg.list.empty())
     {
-        printf("MxSources: Source list is empty\n");
+        logerror("MxSources: Source list is empty");
         return false;
     }
 
@@ -131,7 +131,7 @@ bool MxSources::initConfig(VarCRef src, VarCRef env)
         if(const char *p = xpurge.asCString())
             if(!strToDurationMS_Safe(&_cfg.purgeEvery, p))
             {
-                printf("MxSources: Failed to parse 'purgeEvery' field\n");
+                logerror("MxSources: Failed to parse 'purgeEvery' field");
                 return false;
             }
 
@@ -144,12 +144,12 @@ bool MxSources::initConfig(VarCRef src, VarCRef env)
     }
 
     if (_cfg.directory.empty())
-        printf("MxSources: Not touching the disk. RAM only.\n");
+        logdebug("MxSources: Not touching the disk. RAM only.");
     else
-        printf("MxSources: Cache directory = %s\n", _cfg.directory.c_str());
+        logdebug("MxSources: Cache directory = %s", _cfg.directory.c_str());
 
-    printf("MxSources: %u sources configured\n", (unsigned)_cfg.list.size());
-    printf("MxSources: Purge tree every %ju seconds\n", _cfg.purgeEvery / 1000);
+    logdebug("MxSources: %u sources configured", (unsigned)_cfg.list.size());
+    logdebug("MxSources: Purge tree every %ju seconds", _cfg.purgeEvery / 1000);
     return true;
 }
 
@@ -159,13 +159,13 @@ void MxSources::initPopulate(bool buildAsync)
 
     if(!buildAsync)
     {
-        printf("MxSources: Populating initial tree...\n");
+        logdebug("MxSources: Populating initial tree...");
         _rebuildTree();
-        printf("MxSources: ... done\n");
+        logdebug("MxSources: ... done\n");
     }
 
     _th = std::thread(_Loop_th, this, buildAsync);
-    printf("MxSources: Spawned background thread\n");
+    logdebug("MxSources: Spawned background thread");
 }
 
 void MxSources::_loop_th_untilPurge()
@@ -228,7 +228,7 @@ void MxSources::_loop_th_untilPurge()
 
         if(mintime)
         {
-            printf("MxSources: Sleeping for up to %ju ms until next job (%ju ms until purge)\n",
+            log("MxSources: Sleeping for up to %ju ms until next job (%ju ms until purge)",
                 mintime, timeUntilPurge);
             // this wait can get interrupted to exit early
             _waiter.wait_for(lock, std::chrono::milliseconds(mintime));
@@ -243,7 +243,7 @@ DataTree *MxSources::_ingestData(const Config::InputEntry& entry) const
     // for error reporting
     const char *str = entry.args[0];
 
-    printf("MxSources: * Starting ingest '%s' ...\n", str);
+    log("MxSources: * Starting ingest '%s' ...", str);
     DataTree *ret = new DataTree;
     ScopeTimer timer;
     bool ok = false;
@@ -262,12 +262,12 @@ DataTree *MxSources::_ingestData(const Config::InputEntry& entry) const
     const u64 loadedMS = timer.ms();
 
     if(!ok)
-        printf("MxSources: * ERROR: Failed to ingest '%s'\n", str);
+        logerror("MxSources: * ERROR: Failed to ingest '%s'", str);
     else if(ret->root().type() == Var::TYPE_MAP)
-        printf("MxSources: * ... Ingested '%s' in %ju ms\n", str, loadedMS);
+        log("MxSources: * ... Ingested '%s' in %ju ms", str, loadedMS);
     else
     {
-        printf("MxSources: * WARNING: Ignored [%s], result type is not map\n", str);
+        logerror("MxSources: * WARNING: Ignored [%s], result type is not map", str);
         ok = false;
     }
 
@@ -298,17 +298,17 @@ DataTree *MxSources::_ingestDataAndMerge(DataTree *dst, const Config::InputEntry
                         locked.ref.merge(data, MERGE_RECURSIVE);
                         ms = timer.ms();
                     }
-                    printf("MxSources: * ... and merged '%s' in %ju ms\n", entry.args[0], ms);
+                    logdebug("MxSources: * ... and merged '%s' in %ju ms", entry.args[0], ms);
                     // preceed to delete it
                 }
                 else
                     return tre;
             }
             else
-                printf("MxSources: ERROR: Ingest '%s': value under key 'data' is not map, ignoring\n", entry.args[0]);
+                logerror("MxSources: ERROR: Ingest '%s': value under key 'data' is not map, ignoring", entry.args[0]);
         }
         else
-            printf("MxSources: WARNING: Ingest '%s' has no 'data' key, skipping\n", entry.args[0]);
+            logerror("MxSources: WARNING: Ingest '%s' has no 'data' key, skipping", entry.args[0]);
 
         delete tre;
     }
@@ -340,7 +340,7 @@ void MxSources::_rebuildTree()
     // --- Futures are done now ---
 
     const u64 loadedMS = timer.ms();
-    printf("MxSources: Done loading %u subtrees after %ju ms\n", (unsigned)N, loadedMS);
+    logdebug("MxSources: Done loading %u subtrees after %ju ms", (unsigned)N, loadedMS);
 
     // swap in as atomically as possible
     {
@@ -351,7 +351,7 @@ void MxSources::_rebuildTree()
         del.clear(*locked.ref.mem); // old things can go now
         locked.ref.mem->defrag();
     }
-    printf("MxSources: Tree rebuilt, merged in %ju ms\n", timer.ms() - loadedMS);
+    logdebug("MxSources: Tree rebuilt, merged in %ju ms", timer.ms() - loadedMS);
 
     _sendTreeRebuiltEvent();
 }
@@ -398,9 +398,9 @@ void MxSources::_updateEnv(VarCRef xenv)
                 tmp += '=';
                 tmp += v;
 #ifdef _DEBUG
-                printf("ENV: %s\n", tmp.c_str());
+                logdebug("ENV: %s", tmp.c_str());
 #else
-                printf("ENV: %s\n", k);
+                logdebug("ENV: %s", k);
 #endif
                 _envStrings.push_back(std::move(tmp));
             }
@@ -451,7 +451,7 @@ void MxSources::_loop_th(bool buildAsync)
 void MxSources::_Loop_th(MxSources* self, bool buildAsync)
 {
     self->_loop_th(buildAsync);
-    printf("MxSources: Background thread exiting\n");
+    logdebug("MxSources: Background thread exiting");
 }
 
 MxSources::SearchResults MxSources::formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term) const
@@ -491,7 +491,7 @@ MxSources::SearchResults MxSources::formatMatches(const MxSearchConfig& scfg, co
         }
     }
 
-    printf("MxSources::formatMatches(): %zu/%zu results in %u ms\n",
+    logdebug("MxSources::formatMatches(): %zu/%zu results in %u ms\n",
         res.size(), n, unsigned(timer.ms()));
 
     return res;
@@ -513,10 +513,10 @@ bool MxSources::save() const
     if (_cfg.directory.empty())
         return false;
 
-    printf("MxSources::save() starting...\n");
+    logdebug("MxSources::save() starting...");
     ScopeTimer timer;
     bool ok = _lockAndSave(_merged.lockedCRef(), _cfg.directory + "mxsources.mxs");
-    printf("MxSources::save() done in %u ms, success = %d\n", (unsigned)timer.ms(), ok);
+    logdebug("MxSources::save() done in %u ms, success = %d", (unsigned)timer.ms(), ok);
     return ok;
 }
 
@@ -525,10 +525,10 @@ bool MxSources::load()
     if (_cfg.directory.empty())
         return false;
 
-    printf("MxSources::load() starting...\n");
+    logdebug("MxSources::load() starting...");
     ScopeTimer timer;
     bool ok = _lockAndLoad(_merged.lockedRef(), _cfg.directory + "mxsources.mxs");
-    printf("MxSources::load() done in %u ms, success = %d\n", (unsigned)timer.ms(), ok);
+    logdebug("MxSources::load() done in %u ms, success = %d", (unsigned)timer.ms(), ok);
 
     if(ok)
         _sendTreeRebuiltEvent();

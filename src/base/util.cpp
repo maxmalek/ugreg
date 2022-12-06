@@ -254,18 +254,21 @@ const ltc_hash_descriptor* hash_getdesc(const char* name)
 void hash_testall()
 {
     bool fail = false;
-    printf("-- tomcrypt hash test --\n");
+    DEBUG_LOG("-- tomcrypt hash test --");
     for(size_t i = 0; s_hashdesc[i]; ++i)
     {
-        printf("%-12s ... ", s_hashdesc[i]->name);
+        const char *name = s_hashdesc[i]->name;
         switch(s_hashdesc[i]->test())
         {
-            case CRYPT_OK: printf("ok\n"); break;
-            case CRYPT_NOP: printf("not tested\n"); break;
-            default: printf("FAILED\n"); fail = true; break;
+            case CRYPT_OK:  DEBUG_LOG("%-12s ... ok", name); break;
+            case CRYPT_NOP: DEBUG_LOG("%-12s ... not tested"); break;
+            default:        logerror ("%-12s ... FAILED"); fail = true; break;
         }
     }
     if(fail)
+    {
+        logerror("Failed hash self-test. Something mis-compiled?");
         exit(23);
-    printf("-- hash test done, seems ok --\n");
+    }
+    DEBUG_LOG("-- hash test done, seems ok --");
 }

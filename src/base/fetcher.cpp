@@ -47,13 +47,13 @@ bool Fetcher::init(VarCRef config)
         {
             if(!strToDurationMS_NN(&validity, s).ok())
             {
-                printf("validity: invalid duration: '%s'\n", s);
+                logerror("validity: invalid duration: '%s'\n", s);
                 return false;
             }
         }
         else
         {
-            printf("validity: expected duration string, got %s", validityref.typestr());
+            logerror("validity: expected duration string, got %s", validityref.typestr());
             return false;
         }
 
@@ -63,7 +63,7 @@ bool Fetcher::init(VarCRef config)
 
     if(!_doStartupCheck(config))
     {
-        printf("FATAL: Startup check failed. Exiting.\n");
+        logerror("FATAL: Startup check failed. Exiting.\n");
         exit(1);
         return false;
     }
@@ -92,7 +92,7 @@ bool Fetcher::_doStartupCheck(VarCRef config) const
 
         if (!_createProcess(&proc, check, subprocess_option_combined_stdout_stderr))
         {
-            printf("Fetcher init (startup-check): Failed to create subprocess\n");
+            logerror("Fetcher init (startup-check): Failed to create subprocess");
             return false;
         }
 
@@ -117,17 +117,17 @@ bool Fetcher::_doStartupCheck(VarCRef config) const
 
         if (err)
         {
-            printf("Fetcher init (startup-check): Failed subprocess_join()\n");
+            logerror("Fetcher init (startup-check): Failed subprocess_join()");
             return false;
         }
 
         if (ret)
         {
-            printf("Fetcher init (startup-check): Failed with return code %d\n", ret);
+            logerror("Fetcher init (startup-check): Failed with return code %d", ret);
             return false;
         }
 
-        printf("Fetcher init (startup-check): Check passed\n");
+        logdebug("Fetcher init (startup-check): Check passed");
     }
 
     return true;
@@ -187,12 +187,12 @@ Var Fetcher::_fetchAllNoPost()
         const char* oldtype = ret.typestr();
         ret = _postproc(postall, std::move(ret));
         if(ret.type() != Var::TYPE_MAP)
-            printf("Fetcher::fetchAll: Was %s before postproc, is now %s", oldtype, ret.typestr());
+            logerror("Fetcher::fetchAll: Was %s before postproc, is now %s", oldtype, ret.typestr());
     }
 
     if(!ret.isNull() && ret.type() != Var::TYPE_MAP)
     {
-        printf("Fetcher::fetchAll: Expected map but got %s. This is an error.\n", ret.typestr());
+        logerror("Fetcher::fetchAll: Expected map but got %s. This is an error.", ret.typestr());
         ret.clear(*this);
     }
     return ret;
@@ -236,10 +236,10 @@ bool Fetcher::_prepareView(view::View& vw, VarCRef config, const char* key)
     if (VarCRef v = config.lookup(key))
     {
         if (vw.load(v, true))
-            printf("Loaded view for %s (%u ops)\n", key, (unsigned)vw.exe.cmds.size());
+            logdebug("Loaded view for %s (%u ops)", key, (unsigned)vw.exe.cmds.size());
         else
         {
-            printf("Failed to load view for %s\n", key);
+            logerror("Failed to load view for %s", key);
             return false;
         }
     }
@@ -268,7 +268,7 @@ Var Fetcher::_fetch(const view::View& vw, const char* path, size_t len)
         {
             ++num;
             const char *ns = sizetostr_unsafe(buf, sizeof(buf), num);
-            printf("$%s = %s\n", ns, it.value().s);
+            DEBUG_LOG("$%s = %s\n", ns, it.value().s);
             vmvars[ns] = it.value().s;
         }
         */
@@ -276,7 +276,7 @@ Var Fetcher::_fetch(const view::View& vw, const char* path, size_t len)
 
     Var params = vw.produceResult(*this, _config, vmvars);
     vars.clear(*this); // no longer needed after this
-    printf("FETCH EXEC (path: %s): %s\n", path, dumpjson(VarCRef(this, &params)).c_str());
+    logdebug("FETCH EXEC (path: %s): %s", path, dumpjson(VarCRef(this, &params)).c_str());
 
     Var ret;
 
@@ -293,11 +293,11 @@ Var Fetcher::_fetch(const view::View& vw, const char* path, size_t len)
 
         subprocess_destroy(&proc);
 
-        //printf("FETCH RESULT:\n-------\n%s\n---------\n", dumpjson(VarCRef(this, &ret), true).c_str());
+        //DEBUG_LOG("FETCH RESULT:\n-------\n%s\n---------", dumpjson(VarCRef(this, &ret), true).c_str());
     }
     else
     {
-        printf("launch failed!\n");
+        logerror("launch failed!");
         ret.clear(*this);
     }
 

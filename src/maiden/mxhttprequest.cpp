@@ -5,6 +5,7 @@
 #include "json_out.h"
 #include "jsonstreamwrapper.h"
 #include "socketstream.h"
+#include "util.h"
 
 mg_connection* mxConnectTo(const URLTarget& target, char *errbuf, size_t errbufsz)
 {
@@ -17,11 +18,11 @@ mg_connection* mxConnectTo(const URLTarget& target, char *errbuf, size_t errbufs
         ? mg_connect_client_secure(&opt, errbuf, errbufsz)
         : mg_connect_client(opt.host, opt.port, target.ssl, errbuf, errbufsz))
     {
-        printf("Connected to %s:%u\n", target.host.c_str(), target.port);
+        logdebug("Connected to %s:%u", target.host.c_str(), target.port);
         return c;
     }
     else
-        printf("Failed %s:%u: %s\n", target.host.c_str(), target.port, errbuf);
+        logerror("Failed %s:%u: %s", target.host.c_str(), target.port, errbuf);
     return NULL;
 }
 
@@ -73,7 +74,7 @@ MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& targ
             case RQ_GET: formatGet(os, target); break;
             case RQ_POST: formatPost(os, target); break; // TODO: data?
         }
-       
+
         std::string request = os.str();
 
         sendHeaderAndBody(c, data, request.c_str(), request.length());
@@ -83,13 +84,13 @@ MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& targ
         {
             const mg_response_info *info = mg_get_response_info(c);
             // FIXME: handle redirects here
-            printf("mxGetJson: %u (%s), len = %d\n", info->status_code, info->status_text, (int)info->content_length);
+            logdebug("mxGetJson: %u (%s), len = %d", info->status_code, info->status_text, (int)info->content_length);
             ret.code = MXGJ_HTTP_ERROR;
             int r = 0;
             if(info->status_code == 200)
             {
                 r = Request::ReadJsonBodyVars(dst, c, true, false, maxsize);
-                printf("... JSON parse returned %d\n", r);
+                logdebug("... JSON parse returned %d", r);
                 ret.code = r < 0 ? MXGJ_PARSE_ERROR : MXGJ_OK;
             }
             else
@@ -100,7 +101,7 @@ MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& targ
     }
 
     if(ret.code != MXGJ_OK)
-        printf("mxGetJson error (%d): [%s] %s\n", ret.code, errbuf, ret.errmsg.c_str());
+        logerror("mxGetJson error (%d): [%s] %s", ret.code, errbuf, ret.errmsg.c_str());
 
     return ret;
 }

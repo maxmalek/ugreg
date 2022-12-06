@@ -67,7 +67,7 @@ void MxSearch::rebuildCache(VarCRef src)
                     PoolStr ps = v->asString(*src.mem);
                     if(ps.len)
                         if(!mxSearchNormalizeAppend(tmp, ps.s, ps.len))
-                            printf("MxSearch: Got invalid UTF-8: %s\n", ps.s);
+                            logerror("MxSearch: Got invalid UTF-8: %s\n", ps.s);
                 }
             if(!tmp.empty())
             {
@@ -82,7 +82,7 @@ void MxSearch::rebuildCache(VarCRef src)
             }
         }
 
-    printf("MxSearch::rebuildCache() done after %u ms, using %zu KB for %zu strings\n",
+    logdebug("MxSearch::rebuildCache() done after %u ms, using %zu KB for %zu strings",
         (unsigned)timer.ms(), stringmem/1024, _strings.size());
 }
 
@@ -108,7 +108,7 @@ MxSearch::Matches MxSearch::search(const MxMatcherList& matchers, bool fuzzy, co
             hits.push_back(m);
         }
     }
-    printf("MxSearch::search() took %u ms\n", (unsigned)timer.ms());
+    logdebug("MxSearch::search() took %u ms", (unsigned)timer.ms());
     return hits;
 }
 

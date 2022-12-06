@@ -3,6 +3,7 @@
 #include "treeiter.h"
 #include <sstream>
 #include <string.h>
+#include "util.h"
 
 namespace view {
 
@@ -25,14 +26,14 @@ size_t View::compile(const char *s, VarCRef val)
         {
             view::EntryPoint e { s, idx };
             ep.push_back(std::move(e));
-            printf("View key [%s] ok, ep = %u\n", s, (unsigned)idx);
+            DEBUG_LOG("View key [%s] ok, ep = %u", s, (unsigned)idx);
             return idx;
         }
         else
-            printf("View key [%s] parse error:\n%s\n", s, err.c_str());
+            logerror("View key [%s] parse error:\n%s", s, err.c_str());
     }
     else
-        printf("View key [%s] is not string value; skipped\n", s);
+        logerror("View key [%s] is not string value; skipped", s);
     return 0;
 }
 
@@ -52,7 +53,7 @@ struct ViewProducerVisitor : public MutTreeIterFunctor
         {
             // TYPE_PTR is used to store an entry point, and is not actually a ptr here
             uintptr_t start = (uintptr_t)v.asPtr();
-            printf("ViewProducerVisitor: Got ptr, executing ep = %u\n", (unsigned)start);
+            DEBUG_LOG("ViewProducerVisitor: Got ptr, executing ep = %u", (unsigned)start);
             v.v->clear(vm.mem);
             vm.run(base, start);
             *v.v = std::move(ExportResult(vm));
@@ -105,7 +106,7 @@ Var View::produceResult(TreeMem& dst, VarCRef root, VarCRef vars) const
                 *v.v = it.value().clone(*v.mem, *vars.mem);
             }
         else
-            printf("View::produceResult: Passed vars is not map, ignoring\n");
+            logerror("View::produceResult: Passed vars is not map, ignoring");
     }
 
     Var ret = resultTemplate.clone(dst, *exe.mem);
@@ -139,7 +140,7 @@ struct ViewTemplateCompilerVisitor : public MutTreeIterFunctor
             std::string err;
             if (size_t idx = view::parse(exe, code, err))
             {
-                printf("ViewTemplateCompilerVisitor: Compiled to ep = %u\n", (unsigned)idx);
+                DEBUG_LOG("ViewTemplateCompilerVisitor: Compiled to ep = %u", (unsigned)idx);
                 v = (void*)(uintptr_t)idx;
                 ++n;
             }
@@ -170,11 +171,11 @@ bool View::_loadTemplate(VarCRef in)
     treeIter_T(vis, VarRef(exe.mem, &resultTemplate));
 
     if(!vis.fail && !vis.n)
-        printf("WARNING: _loadTemplate(): No compile-able strings. This view returns constant data, which is probably an error.\n");
+        logerror("WARNING: _loadTemplate(): No compile-able strings. This view returns constant data, which is probably an error.");
 
     std::string errs = vis.errors.str();
     if(!errs.empty())
-        printf("_loadTemplate() errors:\n%s\n", errs.c_str());
+        logerror("_loadTemplate() errors:\n%s", errs.c_str());
 
     return !vis.fail;
 }
@@ -203,7 +204,7 @@ bool View::load(VarCRef v, bool extended)
                     idx = compile(key, VarCRef(v.mem, &it.value()));
                     if (!idx)
                     {
-                        printf("Failed to compile key '%s'\n", key);
+                        logerror("Failed to compile key '%s'", key);
                         return false;
                     }
                     // FIXME: do something with idx
@@ -225,7 +226,7 @@ bool View::load(VarCRef v, bool extended)
     }
     else
     {
-        printf("Not sure what the result of the view is supposed to be. Either make the result a map with a 'result' key if you need variables, or any other value to use that.\n");
+        logerror("Not sure what the result of the view is supposed to be. Either make the result a map with a 'result' key if you need variables, or any other value to use that.");
         return false;
     }
 

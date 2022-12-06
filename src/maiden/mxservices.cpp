@@ -67,7 +67,7 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
     }
 
     const mg_request_info *info = mg_get_request_info(conn);
-    printf("wellknown:%s: %s\n", info->request_method, info->local_uri_raw);
+    logdebug("wellknown:%s: %s", info->request_method, info->local_uri_raw);
     mg_send_http_ok(conn, "application/json", resp->length());
     mg_response_header_add(conn, "Access-Control-Allow-Origin", "*", 1);
     mg_write(conn, resp->c_str(), resp->length());
@@ -111,18 +111,18 @@ bool MxSearchHandler::init(VarCRef cfg)
                     }
                     else
                     {
-                        printf("search->fields->%s has unhandled type, ignoring\n", ps.s);
+                        logerror("search->fields->%s has unhandled type, ignoring", ps.s);
                     }
                 }
                 else
                 {
-                    printf("search->fields has non-string element\n");
+                    logerror("search->fields has non-string element");
                 }
             }
         }
         else
         {
-            printf("search->fields is present but not map, ignoring\n");
+            logerror("search->fields is present but not map, ignoring");
         }
     }
 
@@ -163,7 +163,7 @@ bool MxSearchHandler::init(VarCRef cfg)
     {
         if(!homeserver.load(xhs))
         {
-            printf("MxSearchHandler: Failed to apply homeserver setting\n");
+            logerror("MxSearchHandler: Failed to apply homeserver setting");
             return false;
         }
     }
@@ -174,17 +174,17 @@ bool MxSearchHandler::init(VarCRef cfg)
         askHS = false;
     }
 
-    printf("MxSearchHandler: max. client request size = %u\n", (unsigned)searchcfg.maxsize);
-    printf("MxSearchHandler: avatar_url = %s\n", searchcfg.avatar_url.c_str());
-    printf("MxSearchHandler: displayname = %s\n", searchcfg.displaynameField.c_str());
-    printf("MxSearchHandler: fuzzy global search = %d\n", searchcfg.fuzzy);
-    printf("MxSearchHandler: Element substring HACK = %d\n", searchcfg.element_hack);
-    printf("MxSearchHandler: searching %u fields:\n", (unsigned)searchcfg.fields.size());
+    logdebug("MxSearchHandler: max. client request size = %u", (unsigned)searchcfg.maxsize);
+    logdebug("MxSearchHandler: avatar_url = %s", searchcfg.avatar_url.c_str());
+    logdebug("MxSearchHandler: displayname = %s", searchcfg.displaynameField.c_str());
+    logdebug("MxSearchHandler: fuzzy global search = %d", searchcfg.fuzzy);
+    logdebug("MxSearchHandler: Element substring HACK = %d", searchcfg.element_hack);
+    logdebug("MxSearchHandler: searching %u fields:", (unsigned)searchcfg.fields.size());
     for(MxSearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
-        printf(" + %s\n", it->first.c_str());
-    printf("MxSearchHandler: Ask homeserver: %s\n", askHS ? "yes" : "no");
-    printf("MxSearchHandler: Ask homeserver timeout: %d ms\n", hsTimeout);
-    printf("MxSearchHandler: Check homeserver: %s\n", checkHS ? "yes" : "no");
+        logdebug(" + %s", it->first.c_str());
+    logdebug("MxSearchHandler: Ask homeserver: %s", askHS ? "yes" : "no");
+    logdebug("MxSearchHandler: Ask homeserver timeout: %d ms", hsTimeout);
+    logdebug("MxSearchHandler: Check homeserver: %s", checkHS ? "yes" : "no");
 
     _sources.addListener(&this->search);
     return true;
@@ -197,7 +197,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     os << "MxSearchHandler [" << term << "] -> " << matchers.size() << " matchers: ";
     for(size_t i = 0; i < matchers.size(); ++i)
         os << '[' << matchers[i].needle() << ']';
-    puts(os.str().c_str());
+    logdebug("%s", os.str().c_str());
 
     TwoWayCasefoldMatcher fullmatch(term, strlen(term));
     MxSearch::Matches hits = search.search(matchers, searchcfg.fuzzy, searchcfg.element_hack ? &fullmatch : NULL);

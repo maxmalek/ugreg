@@ -11,12 +11,6 @@
 #include "viewxform.h"
 #include "viewparser.h"
 
-#ifndef NDEBUG
-#define DEBUG_PRINT printf
-#else
-#define DEBUG_PRINT /* crickets */
-#endif
-
 namespace view {
 
 void StackFrame::addRel(TreeMem& mem, Var&& v, StrRef k)
@@ -102,7 +96,7 @@ void VM::init(const Executable& ex, const EntryPoint* eps, size_t numep)
         VarRef evalmap(mem, &evals);
         for (size_t i = 0; i < numep; ++i)
         {
-            DEBUG_PRINT("Eval entrypoint: [%s] = %u\n", eps[i].name.c_str(), (unsigned)eps[i].idx);
+            DEBUG_LOG("Eval entrypoint: [%s] = %u\n", eps[i].name.c_str(), (unsigned)eps[i].idx);
             evalmap[eps[i].name.c_str()].v->setUint(mem, eps[i].idx);
         }
     }
@@ -386,7 +380,7 @@ void VM::filterObjects(ValueSel sel, Var::CompareMode cmp, const VarEntry* value
             {
                 const VarEntry& e = oldrefs[i];
                 filterObjectsInArrayOrMap(*pdst, e.ref, cmp, values, numvalues, keystr, invert);
-            
+
                 if (sel & SEL_DST_REPACK)
                 {
                     Var repacked = convertRefsToObject(tmp.refs, mem, e.ref.type());
@@ -420,11 +414,11 @@ const char *VM::cmd_FilterKey(unsigned param, ValueSel sel)
     StackFrame vs = _popframe(); // check new top vs. this
     const char* keystr = literals[key].asCString(mem);
 
-    DEBUG_PRINT("Filter %u refs using %u refs, key = %s\n", (unsigned)_topframe().refs.size(), (unsigned)vs.refs.size(), keystr);
+    DEBUG_LOG("Filter %u refs using %u refs, key = %s", (unsigned)_topframe().refs.size(), (unsigned)vs.refs.size(), keystr);
 
     filterObjects(sel, cmp, vs.refs.data(), vs.refs.size(), keystr, invert);
 
-    DEBUG_PRINT("... %u refs passed the filter\n", (unsigned)_topframe().refs.size());
+    DEBUG_LOG("... %u refs passed the filter", (unsigned)_topframe().refs.size());
     return NULL;
 }
 
@@ -646,7 +640,7 @@ const char *VM::cmd_CheckKeyVsSingleLiteral(unsigned param, unsigned lit, ValueS
     StackFrame& top = _topframe();
     const char* keystr = literals[key].asCString(mem);
 
-    DEBUG_PRINT("Filter %u refs, key = %s, valuetype = %s\n", (unsigned)_topframe().refs.size(), keystr, literals[lit].typestr());
+    DEBUG_LOG("Filter %u refs, key = %s, valuetype = %s", (unsigned)_topframe().refs.size(), keystr, literals[lit].typestr());
 
     filterObjects(sel, cmp, &checklit, 1, keystr, invert);
 
@@ -748,7 +742,7 @@ bool VM::exec(size_t ip)
 
         if(err)
         {
-            printf("VM ERROR: %s\n", err);
+            logerror("VM ERROR: %s", err);
             return false;
         }
     }
@@ -819,7 +813,7 @@ StackFrame* VM::_getVar(StrRef key)
     Var* v = evals.lookupNoFetch(key);
     if(!v)
     {
-        printf("Attempt to eval [%s], but does not exist\n",
+        logerror("Attempt to eval [%s], but does not exist",
             mem.getS(key));
         return NULL;
     }
@@ -828,20 +822,20 @@ StackFrame* VM::_getVar(StrRef key)
     {
         case Var::TYPE_PTR:
             frm = static_cast<StackFrame*>(v->asPtr());
-            DEBUG_PRINT("Eval [%s] cached, frame refs size = %u\n", mem.getS(key), (unsigned)frm->refs.size());
+            DEBUG_LOG("Eval [%s] cached, frame refs size = %u", mem.getS(key), (unsigned)frm->refs.size());
             break;
         case Var::TYPE_UINT:
         {
             size_t ip = *v->asUint();
             v->clear(mem); // detect self-referencing
-            DEBUG_PRINT("Eval [%s], not stored, exec ip = %u\n", mem.getS(key), (unsigned)ip);
+            DEBUG_LOG("Eval [%s], not stored, exec ip = %u", mem.getS(key), (unsigned)ip);
             frm = _evalVar(key, ip);
             v->setPtr(mem, frm);
-            DEBUG_PRINT("Eval [%s] done, frame refs size = %u\n", mem.getS(key), (unsigned)frm->refs.size());
+            DEBUG_LOG("Eval [%s] done, frame refs size = %u", mem.getS(key), (unsigned)frm->refs.size());
             break;
         }
         case Var::TYPE_NULL:
-            printf("Eval [%s] not stored and self-referencing, abort\n", mem.getS(key));
+            logerror("Eval [%s] not stored and self-referencing, abort", mem.getS(key));
             break;
         default:
             assert(false);

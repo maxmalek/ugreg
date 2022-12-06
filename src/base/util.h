@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "log.h"
 
 // Clang has this, other compilers may or may not
 #ifndef __has_builtin

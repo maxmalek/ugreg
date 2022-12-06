@@ -51,7 +51,7 @@ bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
     if(unsigned port = unsigned(xport && xport.asUint() ? *xport.asUint() : 0))
         cfg.port = port;
 
-    printf("New device: '%s' = %s:%u\n", cfg.name.c_str(), host, cfg.port);
+    logdebug("New device: '%s' = %s:%u", cfg.name.c_str(), host, cfg.port);
     if (!(host && *host))
         return false;
 
@@ -78,7 +78,7 @@ bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
         if (luaL_dofile(L, script) != LUA_OK)
         {
             const char *errmsg = lua_tostring(L, 1);
-            printf("Failed to load script '%s', error:\n%s\n", script, errmsg);
+            logerror("Failed to load script '%s', error:\n%s", script, errmsg);
             return false;
         }
         if(int top = lua_gettop(L)) // don't leave crap on the stack in case the body returns anything
@@ -114,12 +114,12 @@ bool SISClient::configure(VarCRef mycfg, VarCRef devcfg)
 SISSocket SISClient::connect()
 {
     disconnect();
-    printf("Connecting to %s (%s:%u) ...\n", cfg.name.c_str(), cfg.host.c_str(), cfg.port);
+    log("Connecting to %s (%s:%u) ...\n", cfg.name.c_str(), cfg.host.c_str(), cfg.port);
     _clearBuffer();
     SocketIOResult res = sissocket_open(&socket, cfg.host.c_str(), cfg.port);
     if(res == SOCKIO_OK)
     {
-        printf("Connected to %s (%s:%u), socket = %p\n",
+        log("Connected to %s (%s:%u), socket = %p\n",
             cfg.name.c_str(), cfg.host.c_str(), cfg.port, (void*)socket);
         setState(CONNECTED);
     }
@@ -137,7 +137,7 @@ void SISClient::disconnect()
 
 void SISClient::_disconnect()
 {
-    printf("Disconnect %s (%s:%u), socket = %p\n",
+    log("Disconnect %s (%s:%u), socket = %p\n",
         cfg.name.c_str(), cfg.host.c_str(), cfg.port, (void*)socket);
     SISSocket inv = sissocket_invalid();
     if(socket != inv)
@@ -171,7 +171,7 @@ void SISClient::_clearBuffer()
 
 void SISClient::wasDisconnected()
 {
-    printf("Disconnected from %s (%s:%u) by remote end, socket was %p\n",
+    log("Disconnected from %s (%s:%u) by remote end, socket was %p",
         cfg.name.c_str(), cfg.host.c_str(), cfg.port, (void*)socket);
     if(state > DISCONNECTED)
         setState(DISCONNECTED);
@@ -198,7 +198,7 @@ u64 SISClient::updateTimer(u64 now, u64 dt)
             Job& j = *it;
             if(j.expiryTime && now > j.expiryTime)
             {
-                printf("SISClient[%s]: ERROR: Action '%s' expired without ever starting; blocked by '%s'\n",
+                logerror("SISClient[%s]: ERROR: Action '%s' expired without ever starting; blocked by '%s'",
                     cfg.name.c_str(), j.actionName.c_str(), first.actionName.c_str());
                 j.unref(L);
                 ActionResult result;
@@ -241,7 +241,7 @@ void SISClient::updateIncoming()
         {
             if(rd)
             {
-                printf("[%s]: ", cfg.name.c_str());
+                DEBUG_LOGX(LL_DEV, 0, "[%s]: ", cfg.name.c_str());
                 fwrite(buf, 1, rd, stdout);
                 size_t oldsize = inbuf.size();
                 inbuf.resize(oldsize + rd);
@@ -272,7 +272,7 @@ SISClient::State SISClient::setState(State st)
     const State prev = state;
     if(prev == st)
         return prev;
-    printf("SISClient[%s]: State %s -> %s, timeInState = %u\n",
+    logdebug("SISClient[%s]: State %s -> %s, timeInState = %u",
         cfg.name.c_str(), s_StateNames[state], s_StateNames[st], (unsigned)timeInState);
     state = st;
     timeInState = 0;
@@ -369,7 +369,7 @@ std::future<SISClient::ActionResult> SISClient::scheduleAction(const char* name,
     int f = lua_getglobal(L, name);
     if(f != LUA_TFUNCTION)
     {
-        printf("SISClient[%s]: ERROR: runAction [%s] is not a function\n", cfg.name.c_str(), name);
+        logerror("SISClient[%s]: ERROR: runAction [%s] is not a function", cfg.name.c_str(), name);
         lua_pop(L, 1);
         return std::async(funcNotExist, name);
     }
@@ -399,7 +399,7 @@ std::future<SISClient::ActionResult> SISClient::scheduleAction(const char* name,
     j.actionName = name;
     j.expiryTime = expireIn ? timeNowMS() + expireIn : 0;
 
-    printf("SISClient[%s]: Action '%s' coro is ready\n", cfg.name.c_str(), name);
+    logdebug("SISClient[%s]: Action '%s' coro is ready", cfg.name.c_str(), name);
     return j.result.get_future();
 }
 
@@ -489,7 +489,7 @@ u64 SISClient::updateCoro()
             {
                 result.status = 500;
                 const char* errstr = lua_tostring(j.Lco, -1);
-                printf("SISClient[%s]: ERROR: Lua coroutine failed (err = %d): %s\n", cfg.name.c_str(), e, errstr);
+                logerror("SISClient[%s]: ERROR: Lua coroutine failed (err = %d): %s", cfg.name.c_str(), e, errstr);
                 if(errstr)
                     result.text = errstr;
             }
@@ -510,7 +510,7 @@ u64 SISClient::updateCoro()
         {
             if (stateMaxTime && timeInState > stateMaxTime)
             {
-                printf("SISClient[%s]: ERROR: Action '%s' timeout after %zu ms in same state\n", cfg.name.c_str(), j.actionName.c_str(), stateMaxTime);
+                logerror("SISClient[%s]: ERROR: Action '%s' timeout after %zu ms in same state", cfg.name.c_str(), j.actionName.c_str(), stateMaxTime);
                 j.unref(L);
                 ActionResult result;
                 result.error = true;

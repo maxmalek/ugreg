@@ -36,62 +36,20 @@ enum ConsoleColor
     MAX_COLORS
 };
 
-struct LogCallback
-{
-    LogCallback(log_callback_func af, void *aud) : f(af), ud(aud) {}
-    log_callback_func f;
-    void *ud;
-};
-
-static std::vector<LogCallback> s_logCallbacks;
 #ifdef _DEBUG
 static LogLevel s_consoleLogLevel = LL_DEV;
 #else
-static LogLevel s_consoleLogLevel = LL_DEBUG;
+static LogLevel s_consoleLogLevel = LL_NORMAL;
 #endif
-
-static void _log_docallback(const std::vector<LogCallback>& v, LogLevel level, int nl, va_list va, const char *fmt)
-{
-    char buf[4*1024];
-    size_t len = Countof(buf)-2; // extra space for \n and \0
-    int written = vsnprintf(buf, len-1, fmt, va);
-    if(written >= 0 && written < len)
-        len = written;
-    if(nl)
-        buf[len++] = '\n';
-
-    if(len)
-    {
-        buf[len] = 0;
-        for(size_t i = 0; i < v.size(); ++i)
-            v[i].f(level, &buf[0], len, v[i].ud);
-    }
-}
-
-static void _log_removecallback(std::vector<LogCallback>& v, log_callback_func f)
-{
-    for(size_t i = 0; i < v.size(); )
-        if(v[i].f == f)
-            v.erase(v.begin() + i);
-        else
-            ++i;
-}
-
-void log_addLogCallback(log_callback_func f, void *ud)
-{
-    LOCK_SCOPE();
-    s_logCallbacks.push_back(LogCallback(f, ud));
-}
-
-void log_removeLogCallback(log_callback_func f)
-{
-    LOCK_SCOPE();
-    _log_removecallback(s_logCallbacks, f);
-}
 
 void log_setConsoleLogLevel(LogLevel level)
 {
-    s_consoleLogLevel = level;
+    s_consoleLogLevel = (level < LL_MAX) ? level : LL_DEV;
+}
+
+LogLevel log_getConsoleLogLevel()
+{
+    return s_consoleLogLevel;
 }
 
 
@@ -186,16 +144,16 @@ static void _log_resetcolor(bool stdout_stream)
 
 static const ConsoleColor colorLUT[] =
 {
-    LBLUE,  // DEV
-    LCYAN,  // DEBUG
-    NONE,   // NORMAL
     LRED,   // ERROR
+    NONE,   // NORMAL
+    LCYAN,  // DEBUG
+    LBLUE,  // DEV
 };
 static_assert(Countof(colorLUT) == LL_MAX);
 
 static void _valogcolor(unsigned level, ConsoleColor col, int nl, const char *fmt, va_list va)
 {
-    if(level < (unsigned)s_consoleLogLevel)
+    if(level > (unsigned)s_consoleLogLevel)
         return;
 
     if(col != NONE)
@@ -207,9 +165,11 @@ static void _valogcolor(unsigned level, ConsoleColor col, int nl, const char *fm
         _log_resetcolor(true);
 }
 
-static ConsoleColor getcolor(int level)
+static ConsoleColor getcolor(unsigned level)
 {
-    return level < Countof(colorLUT) ? colorLUT[level] : NONE;
+    if(level >= LL_MAX)
+        level = LL_MAX-1;
+    return colorLUT[level];
 }
 
 void vlogx(LogLevel level, int nl, const char *fmt, va_list va)
@@ -221,7 +181,6 @@ void vlogx(LogLevel level, int nl, const char *fmt, va_list va)
     {
         LOCK_SCOPE();
         _valogcolor(level, color, nl, fmt, va);
-        _log_docallback(s_logCallbacks, level, nl, vax, fmt);
     }
 }
 

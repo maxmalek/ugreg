@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <string>
+#include "log.h"
 
 #ifdef _WIN32
 /*#  ifndef _WIN32_WINNT
@@ -48,12 +49,6 @@ typedef intptr_t SOCKET;
 
 #define SOCKETVALID(s) ((s) != INVALID_SOCKET)
 
-#ifdef _DEBUG
-#  define traceprint(...) {printf(__VA_ARGS__);}
-#else
-#  define traceprint(...) {}
-#endif
-
 inline int _GetError()
 {
 #ifdef _WIN32
@@ -91,14 +86,14 @@ static bool _Resolve(const char* host, unsigned port, struct sockaddr_in* addr)
     hnt.ai_socktype = SOCK_STREAM;
     if (getaddrinfo(host, port_str, &hnt, &res))
     {
-        traceprint("RESOLVE ERROR: %s", _GetErrorStr(_GetError()).c_str());
+        logerror("RESOLVE ERROR: %s", _GetErrorStr(_GetError()).c_str());
         return false;
     }
     if (res)
     {
         if (res->ai_family != AF_INET)
         {
-            traceprint("RESOLVE WTF: %s", _GetErrorStr(_GetError()).c_str());
+            logerror("RESOLVE WTF: %s", _GetErrorStr(_GetError()).c_str());
             freeaddrinfo(res);
             return false;
         }
@@ -137,14 +132,14 @@ SocketIOResult sissocket_open(SISSocket *pHandle, const char* host, unsigned por
     sockaddr_in addr;
     if (!_Resolve(host, port, &addr))
     {
-        traceprint("RESOLV ERROR: %s\n", _GetErrorStr(_GetError()).c_str());
+        logerror("RESOLV ERROR: %s", _GetErrorStr(_GetError()).c_str());
         return SOCKIO_FAILED;
     }
 
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
     if (!SOCKETVALID(s))
     {
-        traceprint("SOCKET ERROR: %s\n", _GetErrorStr(_GetError()).c_str());
+        logerror("SOCKET ERROR: %s", _GetErrorStr(_GetError()).c_str());
         return SOCKIO_FAILED;
     }
 
@@ -152,7 +147,7 @@ SocketIOResult sissocket_open(SISSocket *pHandle, const char* host, unsigned por
 
     if (!_SetNonBlocking(s, true))
     {
-        traceprint("_SetNonBlocking failed: %s\n", _GetErrorStr(_GetError()).c_str());
+        logerror("_SetNonBlocking failed: %s", _GetErrorStr(_GetError()).c_str());
         ret = SOCKIO_FAILED;
     }
     else
@@ -171,16 +166,16 @@ SocketIOResult sissocket_open(SISSocket *pHandle, const char* host, unsigned por
 #ifdef WSAEWOULDBLOCK
             case WSAEWOULDBLOCK: // windows uses this for some reason
 #endif
-                traceprint("SOCKET[%p]: Connection to '%s:%u' in progress...\n", (void*)s, host, port);
+                DEBUG_LOG("SOCKET[%p]: Connection to '%s:%u' in progress...", (void*)s, host, port);
                 ret = SOCKIO_TRYLATER;
                 break;
             default:
-                traceprint("CONNECT ERROR %d: %s\n", err, _GetErrorStr(err).c_str());
+                logerror("CONNECT ERROR %d: %s", err, _GetErrorStr(err).c_str());
                 ret = SOCKIO_CLOSED;
             }
         }
     }
-    
+
     if(!(ret == SOCKIO_OK || ret == SOCKIO_TRYLATER))
     {
         sissocket_close(s);
@@ -214,7 +209,7 @@ static SocketIOResult getIOError()
 #endif
             return SOCKIO_TRYLATER;
     }
-    printf("Unhandled socket IO error %d\n", err);
+    logerror("Unhandled socket IO error %d", err);
     perror("");
     return SOCKIO_FAILED;
 }
@@ -299,7 +294,7 @@ SISSocketSet::SocketAndStatus* SISSocketSet::update(size_t* n, int timeoutMS)
         if(ret < 0)
         {
             int err = ::WSAGetLastError();
-            printf("WSAGetLastError() = %d, N = %u\n", err, unsigned(N));
+            logerror("WSAGetLastError() = %d, N = %u", err, unsigned(N));
         }
 #endif
         *n = 0;
@@ -328,20 +323,20 @@ SISSocketSet::SocketAndStatus* SISSocketSet::update(size_t* n, int timeoutMS)
             if(::getsockopt(p.fd, SOL_SOCKET, SO_ERROR, (char*)&soerr, &soerrsize))
             {
                 int err = _GetError();
-                traceprint("SOCKET[%p]: getsockopt() failed! Error %d: %s\n",
+                logerror("SOCKET[%p]: getsockopt() failed! Error %d: %s",
                     (void*)p.fd, err, _GetErrorStr(err).c_str());
                 p.revents |= POLLERR; // hang up
             }
             else if (soerr)
             {
-                traceprint("SOCKET[%p]: Delayed connect to failed! Error %d: %s\n",
+                logerror("SOCKET[%p]: Delayed connect failed! Error %d: %s",
                     (void*)p.fd, soerr, _GetErrorStr(soerr).c_str());
                 p.revents |= POLLERR; // hang up
             }
             else
             {
                 // connected!
-                traceprint("SOCKET[%p]: Delayed connect successful!\n", (void*)p.fd);
+                logdebug("SOCKET[%p]: Delayed connect successful!", (void*)p.fd);
                 ss.flags |= JUSTCONNECTED;
             }
         }

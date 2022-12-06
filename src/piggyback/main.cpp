@@ -54,7 +54,7 @@ int main(int argc, char** argv)
 
     srv.registerHandler(handler);
 
-    puts("Ready!");
+    log("Ready!");
 
     while (!s_quit)
         sleepMS(200);

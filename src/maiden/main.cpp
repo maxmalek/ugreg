@@ -252,7 +252,7 @@ static int main2(MxSources& sources, int argc, char** argv)
 
     // need data to operate on. this takes a while so if we already have data, start up with those
     if(loaded)
-        printf("Loaded cached data; doing fast startup by skipping pre-start populate\n");
+        log("Loaded cached data; doing fast startup by skipping pre-start populate");
     else
         sources.initPopulate(false);
 
@@ -263,9 +263,9 @@ static int main2(MxSources& sources, int argc, char** argv)
         WebServer::StaticInit();
 
         if(!startServers(servers))
-            bail("Failed to start a server component, exiting", "");
+            logerror("Failed to start a server component, exiting", "");
 
-        printf("Ready; all servers up after %u ms\n", (unsigned)timer.ms());
+        log("Ready; all servers up after %u ms", (unsigned)timer.ms());
 
         // If we have the cached data, we can slowly start loading in new data in background
         if(loaded)
@@ -274,7 +274,7 @@ static int main2(MxSources& sources, int argc, char** argv)
         while (!s_quit)
             sleepMS(200);
 
-        printf("Main loop exited, shutting down...\n");
+        log("Main loop exited, shutting down...");
         stopServers(std::move(servers));
         WebServer::StaticShutdown();
     }
@@ -292,6 +292,6 @@ int main(int argc, char** argv)
     int ret = main2(sources, argc, argv);
 
     sources.save();
-    printf("Exiting.\n");
+    log("Exiting.");
     return ret;
 }

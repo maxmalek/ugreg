@@ -28,14 +28,14 @@ void WebServer::stop()
 {
     if(!_ctx)
         return;
-    puts("WS: Stopping...");
+    log("WS: Stopping...");
     mg_stop(_ctx);
     _ctx = NULL;
 }
 
 void WebServer::registerHandler(const char *entrypoint, mg_request_handler h, void *ud)
 {
-    printf("WS: Register handler %s\n", entrypoint);
+    logdebug("WS: Register handler %s", entrypoint);
     assert(entrypoint && entrypoint[0] == '/');
     if(_ctx)
         mg_set_request_handler(_ctx, entrypoint, h, ud);
@@ -91,10 +91,10 @@ bool WebServer::start(const ServerConfig& cfg)
                 ls << 's';
         }
         listenbuf = ls.str();
-        printf("WS: Listening on %s\n", listenbuf.c_str());
+        log("WS: Listening on %s\n", listenbuf.c_str());
     }
     std::string threadsbuf = std::to_string(cfg.listen_threads);
-    printf("WS: Using %u request worker threads\n", cfg.listen_threads);
+    logdebug("WS: Using %u request worker threads\n", cfg.listen_threads);
 
 
     // via https://github.com/civetweb/civetweb/blob/master/docs/UserManual.md
@@ -111,7 +111,7 @@ bool WebServer::start(const ServerConfig& cfg)
 
     if(cfg.cert.length())
     {
-        printf("WS: ssl_certificate = '%s'\n", cfg.cert.c_str());
+        logdebug("WS: ssl_certificate = '%s'\n", cfg.cert.c_str());
         options[6] = "ssl_certificate";
         options[7] = cfg.cert.c_str();
     }
@@ -119,7 +119,7 @@ bool WebServer::start(const ServerConfig& cfg)
     mg_context *ctx = mg_start(&cb, NULL, options);
     if(!ctx)
     {
-        printf("mg_start() failed! (Is something already listening on our port?)\n");
+        logerror("mg_start() failed! (Is something already listening on our port?)\n");
         return false;
     }
 
@@ -132,7 +132,7 @@ bool WebServer::start(const ServerConfig& cfg)
     }
     _storedHandlers.clear();
 
-    puts("WS: Started.");
+    logdebug("WS: Started.");
     return true;
 }
 
@@ -259,7 +259,7 @@ int RequestHandler::_onRequest(mg_connection* conn) const
         catch (ThrowingSocketWriteStream::WriteFail ex)
         {
             const char* ip = mg_get_request_info(conn)->remote_addr;
-            printf("WS: [%s] Wrote %u bytes to socket, then failed (client aborted?)\n", ip, (unsigned)ex.written);
+            logdebug("WS: [%s] Wrote %u bytes to socket, then failed (client aborted?)\n", ip, (unsigned)ex.written);
         }
         return status;
     }
@@ -291,7 +291,7 @@ int RequestHandler::_onRequest(mg_connection* conn) const
         HeaderHelper hh(k.obj.compression, rq->bodysize());
         if(!rq->spliceHeader(preparedHdr.c_str(), preparedHdr.size(), hh.buf, hh.size))
         {
-            printf("FAILED TO CACHE: compr=%u, sizes: %u, %u, %u (header would stomp data)\n",
+            logerror("FAILED TO CACHE: compr=%u, sizes: %u, %u, %u (header would stomp data)\n",
                 k.obj.compression, (unsigned)preparedHdr.size(), (unsigned)hh.size, (unsigned)srq->fullsize());
             // should never be here, but still finish gracefully. we just can't store the reply if we messed up the header, but sending the individual parts is ok
             mg_write(conn, preparedHdr.c_str(), preparedHdr.size());
@@ -312,7 +312,7 @@ int RequestHandler::_onRequest(mg_connection* conn) const
             rq->expiryTime = t;
         }
 
-        printf("NEW CACHE: compr=%u, size=%u, expiry=%" PRIu64 "\n",
+        logdebug("NEW CACHE: compr=%u, size=%u, expiry=%" PRIu64 "\n",
             k.obj.compression, (unsigned)srq->fullsize(), srq->expiryTime);
 
         _cache.put(k, srq);

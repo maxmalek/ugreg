@@ -39,7 +39,7 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
         if(xiwt)
             if(!strToDurationMS_Safe(&idleWaitTime, xiwt.asCString()))
                 bail("idle_wait_time given but not a string or failed to parse as duration", "");
-        printf("idle_wait_time = %u ms\n", (unsigned)idleWaitTime);
+        logdebug("idle_wait_time = %u ms\n", (unsigned)idleWaitTime);
     }
     else
     {
@@ -72,7 +72,7 @@ static void init(int argc, char** argv, ServerConfig& cfg, std::vector<SISClient
             if(!devcfg || devcfg.type() != Var::TYPE_MAP)
                 bail("Unknown device type: ", type);
 
-            printf("- %s is device type [%s]\n", name, type);
+            log("- %s is device type [%s]\n", name, type);
 
             SISClient *client = new SISClient(name);
             if(client->configure(mycfg, devcfg))
@@ -108,7 +108,7 @@ int main(int argc, char** argv)
     CtrlHandler ctrl(clients, "/ctrl");
     srv.registerHandler(ctrl);
 
-    puts("Ready!");
+    log("Ready!");
 
     u64 lasttime = timeNowMS();
     u64 timeUntilNext = 0;
@@ -161,7 +161,7 @@ int main(int argc, char** argv)
             if(next)
                 timeUntilNext = std::min(timeUntilNext, next);
         }
-        //printf("timeUntilNext = %u, now = %zu\n", (unsigned)timeUntilNext, now);
+        //DEBUG_LOG("timeUntilNext = %u, now = %zu\n", (unsigned)timeUntilNext, now);
     }
 
     srv.stop();

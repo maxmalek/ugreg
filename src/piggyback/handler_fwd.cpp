@@ -71,7 +71,7 @@ int PiggybackHandler::onRequest(BufferedWriteStream& /*dst*/, mg_connection* con
     const mg_request_info *info = mg_get_request_info(conn);
 
     const char *q = rq.query.c_str();
-    printf("<<< %s %s (ssl: %d)\n", info->request_method, q, info->is_ssl);
+    log("<<< %s %s (ssl: %d)\n", info->request_method, q, info->is_ssl);
 
     const Destination *d;
     mg_connection *c = connectToDest(d, info);
@@ -103,7 +103,7 @@ int PiggybackHandler::onRequest(BufferedWriteStream& /*dst*/, mg_connection* con
     os << "\r\n";
 
     std::string hdr = os.str();
-    printf(">>> %s", hdr.c_str());
+    log(">>> %s", hdr.c_str());
     mg_write(c, hdr.c_str(), hdr.length());
 
     // forward body (in case of POST)
@@ -136,7 +136,7 @@ int PiggybackHandler::onRequest(BufferedWriteStream& /*dst*/, mg_connection* con
 
     if(st < 0)
     {
-        printf("mg_get_response ERROR: %s\n", errbuf);
+        log("mg_get_response ERROR: %s\n", errbuf);
         mg_send_http_error(conn, 500, "response unreadable: %s", errbuf);
         return 500;
     }
@@ -149,7 +149,7 @@ int PiggybackHandler::onRequest(BufferedWriteStream& /*dst*/, mg_connection* con
     {
         const char *name = ri->http_headers[i].name;
         const char *value = ri->http_headers[i].value;
-        printf(">> %s: %s\n", name, value);
+        log(">> %s: %s\n", name, value);
         mg_response_header_add(conn, name, value, -1);
     }
     if(chunked)
@@ -197,11 +197,11 @@ mg_connection* PiggybackHandler::connectToDest(const Destination *& dst, const m
             : mg_connect_client(opt.host, opt.port, ssl, errbuf, sizeof(errbuf)))
         {
             dst = &dest[i];
-            printf("Connected to %s:%u\n", dest[i].host.c_str(), dest[i].port);
+            log("Connected to %s:%u\n", dest[i].host.c_str(), dest[i].port);
             return c;
         }
         else
-            printf("Failed %s:%u: %s\n", dest[i].host.c_str(), dest[i].port, errbuf);
+            logerror("Failed %s:%u: %s\n", dest[i].host.c_str(), dest[i].port, errbuf);
     }
     dst = NULL;
     return NULL;

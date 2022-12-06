@@ -92,7 +92,7 @@ int ViewDebugHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, c
     if(*query == '/')
         ++query;
 
-    printf("ViewDebugHandler: %s\n", query);
+    logdebug("ViewDebugHandler: %s\n", query);
     TreeMem work(StringPool::SMALL);
     view::VM vm(work);
     view::Executable exe(work);

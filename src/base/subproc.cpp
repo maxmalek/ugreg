@@ -8,6 +8,7 @@
 #include <assert.h>
 #include "datatree.h"
 #include "serialize.h"
+#include "util.h"
 
 static void procfail(ProcessReadStream& ps, const char *procname)
 {
@@ -18,9 +19,9 @@ static void procfail(ProcessReadStream& ps, const char *procname)
     while(((c = ps.Take())) && i++ < 100)
         os << c;
     if(!pos && !i)
-        printf("[%s] Did not produce output before it died\n", procname);
+        logerror("[%s] Did not produce output before it died", procname);
     else
-        printf("[%s] JSON parse error after reading %u bytes, before:\n%s\n",
+        logerror("[%s] JSON parse error after reading %u bytes, before:\n%s",
             procname, unsigned(pos), os.str().c_str());
 }
 
@@ -54,7 +55,7 @@ bool createProcess(subprocess_s* proc, const char* const * args, const char* con
 #endif
 
     if (err)
-        printf("Failed to create process [%s]\n", args[0]);
+        logerror("Failed to create process [%s]", args[0]);
 
     return err == 0;
 }
@@ -84,14 +85,14 @@ bool loadJsonFromProcess(VarRef root, subprocess_s* proc, const char* procname)
 
     if(ok)
     {
-        printf("[%s] parsed as json, waiting until it exits...\n", procname);
+        logdebug("[%s] ingested, waiting until it exits...", procname);
     }
     else
     {
         procfail(ps, procname);
         if(subprocess_alive(proc))
         {
-            printf("[%s] failed to parse and still alive, killing\n", procname);
+            logerror("[%s] failed to parse and still alive, killing", procname);
             subprocess_terminate(proc);
         }
     }
@@ -100,11 +101,11 @@ bool loadJsonFromProcess(VarRef root, subprocess_s* proc, const char* procname)
     int err = subprocess_join(proc, &ret);
     if(err)
     {
-        printf("[%s] subprocess_join failed\n", procname);
+        logerror("[%s] subprocess_join failed", procname);
         return false;
     }
     ok = !ret; // if the process reports failure, don't use it even if it's valid json
-    printf("[%s] exited with code %d\n", procname, ret);
+    logdebug("[%s] exited with code %d", procname, ret);
     if(subprocess_stderr(proc))
     {
         bool hdr = false;
@@ -116,13 +117,13 @@ bool loadJsonFromProcess(VarRef root, subprocess_s* proc, const char* procname)
                 break;
             if(!hdr)
             {
-                printf("---- [%s] begin stderr dump ----\n", procname);
+                logerror("---- [%s] begin stderr dump ----", procname);
                 hdr = true;
             }
             fwrite(buf, 1, rd, stdout);
         }
         if(hdr)
-            printf("---- [%s] end stderr dump ----\n", procname);
+            logerror("---- [%s] end stderr dump ----", procname);
     }
 
     return ok;

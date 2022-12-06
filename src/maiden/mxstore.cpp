@@ -133,7 +133,7 @@ bool MxStore::apply(VarCRef config)
                 PoolStr hashname = xhashes.mem->getSL(it.key());
                 if(strcmp(hashname.s, "none") && !hash_getdesc(hashname.s))
                 {
-                    printf("MxStore: Unknown hash [%s] in config, ignoring\n", hashname.s);
+                    logerror("MxStore: Unknown hash [%s] in config, ignoring\n", hashname.s);
                     continue;
                 }
 
@@ -169,29 +169,29 @@ bool MxStore::apply(VarCRef config)
     ok = ok && cfg.hashcache.pepperLenMin <= cfg.hashcache.pepperLenMax;
     if(!ok)
     {
-        printf("MxStore::apply(): Failed to apply config\n");
+        logerror("MxStore::apply(): Failed to apply config\n");
         return false;
     }
 
     // config looks good, apply
-    printf("MxStore: minSearchLen = %zu\n", cfg.minSearchLen);
-    printf("MxStore: pepper len = %ju .. %ju\n", cfg.hashcache.pepperLenMin, cfg.hashcache.pepperLenMax);
-    printf("MxStore: pepper time = %ju seconds\n", cfg.hashcache.pepperTime / 1000);
-    printf("MxStore: wellknown cache time = %ju seconds\n", cfg.wellknown.cacheTime / 1000);
-    printf("MxStore: wellknown fail time = %ju seconds\n", cfg.wellknown.failTime / 1000);
-    printf("MxStore: wellknown request timeout = %ju ms\n", cfg.wellknown.requestTimeout);
-    printf("MxStore: wellknown request maxsize = %ju bytes\n", cfg.wellknown.requestMaxSize);
-    printf("MxStore: register max time = %ju seconds\n", cfg.register_.maxTime / 1000);
+    logdebug("MxStore: minSearchLen = %zu", cfg.minSearchLen);
+    logdebug("MxStore: pepper len = %ju .. %ju", cfg.hashcache.pepperLenMin, cfg.hashcache.pepperLenMax);
+    logdebug("MxStore: pepper time = %ju seconds", cfg.hashcache.pepperTime / 1000);
+    logdebug("MxStore: wellknown cache time = %ju seconds", cfg.wellknown.cacheTime / 1000);
+    logdebug("MxStore: wellknown fail time = %ju seconds", cfg.wellknown.failTime / 1000);
+    logdebug("MxStore: wellknown request timeout = %ju ms", cfg.wellknown.requestTimeout);
+    logdebug("MxStore: wellknown request maxsize = %ju bytes", cfg.wellknown.requestMaxSize);
+    logdebug("MxStore: register max time = %ju seconds", cfg.register_.maxTime / 1000);
 
     for(Config::Media::iterator it = cfg.media.begin(); it != cfg.media.end(); ++it)
-        printf("MxStore: Using field [%s] as medium [%s]\n", it->first.c_str(), it->second.c_str());
+        logdebug("MxStore: Using field [%s] as medium [%s]", it->first.c_str(), it->second.c_str());
 
     std::unique_lock lock(hashcache.mutex);
     // --------------------------------------------------
 
     for(Config::Hashes::const_iterator it = cfg.hashes.begin(); it != cfg.hashes.end(); ++it)
     {
-        printf("MxStore: Use hash [%s], lazy = %u\n", it->first.c_str(), it->second.lazy);
+        logdebug("MxStore: Use hash [%s], lazy = %u", it->first.c_str(), it->second.lazy);
         VarRef cache = hashcache.root()[it->first.c_str()];
         if(cache.type() != Var::TYPE_MAP)
             cache = false; // create dummy entry to signify the cache has to be generated
@@ -262,7 +262,7 @@ void MxStore::logout(const char* token)
 void MxStore::storeHomeserverForHost(const char* host, const char* hs, unsigned port)
 {
     assert(hs && *hs && port);
-    printf("Cache HS: [%s] -> [%s:%u]\n", host, hs, port);
+    logdebug("Cache HS: [%s] -> [%s:%u]", host, hs, port);
     std::unique_lock lock(wellknown.mutex);
     //---------------------------------------
     VarRef u = wellknown.root()[host];
@@ -273,7 +273,7 @@ void MxStore::storeHomeserverForHost(const char* host, const char* hs, unsigned 
 
 void MxStore::storeFailForHost(const char* host)
 {
-    printf("Cache fail for host: [%s]\n", host);
+    logdebug("Cache fail for host: [%s]", host);
     // FIXME: might want to use a CacheTable<> instead
     std::unique_lock lock(wellknown.mutex);
     //---------------------------------------
@@ -408,7 +408,7 @@ MxError MxStore::hashedBulkLookup(VarRef dst, VarCRef in, const char *algo, cons
         unhashedFuzzyLookup_nolock(dst, in);
 
 
-    printf("MxStore: Lookup (%u in, %u out) took %ju ms\n",
+    logdebug("MxStore: Lookup (%u in, %u out) took %ju ms\n",
         (unsigned)n, (unsigned)dst.size(), timer.ms());
 
     return M_OK;
@@ -449,7 +449,7 @@ MxError MxStore::unhashedFuzzyLookup_nolock(VarRef dst, VarCRef in)
             }
             if(addr.len < config.minSearchLen)
                 continue;
-            printf("Plaintext lookup [%u]: %s (%s)\n", (unsigned)find.size(), addr.s, med.s);
+            logdebug("Plaintext lookup [%u]: %s (%s)", (unsigned)find.size(), addr.s, med.s);
             FindEntry f { addr, med };
             find.push_back(f);
         }
@@ -523,7 +523,7 @@ void MxStore::rotateHashPepper_nolock(u64 now)
     int r = RandomNumberBetween((int)config.hashcache.pepperLenMin, (int)config.hashcache.pepperLenMax);
     hashPepper = GenerateHashPepper(r);
     hashPepperTS = now;
-    printf("Hash pepper update, is now [%s]\n", hashPepper.c_str());
+    log("Hash pepper update, is now [%s]", hashPepper.c_str());
 
     rebuildHashCache_nolock();
 }
@@ -541,7 +541,7 @@ MxError MxStore::_generateHashCache_nolock(VarRef cache, const char* algo)
             return M_INVALID_PARAM;
     }
 
-    printf("Generating hash cache for [%s]...\n", algo);
+    logdebug("Generating hash cache for [%s]...", algo);
 
     Var::Map *mdst = cache.makeMap().v->map();
 
@@ -561,7 +561,7 @@ MxError MxStore::_generateHashCache_nolock(VarRef cache, const char* algo)
         PoolStr mediumps = threepid.getSL(mediumref);
 
         size_t done = 0;
-        printf("... medium \"%s\"...", mediumps.s);
+        logdebug("... medium \"%s\"...", mediumps.s);
 
         const Var::Map *m = j.value().map();
         assert(m);
@@ -610,9 +610,9 @@ MxError MxStore::_generateHashCache_nolock(VarRef cache, const char* algo)
             }
         }
 
-        printf(" %zu entries done\n", done);
+        logdebug(" %zu entries done", done);
     }
-    printf("... done generating cache, took %ju ms\n", timer.ms());
+    logdebug("... done generating cache, took %ju ms", timer.ms());
     return M_OK;
 }
 
@@ -622,12 +622,13 @@ void MxStore::_clearHashCache_nolock()
     if(m)
         for(Var::Map::MutIterator it = m->begin(); it != m->end(); ++it)
             it.value().setBool(hashcache, false);
-    printf("Hash cache cleared\n");
+    logdebug("Hash cache cleared");
 }
 
 void MxStore::markForRehash_nolock()
 {
     hashPepperTS = 0;
+    logdebug("Marked for rehash on next access");
 }
 
 /*static*/ std::string MxStore::GenerateHashPepper(size_t n)
@@ -665,7 +666,7 @@ void MxStore::_Rebuild3pidMap(VarRef dst, VarCRef src, const char* fromkey)
         }
     }
 
-    printf("MxStore: Rebuilt 3pid from [%s], %zu entries in %llu ms\n", fromkey, n, timer.ms());
+    logdebug("MxStore: Rebuilt 3pid from [%s], %zu entries in %llu ms", fromkey, n, timer.ms());
 }
 
 void MxStore::onTreeRebuilt(VarCRef src)

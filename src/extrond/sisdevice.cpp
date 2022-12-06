@@ -15,14 +15,14 @@ static bool readtime(u64& t, VarCRef mapref, const char *key, bool missing)
     {
         if (!strToDurationMS_Safe(&t, x.asCString()))
         {
-            printf("SISDevice: Failed to parse %s\n", key);
+            logerror("SISDevice: Failed to parse %s", key);
             return false;
         }
     }
     else
     {
         if(!missing)
-            printf("SISDevice: Key '%s' not present (need a duration)\n", key);
+            logerror("SISDevice: Key '%s' not present (need a duration)", key);
         return missing;
     }
 
@@ -35,7 +35,7 @@ bool SISDevice::init(VarCRef devcfg)
     if(!ok)
     {
         std::string err = dumpjson(devcfg, true);
-        printf("SISDevice::init(): Bad config. This is the failed JSON:\n%s\n", err.c_str());
+        logerror("SISDevice::init(): Bad config. This is the failed JSON:\n%s", err.c_str());
     }
     return ok;
 }
@@ -52,14 +52,14 @@ bool SISDevice::_import(VarCRef ref)
         const char *ssc = xsc.asCString();
         if(!ssc)
         {
-            printf("SISDevice: Property 'script' is not a string\n");
+            logerror("SISDevice: Property 'script' is not a string");
             return false;
         }
         script = ssc;
     }
     else
     {
-        printf("SISDevice: Need 'script', can't do anything without it\n");
+        logerror("SISDevice: Need 'script', can't do anything without it");
         return false;
     }
 
