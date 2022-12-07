@@ -124,7 +124,6 @@ static void _log_setcolor(bool stdout_stream, ConsoleColor color)
             FG_MAGENTA,                                         // LMAGENTA
             FG_CYAN,                                            // LCYAN
             FG_WHITE                                            // LWHITE
-            FG_WHITE
     };
     static_assert(Countof(UnixColorFG) == MAX_COLORS);
 
