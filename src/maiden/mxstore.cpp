@@ -652,7 +652,6 @@ void MxStore::markForRehash_nolock()
 
 void MxStore::_Rebuild3pidMap(VarRef dst, VarCRef src, const char* fromkey)
 {
-    assert(dst.mem == src.mem); // this simplifies things a lot and makes it really fast, too
     const Var::Map* m = src.v->map();
     Var::Map* dm = dst.v->map();
 
@@ -668,10 +667,13 @@ void MxStore::_Rebuild3pidMap(VarRef dst, VarCRef src, const char* fromkey)
     for (Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
     {
         StrRef mxidRef = it.key();
-        const Var* val = it.value().lookup(keyref); // val = d[fromkey]
+        const Var* val = it.value().lookup(keyref); // val = d[mxid]
         if (val && val->type() == Var::TYPE_STRING)
         {
-            dm->getOrCreate(*dst.mem, mxidRef).setStrRef(*dst.mem, val->asStrRef()); // dst[mxid] = val
+            PoolStr psMxid = src.mem->getSL(mxidRef);
+            PoolStr psVal = src.mem->getSL(val->asStrRef());
+            // dm[mxid] = val
+            dm->putKey(*dst.mem, psMxid.s, psMxid.len).setStr(*dst.mem, psVal.s, psVal.len);
             ++n;
         }
     }
