@@ -14,10 +14,10 @@
     "identity": {
         // webserver config
         "listen": [
-            { "host": "0.0.0.0", "port": 8091, "ssl": true },
             { "host": "0.0.0.0", "port": 8090, "ssl": false },
+            //{ "host": "0.0.0.0", "port": 8091, "ssl": true }, // requires a valid cert if used
         ],
-        "cert": "localhost.pem",
+        "cert": "localhost.pem", // ignored if SSL is not used
         "listen_threads": 0,
         // intentity config
         
@@ -34,7 +34,7 @@
         // webserver config
         "listen": [
             { "host": "0.0.0.0", "port": 8088, "ssl": false },
-            { "host": "0.0.0.0", "port": 8089, "ssl": true },
+            //{ "host": "0.0.0.0", "port": 8089, "ssl": true }, // requires a valid cert if used
         ],
         "cert": "localhost.pem",
         "listen_threads": 0,
@@ -57,33 +57,9 @@
         // The config is only secure if ask+check are both on!
         "ask_homeserver_timeout": "3s",
     },
-
-    // Optionally, serve .well-known if no other service is serving it already
-    // Clients expect this on https (port 443) with a valid cert.
-    "wellknown": {
-        "listen": [
-            { "port": 443, "ssl": true },
-        ],
-        "cert": "localhost.pem",
-        "listen_threads": 1,
-        
-        // JSON data served under /.well-known/matrix/client
-        "client": {
-            "m.homeserver": {
-                "base_url": "http://localhost:8008"
-            },
-            "m.identity_server": {
-                "base_url": "http://localhost:8090"
-            },
-        },
-        // JSON data served under /.well-known/matrix/server
-        "server": {
-            "m.server": "http://localhost:8008"
-        },
-    },
-
     
     // -- Global 3pid database ---
+    // Required by the identity server, otherwise unused
     "3pid": {
         "hashcache": {
             "pepperTime": "1h", // hash pepper is rotated after this time

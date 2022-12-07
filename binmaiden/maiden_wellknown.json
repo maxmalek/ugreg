@@ -1,0 +1,25 @@
+{
+    // Optionally, serve .well-known if no other service is serving it already
+    // Clients expect this on https (port 443) with a valid cert.
+    "wellknown": {
+        "listen": [
+            { "port": 443, "ssl": true },
+        ],
+        "cert": "localhost.pem",
+        "listen_threads": 1,
+        
+        // JSON data served under /.well-known/matrix/client
+        "client": {
+            "m.homeserver": {
+                "base_url": "http://localhost:8008"
+            },
+            "m.identity_server": {
+                "base_url": "http://localhost:8090"
+            },
+        },
+        // JSON data served under /.well-known/matrix/server
+        "server": {
+            "m.server": "http://localhost:8008"
+        },
+    },
+}
