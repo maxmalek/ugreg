@@ -27,6 +27,7 @@ struct MxSearchConfig
     size_t maxsize = 1024; // max. size of search request, json and all
     bool fuzzy = false;
     bool element_hack = false;
+    bool debug_dummy_result = false;
 };
 
 

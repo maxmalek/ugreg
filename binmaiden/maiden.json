@@ -56,6 +56,10 @@
         // Note: if this is disabled, there is no checking, ie. any unauthenticated user can just curl the search API!
         // The config is only secure if ask+check are both on!
         "ask_homeserver_timeout": "3s",
+        
+        // Include a dummy entry with some stats about the search
+        // Do NOT enable this in production!
+        "debug_dummy_result": true,
     },
     
     // -- Global 3pid database ---

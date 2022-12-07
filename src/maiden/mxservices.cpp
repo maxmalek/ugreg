@@ -150,6 +150,9 @@ bool MxSearchHandler::init(VarCRef cfg)
     if (VarCRef xproxy = cfg.lookup("ask_homeserver"))
         askHS = xproxy && xproxy.asBool();
 
+    if (VarCRef xdd = cfg.lookup("debug_dummy_result"))
+        searchcfg.debug_dummy_result = xdd && xdd.asBool();
+
     hsTimeout = -1;
     if(VarCRef xtm = cfg.lookup("ask_homeserver_timeout"))
         if(const char *stm = xtm.asCString())
@@ -185,6 +188,7 @@ bool MxSearchHandler::init(VarCRef cfg)
     logdebug("MxSearchHandler: Ask homeserver: %s", askHS ? "yes" : "no");
     logdebug("MxSearchHandler: Ask homeserver timeout: %d ms", hsTimeout);
     logdebug("MxSearchHandler: Check homeserver: %s", checkHS ? "yes" : "no");
+    logdebug("MxSearchHandler: debug_dummy_result: %s", searchcfg.debug_dummy_result ? "yes" : "no");
 
     _sources.addListener(&this->search);
     return true;
@@ -193,14 +197,17 @@ bool MxSearchHandler::init(VarCRef cfg)
 void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
 {
     const std::vector<TwoWayCasefoldMatcher> matchers = mxBuildMatchersForTerm(term);
-    std::ostringstream os;
-    os << "MxSearchHandler [" << term << "] -> " << matchers.size() << " matchers: ";
-    for(size_t i = 0; i < matchers.size(); ++i)
-        os << '[' << matchers[i].needle() << ']';
-    logdebug("%s", os.str().c_str());
+    {
+        std::ostringstream os;
+        os << "MxSearchHandler [" << term << "] -> " << matchers.size() << " matchers: ";
+        for(size_t i = 0; i < matchers.size(); ++i)
+            os << '[' << matchers[i].needle() << ']';
+        logdebug("%s", os.str().c_str());
+    }
 
     TwoWayCasefoldMatcher fullmatch(term, strlen(term));
     MxSearch::Matches hits = search.search(matchers, searchcfg.fuzzy, searchcfg.element_hack ? &fullmatch : NULL);
+    const size_t totalhits = hits.size();
 
     // keep best matches, drop the rest if above the limit
     bool limited = false;
@@ -210,6 +217,9 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
         hits.resize(limit);
         limited = true;
     }
+
+    if(hits.size() && hits.size() == limit && searchcfg.debug_dummy_result)
+        hits.pop_back(); // make room for the dummy entry
 
     // resolve matches to something readable
     MxSources::SearchResults results = _sources.formatMatches(searchcfg, hits.data(), hits.size(), term);
@@ -221,6 +231,21 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
 
     const bool useAvatar = !searchcfg.avatar_url.empty();
     const bool elementHack = searchcfg.element_hack;
+
+    if(searchcfg.debug_dummy_result)
+    {
+        std::ostringstream os;
+        os << "SEARCH[" << term << "] DEBUG: " << totalhits << " hits, limit " << limit
+           << ", " << matchers.size() << " matchers: ";
+        for (size_t i = 0; i < matchers.size(); ++i)
+            os << '[' << matchers[i].needle() << ']';
+
+        MxSources::SearchResult dummy;
+        dummy.displayname = os.str();
+        dummy.str = "@debug_dummy_result:localhost"; // matrix spec requires this to exist
+        results.insert(results.begin(), std::move(dummy));
+    }
+
     for (size_t i = 0; i < results.size(); ++i)
     {
         VarRef d = ra.at(i).makeMap();
