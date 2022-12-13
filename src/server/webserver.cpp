@@ -91,10 +91,10 @@ bool WebServer::start(const ServerConfig& cfg)
                 ls << 's';
         }
         listenbuf = ls.str();
-        log("WS: Listening on %s\n", listenbuf.c_str());
+        log("WS: Listening on %s", listenbuf.c_str());
     }
     std::string threadsbuf = std::to_string(cfg.listen_threads);
-    logdebug("WS: Using %u request worker threads\n", cfg.listen_threads);
+    logdebug("WS: Using %u request worker threads", cfg.listen_threads);
 
 
     // via https://github.com/civetweb/civetweb/blob/master/docs/UserManual.md
@@ -111,7 +111,7 @@ bool WebServer::start(const ServerConfig& cfg)
 
     if(cfg.cert.length())
     {
-        logdebug("WS: ssl_certificate = '%s'\n", cfg.cert.c_str());
+        logdebug("WS: ssl_certificate = '%s'", cfg.cert.c_str());
         options[6] = "ssl_certificate";
         options[7] = cfg.cert.c_str();
     }
@@ -119,7 +119,7 @@ bool WebServer::start(const ServerConfig& cfg)
     mg_context *ctx = mg_start(&cb, NULL, options);
     if(!ctx)
     {
-        logerror("mg_start() failed! (Is something already listening on our port?)\n");
+        logerror("mg_start() failed! (Is something already listening on our port?)");
         return false;
     }
 
