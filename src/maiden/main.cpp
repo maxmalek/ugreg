@@ -150,7 +150,7 @@ private:
     ServerAndConfig() {}
 };
 
-WebServer *prepareServer(std::vector<ServerAndConfig*> servers, RequestHandler *h, VarCRef cfg)
+WebServer *prepareServer(std::vector<ServerAndConfig*>& servers, RequestHandler *h, VarCRef cfg)
 {
     ServerAndConfig *sc = ServerAndConfig::New(cfg);
     if(!sc)
@@ -165,7 +165,7 @@ static MxSearchHandler *search;
 static MxWellknownHandler *wellknown;
 static MxStore *mxs; // needed by identity
 
-static bool initServices(std::vector<ServerAndConfig*> servers, MxSources& sources, VarCRef cfg)
+static bool initServices(std::vector<ServerAndConfig*>& servers, MxSources& sources, VarCRef cfg)
 {
     if(VarCRef x = cfg.lookup("identity"))
     {
@@ -271,6 +271,7 @@ static int main2(MxSources& sources, int argc, char** argv)
         if(mxs)
             mxs->rotateHashPepper();
 
+        logdebug("Starting %u web servers...", (unsigned)servers.size());
         WebServer::StaticInit();
 
         if(!startServers(servers))
