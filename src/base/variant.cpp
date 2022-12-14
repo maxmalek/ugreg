@@ -1495,6 +1495,11 @@ VarRef VarRef::lookup(const char* key, size_t len) const
     return VarRef(*mem, v->lookup(*mem, key, len));
 }
 
+VarRef VarRef::lookup(StrRef k)
+{
+    return VarRef(*mem, v->lookup(k));
+}
+
 VarCRef VarCRef::at(size_t idx) const
 {
     return VarCRef(*mem, v->at(idx));
@@ -1508,6 +1513,11 @@ VarCRef VarCRef::lookup(const char* key) const
 VarCRef VarCRef::lookup(const char* key, size_t len) const
 {
     return VarCRef(*mem, v->lookup(*mem, key, len));
+}
+
+VarCRef VarCRef::lookup(StrRef k)
+{
+    return VarCRef(*mem, v->lookup(k));
 }
 
 Var VarCRef::clone(TreeMem& dst) const

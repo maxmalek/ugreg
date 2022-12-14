@@ -449,6 +449,7 @@ public:
     VarRef at(size_t idx) const;          // does not convert to array
     VarRef lookup(const char* key) const; // does not convert to map
     VarRef lookup(const char* key, size_t len) const; // does not convert to map
+    VarRef lookup(StrRef k); // does not convert to map
 
     // converts into a map, creates key if not present, so that a construction like this:
     // VarRef ref = ...;
@@ -527,6 +528,7 @@ public:
     VarCRef at(size_t idx) const;          // does not convert to array
     VarCRef lookup(const char *key) const; // does not convert to map
     VarCRef lookup(const char *key, size_t len) const; // does not convert to map
+    VarCRef lookup(StrRef k); // does not convert to map
     Var clone(TreeMem& dst) const;
 
     Var::CompareResult compare(Var::CompareMode cmp, const VarCRef& o);

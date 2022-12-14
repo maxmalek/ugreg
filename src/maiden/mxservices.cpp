@@ -259,6 +259,100 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     }
 }
 
+// transform array of results into map of results, keyed by user_id
+static Var makemapOrNil(TreeMem& dstmem, VarCRef ref, std::vector<StrRef>& order)
+{
+    Var v;
+    if(ref && ref.type() == Var::TYPE_ARRAY)
+    {
+        StrRef user_id = ref.mem->lookup("user_id", 7);
+        if(user_id) // if this is not present, ref is probably empty
+        {
+            VarRef dst(dstmem, &v);
+            size_t n = ref.size();
+            dst.makeMap(n);
+            const Var *a = ref.v->array();
+            for(size_t i = 0; i < n; ++i)
+            {
+                VarCRef e = ref.at(i);
+                if(VarCRef xuser = e.lookup(user_id))
+                {
+                    PoolStr ps = xuser.asString();
+                    if(ps.s)
+                    {
+                        logdev("  %s", ps.s);
+                        dst[ps.s].replace(e); // makes a copy
+                        StrRef k = dstmem.translateS(*ref.mem, xuser.v->asStrRef());
+                        assert(k);
+                        order.push_back(k);
+                    }
+                }
+            }
+        }
+    }
+    return v;
+}
+
+// take a[...].user_id as key, move value out of combined into adst[...]
+static size_t moveResults(Var *adst, size_t maxsize, VarRef combined, const std::vector<StrRef>& order)
+{
+    size_t done = 0;
+    for (size_t i = 0; i < order.size() && done < maxsize; ++i)
+    {
+        StrRef k = order[i];
+        VarRef e = combined.lookup(k);
+        assert(e);
+        if(!e.isNull()) // already moved out? (whenever there were dups, ie. order contained the same entry more than once)
+            adst[done++] = std::move(*e.v);
+    }
+    return done;
+}
+
+// Merge own search results and those of the homeserver together,
+// so that the array order is preserved but duplicates are properly merged and appear only once.
+// res is our search result, hs is the homerserver's
+static void mergeResults(VarRef res, VarCRef hs, size_t limit)
+{
+    if(!hs || hs.type() != Var::TYPE_MAP)
+        return;
+    VarCRef hsresults = hs.lookup("results");
+    std::vector<StrRef> order;
+    logdev("makemapOrNil hsmap:");
+    Var hsmap = makemapOrNil(*res.mem, hsresults, order);
+    if(hsmap.isNull())
+        return;
+
+    // If we're here, HS has found some results. Need to merge properly,
+    // possibly de-duplicating in case HS found some of the same users as we did
+    VarRef myresults = res["results"];
+    logdev("makemapOrNil mymap:");
+    Var mymap = makemapOrNil(*res.mem, myresults, order);
+
+    VarRef myref(res.mem, &mymap);
+    VarRef hsref(res.mem, &hsmap);
+
+    // Since the user_id is now also used as key, this is a de-duplicating merge
+    // HS data is merged into ours, so the HS wins any conflicts
+    myref.merge(hsref, MERGE_RECURSIVE);
+
+    size_t N = std::min(limit, myref.size());
+    if(N < myref.size())
+        res["limited"] = true;
+    Var oldresults = std::move(*myresults.v);
+    myresults.makeArray(N);
+    Var *a = myresults.v->array();
+
+    size_t done = moveResults(a, N, myref, order);
+    logdev("Consolidated hs:%zu & mine:%zu -> %zu", hsmap.size(), mymap.size(), done);
+    assert(done == N);
+    if(done < N)
+        myresults.makeArray(done);
+
+    mymap.clear(*res.mem);
+    hsmap.clear(*res.mem);
+    oldresults.clear(*res.mem);
+}
+
 int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
     if(rq.type != RQ_POST)
@@ -354,19 +448,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 
                 // merge HS results on top (HS results win and override our own search results)
                 if(useHS)
-                {
-                    vars.root().merge(hsdata.root(), MERGE_APPEND_ARRAYS | MERGE_RECURSIVE);
-                    if(VarRef xresults = vars.root().lookup("results"))
-                    {
-                        if(xresults.size() > limit)
-                        {
-                            xresults.makeArray(limit);
-                            vars.root()["limited"] = true;
-                        }
-                    }
-                }
-
-                // TODO: respect limit
+                    mergeResults(vars.root(), hsdata.root(), limit);
 
                 writeJson(dst, vars.root(), false);
                 return 0;

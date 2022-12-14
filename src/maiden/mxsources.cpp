@@ -508,7 +508,7 @@ MxSources::SearchResults MxSources::formatMatches(const MxSearchConfig& scfg, co
         }
     }
 
-    logdebug("MxSources::formatMatches(): %zu/%zu results in %u ms\n",
+    logdebug("MxSources::formatMatches(): %zu/%zu results in %u ms",
         res.size(), n, unsigned(timer.ms()));
 
     return res;
