@@ -9,11 +9,11 @@ ldap3.set_config_parameter("DEFAULT_CLIENT_ENCODING", "utf-8")
 ldap3.set_config_parameter("DEFAULT_SERVER_ENCODING", "utf-8")
 
 class LDAPFetcher:
-    def __init__(self, env):
-        self.host = env["LDAP_HOST"]
-        self.dn = env["LDAP_BIND_DN"]
-        self.filt = env["LDAP_SEARCH_FILTER"]
-        self.pwd = env["LDAP_PASS"]
+    def __init__(self, host = None, pw = None, dn = None, filter = None):
+        self.host = host or env["LDAP_HOST"]
+        self.dn = dn or env["LDAP_BIND_DN"]
+        self.filt = filter or env["LDAP_SEARCH_FILTER"]
+        self.pwd = pw or env["LDAP_PASS"]
 
     """ Returns a generator expression that produces dicts with all requested search fields"""
     def fetch(self, base, fields):

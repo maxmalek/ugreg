@@ -43,6 +43,10 @@ ap.add_argument("--regex", nargs=3, type=str, metavar=("FIELD=EXPR", "match", "r
 ap.add_argument("--output", type=str, action="append", metavar="list,of,extra,fields,returnas=oldname")
 ap.add_argument("--mxid", type=str, metavar="FIELD", default="mxid")
 ap.add_argument("--test", type=str, metavar="JSON-file")
+ap.add_argument("--ldap-dn", type=str, dest="dn")
+ap.add_argument("--ldap-pass", type=str, dest="pw")
+ap.add_argument("--ldap-filter", type=str, dest="filter")
+ap.add_argument("--ldap-host", type=str, dest="host")
 
 args = ap.parse_args()
 del ap
@@ -55,6 +59,12 @@ if args.test:
     with open(args.test) as fh:
         js = json.load(fh)
     env = js["env"]
+
+# optional, if not present env vars are used
+ldap_dn = args.dn or env["LDAP_BIND_DN"]
+ldap_pass = args.pw or env["LDAP_PASS"]
+ldap_filter = args.filter or env["LDAP_SEARCH_FILTER"]
+ldap_host = args.host or env["LDAP_HOST"]
 
 # requires a=b to be split into 2 parts
 def splitexpr(s:str) -> (str,str):
@@ -187,7 +197,7 @@ json.dump(FIELDS, sys.stdout)
 
 # -- begin actual data
 sys.stdout.write(",\n\"data\":\n")
-json.dump(OutputFakeDict(LDAPFetcher(env).fetch(args.base, used.missing)),
+json.dump(OutputFakeDict(LDAPFetcher(host=ldap_host, pw=ldap_pass, dn=ldap_dn, filter=ldap_filter).fetch(args.base, used.missing)),
     sys.stdout,
     separators=(",",":"), # Reduce whitespace
     check_circular=False, # Saves some time
