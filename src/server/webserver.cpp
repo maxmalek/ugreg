@@ -252,7 +252,8 @@ int RequestHandler::_onRequest(mg_connection* conn) const
             }
             if(!status) // 0 means the handler didn't error out
             {
-                mg_send_chunk(conn, "", 0); // terminating chunk
+                // closing chunk is sent by SocketWriteStream dtor
+                //mg_send_chunk(conn, "", 0); // terminating chunk
                 status = 200; // all good
             }
         }

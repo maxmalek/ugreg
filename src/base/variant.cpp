@@ -1425,9 +1425,9 @@ bool _VarMap::check(const Accessor& a) const
     return !_extra ||_extra->check(a);
 }
 
-VarRef& VarRef::makeMap()
+VarRef& VarRef::makeMap(size_t prealloc)
 {
-    v->makeMap(*mem);
+    v->makeMap(*mem, prealloc);
     return *this;
 }
 

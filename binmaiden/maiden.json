@@ -50,16 +50,20 @@
         "displayname": "displayname", // Field to show as the display name
         //"avatar_url": "mxc://...",
         "homeserver": { "host": "localhost", "port": 8008, "ssl": false },
-        "reverseproxy": true,
-        "ask_homeserver": false, // forward search requests to homeserver
-        "check_homeserver": false, // require homeserver to return a valid search result before we merge in our own.
+        // Forward search requests to homeserver. Should be enabled in production.
+        // Results by the HS will be merged into our own; the HS has priority.
+        "ask_homeserver": true,
+        // Require homeserver to return a valid search result before we merge in our own.
+        // The HS will refuse if no valid auth token is passed,
+        // ie. this also ensures that the search is authenticated by a logged-in user.
         // Note: if this is disabled, there is no checking, ie. any unauthenticated user can just curl the search API!
         // The config is only secure if ask+check are both on!
+        "check_homeserver": true,
+        // Fail if the HS takes longer than this to reply
         "ask_homeserver_timeout": "3s",
-        
         // Include a dummy entry with some stats about the search
-        // Do NOT enable this in production!
-        "debug_dummy_result": true,
+        // Should be disabled in production
+        "debug_dummy_result": false,
     },
     
     // -- Global 3pid database ---

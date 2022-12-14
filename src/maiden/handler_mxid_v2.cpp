@@ -320,7 +320,7 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
         target.port = resolv.target.port;
         target.ssl = true; // FIXME: autodetect based on port or can we deduce this from something else?
 
-        MxGetJsonResult jr = mxRequestJson(RQ_GET, tmp.root(), target, VarCRef(), 5000, 4*1024);
+        MxGetJsonResult jr = mxRequestJson(RQ_GET, tmp.root(), target, VarCRef(), VarCRef(), 5000, 4*1024);
         switch(jr.code)
         {
             case MXGJ_OK:

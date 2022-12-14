@@ -34,6 +34,16 @@ SocketWriteStream::SocketWriteStream(void* conn, char* buf, size_t bufsize, cons
 {
 }
 
+SocketWriteStream::~SocketWriteStream()
+{
+    if(!_err)
+    {
+        Flush();
+        mg_connection* conn = static_cast<mg_connection*>(_conn);
+        mg_send_chunk(conn, "", 0);
+    }
+}
+
 size_t SocketWriteStream::_WriteInit(const void* src, size_t bytes, BufferedWriteStream* self)
 {
     SocketWriteStream* me = static_cast<SocketWriteStream*>(self);
@@ -64,6 +74,11 @@ ThrowingSocketWriteStream::~ThrowingSocketWriteStream()
     try // make sure this won't throw in the parent dtor
     {
         Flush();
+        if (!_err)
+        {
+            mg_connection* conn = static_cast<mg_connection*>(_conn);
+            mg_send_chunk(conn, "", 0);
+        }
     }
     catch(WriteFail) {}
 }

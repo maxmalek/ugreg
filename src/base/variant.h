@@ -443,7 +443,7 @@ public:
     void* asPtr() const { return v->asPtr(); }
 
     // Returns this, transmuted to a different type. If the type is changed, old values are lost.
-    VarRef& makeMap();
+    VarRef& makeMap(size_t prealloc = 0);
     VarRef& makeArray(size_t n);
 
     VarRef at(size_t idx) const;          // does not convert to array

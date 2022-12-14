@@ -9,7 +9,6 @@ public:
 
 private:
     static size_t _Read(void* dst, size_t bytes, BufferedReadStream* self);
-    void _Init(BufferedReadStream* self);
     void* const _conn; // mg_connection
     size_t _maxsize;
 };
@@ -20,6 +19,7 @@ class SocketWriteStream : public BufferedWriteStream
 {
 public:
     SocketWriteStream(void *conn, char *buf, size_t bufsize, const char* hdr, size_t hdrsize); // mg_connection
+    ~SocketWriteStream();
 private:
     static size_t _WriteInit(const void* src, size_t bytes, BufferedWriteStream * self);
     static size_t _WriteChunked(const void* src, size_t bytes, BufferedWriteStream * self);

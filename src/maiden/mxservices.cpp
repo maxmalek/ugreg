@@ -227,7 +227,6 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     dst.makeMap().v->map()->clear(*dst.mem); // make sure it's an empty map
 
     dst["limited"] = limited;
-    VarRef ra = dst["results"].makeArray(results.size());
 
     const bool useAvatar = !searchcfg.avatar_url.empty();
     const bool elementHack = searchcfg.element_hack;
@@ -245,6 +244,8 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
         dummy.str = "@debug_dummy_result:localhost"; // matrix spec requires this to exist
         results.insert(results.begin(), std::move(dummy));
     }
+
+    VarRef ra = dst["results"].makeArray(results.size());
 
     for (size_t i = 0; i < results.size(); ++i)
     {
@@ -299,8 +300,17 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                 bool useHS = false;
                 if(askHS)
                 {
-                    // forward client request as-is
-                    MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), this->homeserver, vars.root(), hsTimeout);
+                    // forward client request
+                    Var hvar;
+                    VarRef headers(vars, &hvar);
+                    // without auth, this is going to fail because the HS will say no
+                    if(!rq.authorization.empty())
+                        headers["Authorization"] = rq.authorization.c_str();
+
+                    URLTarget hs = this->homeserver;
+                    hs.path = ClientPrefix + rq.query; // forward URL as-is
+                    MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), hs, vars.root(), headers, hsTimeout);
+                    headers.clear();
                     useHS = jr.code == MXGJ_OK && !hsdata.root().lookup("error");
                     if(checkHS)
                     {
@@ -318,15 +328,34 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                             return jr.httpstatus;
                         }
                     }
+
+                    // If the HS sends enough hits there is no need to perform a search
+                    if (VarRef xresults = hsdata.root().lookup("results"))
+                        if (xresults.type() == Var::TYPE_ARRAY && xresults.size() >= limit)
+                        {
+                            logdebug("MxSearchHandler: Got %zu results from HS, done here", xresults.size());
+                            writeJson(dst, hsdata.root(), false);
+                            return 0;
+                        }
                 }
                 
-                // out is now whatever the HS returned (if any), re-use vars for the search since we don't need those anymore
-                vars.root().v->makeMap(vars, 0)->clear(vars);
+                // re-use vars for the search since we don't need those anymore
+                vars.root().v->makeMap(vars)->clear(vars);
                 doSearch(vars.root(), term.c_str(), limit);
 
                 // merge HS results on top (HS results win and override our own search results)
                 if(useHS)
+                {
                     vars.root().merge(hsdata.root(), MERGE_APPEND_ARRAYS | MERGE_RECURSIVE);
+                    if(VarRef xresults = vars.root().lookup("results"))
+                    {
+                        if(xresults.size() > limit)
+                        {
+                            xresults.makeArray(limit);
+                            vars.root()["limited"] = true;
+                        }
+                    }
+                }
 
                 // TODO: respect limit
 

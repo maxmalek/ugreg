@@ -26,41 +26,67 @@ mg_connection* mxConnectTo(const URLTarget& target, char *errbuf, size_t errbufs
     return NULL;
 }
 
-static void formatGet(std::ostringstream& os, const URLTarget& target)
+static void formatHeaders(std::ostringstream& os, const VarCRef& hdrs)
 {
+    if(!hdrs || hdrs.isNull())
+        return;
+    const Var::Map *m = hdrs.v->map();
+    assert(m);
+
+    for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+    {
+        const char *key = hdrs.mem->getS(it.key());
+        const char *val = it.value().asCString(*hdrs.mem);
+        assert(key && val);
+        os << key << ": " << val << "\r\n";
+    }
+}
+
+static void formatGet(std::ostringstream& os, const URLTarget& target, const VarCRef& hdrs)
+{
+    assert(!target.path.empty());
+    assert(!target.host.empty());
     os << "GET " << target.path << " HTTP/1.1\r\n"
         << "Host: " << target.host << "\r\n"
         << "Connection: close\r\n"
-        << "Accept: application/json\r\n"
-        << "\r\n";
+        << "Accept: application/json\r\n";
+    formatHeaders(os, hdrs);
+    os << "\r\n";
 }
 
-static void formatPost(std::ostringstream& os, const URLTarget& target)
+static void formatPost(std::ostringstream& os, const URLTarget& target, const VarCRef& hdrs)
 {
+    assert(!target.path.empty());
+    assert(!target.host.empty());
     os << "POST " << target.path << " HTTP/1.1\r\n"
         << "Host: " << target.host << "\r\n"
         << "Connection: close\r\n"
         << "Content-Type: application/json\r\n"
         << "Accept: application/json\r\n"
-        << "\r\n";
+        << "Transfer-Encoding: chunked\r\n";
+    formatHeaders(os, hdrs);
+    os << "\r\n";
 }
 
 static void sendHeaderAndBody(mg_connection *c, const VarCRef& data, const char *hdr, size_t hdrsize)
 {
-    //char buf[8 * 1024];
-    //SocketWriteStream out(c, buf, sizeof(buf), hdr, hdrsize);
-    //writeJson(out, data, false);
+    logdev("HEAD> %s", hdr);
 
-    mg_write(c, hdr, hdrsize);
+    char buf[8 * 1024];
+    SocketWriteStream out(c, buf, sizeof(buf), hdr, hdrsize);
+    writeJson(out, data, false);
+
+    /*mg_write(c, hdr, hdrsize);
 
     if(data)
     {
         std::string body = dumpjson(data);
+        logdev("BODY> %s", body.c_str());
         mg_write(c, body.c_str(), body.length());
-    }
+    }*/
 }
 
-MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& target, const VarCRef& data, int timeoutMS, size_t maxsize)
+MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& target, const VarCRef& data, const VarCRef& headers, int timeoutMS, size_t maxsize)
 {
     char errbuf[1024] = { 0 };
     MxGetJsonResult ret = {MXGJ_CONNECT_FAILED, -1};
@@ -71,8 +97,13 @@ MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& targ
         switch(rqt)
         {
             default: assert(false); [[fallthrough]];
-            case RQ_GET: formatGet(os, target); break;
-            case RQ_POST: formatPost(os, target); break; // TODO: data?
+            case RQ_GET:
+                assert(!data);
+                formatGet(os, target, headers);
+                break;
+            case RQ_POST:
+                formatPost(os, target, headers);
+                break; 
         }
 
         std::string request = os.str();
