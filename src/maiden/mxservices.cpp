@@ -309,7 +309,9 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 
                     URLTarget hs = this->homeserver;
                     hs.path = ClientPrefix + rq.query; // forward URL as-is
+                    ScopeTimer tm;
                     MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), hs, vars.root(), headers, hsTimeout);
+                    logdev("mxRequestJson done after %u ms, result = %u", (unsigned)tm.ms(), jr.code);
                     headers.clear();
                     useHS = jr.code == MXGJ_OK && !hsdata.root().lookup("error");
                     if(checkHS)
@@ -330,13 +332,20 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                     }
 
                     // If the HS sends enough hits there is no need to perform a search
-                    if (VarRef xresults = hsdata.root().lookup("results"))
-                        if (xresults.type() == Var::TYPE_ARRAY && xresults.size() >= limit)
+                    VarRef xresults = hsdata.root().lookup("results");
+                    if(xresults && xresults.type() == Var::TYPE_ARRAY)
+                    {
+                        const size_t n = xresults.size();
+                        logdev("HS found %zu users", n);
+                        if (n >= limit)
                         {
-                            logdebug("MxSearchHandler: Got %zu results from HS, done here", xresults.size());
+                            logdebug("MxSearchHandler: %zu/%u results from HS, done here", xresults.size(), limit);
                             writeJson(dst, hsdata.root(), false);
                             return 0;
                         }
+                    }
+                    else
+                        logerror("HS didn't send results array! (This is against the spec)");
                 }
                 
                 // re-use vars for the search since we don't need those anymore

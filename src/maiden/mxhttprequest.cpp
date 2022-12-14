@@ -75,15 +75,6 @@ static void sendHeaderAndBody(mg_connection *c, const VarCRef& data, const char 
     char buf[8 * 1024];
     SocketWriteStream out(c, buf, sizeof(buf), hdr, hdrsize);
     writeJson(out, data, false);
-
-    /*mg_write(c, hdr, hdrsize);
-
-    if(data)
-    {
-        std::string body = dumpjson(data);
-        logdev("BODY> %s", body.c_str());
-        mg_write(c, body.c_str(), body.length());
-    }*/
 }
 
 MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& target, const VarCRef& data, const VarCRef& headers, int timeoutMS, size_t maxsize)
