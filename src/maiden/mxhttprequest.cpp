@@ -105,3 +105,22 @@ MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& targ
 
     return ret;
 }
+
+std::string MxGetJsonResult::getErrorMsg() const
+{
+    if(code == MXGJ_OK)
+        return std::string();
+    std::ostringstream os;
+    os << "mxGetJson error [";
+    switch(code)
+    {
+        case MXGJ_OK: os << "MXGJ_OK"; break;
+        case MXGJ_CONNECT_FAILED: os << "MXGJ_CONNECT_FAILED"; break;
+        case MXGJ_PARSE_ERROR: os << "MXGJ_PARSE_ERROR"; break;
+        case MXGJ_HTTP_ERROR: os << "MXGJ_HTTP_ERROR"; break;
+    }
+    os << " (" << code << ")] [HTTP status = " << httpstatus << "]";
+    if(!errmsg.empty())
+        os << ": " << errmsg;
+    return os.str();
+}

@@ -295,43 +295,42 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                     return 400;
                 }
 
-                DataTree out(DataTree::TINY);
-
+                DataTree hsdata(DataTree::TINY);
+                bool useHS = false;
                 if(askHS)
                 {
-                    // kick off search in background + re-use vars
-                    // (this invalidates all strings, that's why term is std::string)
-                    vars.root().v->map()->clear(vars);
-                    auto fut = std::async(std::launch::async, &MxSearchHandler::doSearch, this, vars.root(), term.c_str(), limit);
-
                     // forward client request as-is
-                    MxGetJsonResult jr = mxRequestJson(RQ_POST, out.root(), this->homeserver, vars.root(), hsTimeout);
-                    bool useHS = jr.code == MXGJ_OK && !out.root().lookup("error");
+                    MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), this->homeserver, vars.root(), hsTimeout);
+                    useHS = jr.code == MXGJ_OK && !hsdata.root().lookup("error");
                     if(checkHS)
                     {
                         if(jr.code != MXGJ_OK)
                         {
-                            mg_send_http_error(conn, 500, "Homeserver did not send usable JSON. Interally reported error:\n%d %s", jr.httpstatus, jr.errmsg.c_str());
+                            std::string err = jr.getErrorMsg();
+                            logerror("-> %s", err.c_str());
+                            mg_send_http_error(conn, 500, "Homeserver did not send usable JSON. Internally reported error:\n%s", err.c_str());
                             return 500;
                         }
                         if(!useHS)
                         {
-                            std::string jsonerr = dumpjson(out.root());
+                            std::string jsonerr = dumpjson(hsdata.root());
                             mg_send_http_error(conn, jr.httpstatus, "%s", jsonerr.c_str());
                             return jr.httpstatus;
                         }
                     }
-
-                    if(!useHS)
-                        out.root().makeMap().v->map()->clear(out);
-
-                    fut.wait();
-                    out.root().merge(vars.root(), MERGE_APPEND_ARRAYS | MERGE_RECURSIVE);
                 }
-                else
-                    doSearch(out.root(), term.c_str(), limit);
+                
+                // out is now whatever the HS returned (if any), re-use vars for the search since we don't need those anymore
+                vars.root().v->makeMap(vars, 0)->clear(vars);
+                doSearch(vars.root(), term.c_str(), limit);
 
-                writeJson(dst, out.root(), false);
+                // merge HS results on top (HS results win and override our own search results)
+                if(useHS)
+                    vars.root().merge(hsdata.root(), MERGE_APPEND_ARRAYS | MERGE_RECURSIVE);
+
+                // TODO: respect limit
+
+                writeJson(dst, vars.root(), false);
                 return 0;
             }
         }
