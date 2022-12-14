@@ -63,11 +63,18 @@ private:
     void _loop_th_untilPurge();
     DataTree *_ingestData(const Config::InputEntry& entry) const; // must delete returned ptr
 
+    struct IngestResult
+    {
+        DataTree *tree = NULL;
+        bool loaded = false; // could load data (aka didn't fail)
+        bool merged = false; // everything was as expected, merged too
+        bool ignored = false;
+    };
     // dst is optional. Protocol:
     // - if dst is valid, merge results into dst and return NULL.
     // - if it's NULL, return new tree. Caller must delete it. On fail, return NULL.
-    DataTree *_ingestDataAndMerge(DataTree *dst, const Config::InputEntry& entry);
-    std::future<DataTree*> _ingestDataAndMergeAsync(DataTree *dst, const Config::InputEntry& entry);
+    IngestResult _ingestDataAndMerge(DataTree *dst, const Config::InputEntry& entry);
+    std::future<IngestResult> _ingestDataAndMergeAsync(DataTree *dst, const Config::InputEntry& entry);
 
     void _rebuildTree();
     void _sendTreeRebuiltEvent() const;

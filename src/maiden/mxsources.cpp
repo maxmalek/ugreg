@@ -179,7 +179,7 @@ void MxSources::_loop_th_untilPurge()
 
     const u64 purgeWhen = _cfg.purgeEvery ? now + _cfg.purgeEvery : 0;
 
-    std::vector<std::future<DataTree*> > futs; // always NULL values
+    std::vector<std::future<IngestResult> > futs; // always NULL values
     futs.reserve(N);
 
     while(!_quit && (!purgeWhen || now < purgeWhen))
@@ -228,7 +228,7 @@ void MxSources::_loop_th_untilPurge()
 
         if(mintime)
         {
-            log("MxSources: Sleeping for up to %ju ms until next job (%ju ms until purge)",
+            logdebug("MxSources: Sleeping for up to %ju ms until next job (%ju ms until purge)",
                 mintime, timeUntilPurge);
             // this wait can get interrupted to exit early
             _waiter.wait_for(lock, std::chrono::milliseconds(mintime));
@@ -266,10 +266,7 @@ DataTree *MxSources::_ingestData(const Config::InputEntry& entry) const
     else if(ret->root().type() == Var::TYPE_MAP)
         log("MxSources: * ... Ingested '%s' in %ju ms", str, loadedMS);
     else
-    {
-        logerror("MxSources: * WARNING: Ignored [%s], result type is not map", str);
-        ok = false;
-    }
+        logerror("MxSources: * WARNING: Ingest '%s': Result type is not map", str);
 
     if(!ok)
     {
@@ -280,10 +277,12 @@ DataTree *MxSources::_ingestData(const Config::InputEntry& entry) const
     return ret;
 }
 
-DataTree *MxSources::_ingestDataAndMerge(DataTree *dst, const Config::InputEntry& entry)
+MxSources::IngestResult MxSources::_ingestDataAndMerge(DataTree *dst, const Config::InputEntry& entry)
 {
+    IngestResult res;
     if(DataTree *tre = _ingestData(entry))
     {
+        res.loaded = true;
         if(VarCRef data = tre->root().lookup("data"))
         {
             if(data.type() == Var::TYPE_MAP)
@@ -299,24 +298,30 @@ DataTree *MxSources::_ingestDataAndMerge(DataTree *dst, const Config::InputEntry
                         ms = timer.ms();
                     }
                     logdebug("MxSources: * ... and merged '%s' in %ju ms", entry.args[0], ms);
-                    // preceed to delete it
+                    res.merged = true;
+                    // proceed to delete it
                 }
                 else
-                    return tre;
+                    res.tree = tre;
             }
             else
+            {
                 logerror("MxSources: ERROR: Ingest '%s': value under key 'data' is not map, ignoring", entry.args[0]);
+                res.ignored = true;
+            }
         }
         else
+        {
             logerror("MxSources: WARNING: Ingest '%s' has no 'data' key, skipping", entry.args[0]);
-
+            res.ignored = true;
+        }
         delete tre;
     }
 
-    return NULL;
+    return res;
 }
 
-std::future<DataTree*> MxSources::_ingestDataAndMergeAsync(DataTree *dst, const Config::InputEntry& entry)
+std::future<MxSources::IngestResult> MxSources::_ingestDataAndMergeAsync(DataTree *dst, const Config::InputEntry& entry)
 {
     return std::async(std::launch::async, &MxSources::_ingestDataAndMerge, this, dst, entry);
 }
@@ -332,10 +337,22 @@ void MxSources::_rebuildTree()
     // While we're still here and ingesting, continue serving the old tree
     const size_t N = _cfg.list.size();
     {
-        std::vector<std::future<DataTree*> > futs;
+        std::vector<std::future<IngestResult> > futs;
         futs.reserve(N);
         for(size_t i = 0; i < N; ++i)
             futs.push_back(std::move(_ingestDataAndMergeAsync(&newtree, _cfg.list[i])));
+        unsigned fail = 0;
+        for (size_t i = 0; i < N; ++i)
+        {
+            IngestResult res = futs[i].get();
+            assert(!res.tree);
+            fail += !res.loaded;
+        }
+        if(fail)
+        {
+            logerror("%u/%u ingests failed, aborting. Tree will remain unchanged.", fail, (unsigned)N);
+            return;
+        }
     }
     // --- Futures are done now ---
 
