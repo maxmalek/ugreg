@@ -92,16 +92,22 @@ public:
         _ptr = NULL;
         _cap = 0;
     }
-    void resize(Allocator& mem, SZ n)
+    T *resize(Allocator& mem, SZ n)
     {
+        T *dst;
         if(n > _sz)
         {
-            T *dst = reserve(mem, n);                  // make sure there's enough space
-            mem_construct_default(dst + _sz, dst + n); // fill up with valid objects
+            dst = reserve(mem, n);                  // make sure there's enough space
+            if(dst)
+                mem_construct_default(dst + _sz, dst + n); // fill up with valid objects
         }
         else
-            _Destroy(mem, _ptr + n, _ptr + _sz);       // destroy some at end
+        {
+            dst = _ptr;
+            _Destroy(mem, dst + n, dst + _sz);       // destroy some at end
+        }
         _sz = n;
+        return dst;
     }
     T *_reserveAtLeast(Allocator& mem, SZ n)
     {

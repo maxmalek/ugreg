@@ -38,6 +38,29 @@ struct Reader
 };
 */
 
+
+static const size_t MaxSizeBits = sizeof(u64) * CHAR_BIT;
+
+
+template<typename T>
+static T _fail(T val, const char *msg)
+{
+    logerror("BJ loader failed: %s", msg);
+    return val;
+}
+
+#define FAIL(ret, msg) _fail(ret, msg)
+#define FAILMSG(msg) do { _fail(0, msg); } while(0)
+
+
+#define UNREACHABLE() unreachable();
+
+static const union {
+    int dummy;
+    char little;  /* true iff machine is little endian */
+} nativeendian = { 1 };
+
+
 struct BjEmit
 {
     enum FrameType
@@ -80,12 +103,10 @@ struct BjEmit
         frames.dealloc(mem);
 
         if(constants)
-        {
             Var::ClearArray(mem, constants, constantsMax);
-            constantsHolder.makeArrayUninitialized_Dangerous(mem, 0);
-            constantsHolder.clear(mem);
-        }
 
+        constantsHolder.makeArrayUninitialized_Dangerous(mem, 0);
+        constantsHolder.clear(mem);
         outputValue.clear(mem);
     }
 
@@ -106,7 +127,7 @@ struct BjEmit
     bool Array(size_t size)
     {
         Var v;
-        Var *a = v.makeArray(mem, size);
+        Var * const a = v.makeArray(mem, size);
         if(size && !a)
             return false;
 
@@ -125,12 +146,12 @@ struct BjEmit
     bool Map(size_t size)
     {
         Var v;
-        Var::Map *m = v.makeMap(mem, size);
+        Var::Map * const m = v.makeMap(mem, size);
         if(!m)
             return false;
 
         bool ret = _emit(std::move(v));
-        if(size && ret)
+        if(size && ret) // empty maps don't need to be pushed
         {
             pushFrame();
             currentFrame.ty = FRM_MAP;
@@ -147,7 +168,15 @@ struct BjEmit
         if(start == end)
             return true;
         if(start > constantsMax)
-            return false;
+            return FAIL(false, "out of range constants table start -- would introduce uninitialized hole");
+
+        // Check frames if we're already emitting a constants table
+        if(currentFrame.ty == FRM_CTAB)
+            return FAIL(false, "nested non-empty constants table");
+        const size_t fc = frames.size();
+        for(size_t i = 0; i < fc; ++i)
+            if(frames[i].ty == FRM_CTAB)
+                return FAIL(false, "nested non-empty constants table");
 
         // this is the previously initialized/valid region that we're going to overwrite.
         // make it safe to placement-new into it.
@@ -156,9 +185,10 @@ struct BjEmit
 
         if(constantsMax < end)
         {
-            constants = constantsHolder.makeArrayUninitialized_Dangerous(mem, end);
-            if(!constants)
-                return false;
+            Var *c = constantsHolder.makeArrayUninitialized_Dangerous(mem, end);
+            if(!c)
+                return FAIL(false, "failed to alloc constants table");
+            constants = c;
         }
 
         pushFrame();
@@ -185,6 +215,7 @@ struct BjEmit
         currentFrame = std::move(frames.pop_back_move());
     }
 
+    // consumes v. must clear if failed.
     bool _emit(Var&& v)
     {
         const size_t idx = currentFrame.idx++;
@@ -200,6 +231,9 @@ struct BjEmit
             case FRM_MAP:
                 if(idx & 1) // alternating key+value, keys are at even indices, values at odd
                 {
+                    // TODO: here's a bit of optimization potential.
+                    // remove ref from current key without decreasing refcount,
+                    // then use as key without increasing refcount
                     assert(currentFrame.currentKey.type() == Var::TYPE_STRING);
                     currentFrame.u.m->put(mem, currentFrame.currentKey.asStrRef(), std::move(v));
                     currentFrame.currentKey.clear(mem);
@@ -224,7 +258,7 @@ struct BjEmit
         }
 
         // done all we wanted? this frame's finished, pop it
-        if(idx + 1 == currentFrame.size)
+        if(idx+1 == currentFrame.size)
             popFrame();
 
         return true;
@@ -251,27 +285,6 @@ struct BjEmit
     Var constantsHolder;
     Var outputValue;
 };
-
-static const size_t MaxSizeBits = sizeof(u64) * CHAR_BIT;
-
-
-template<typename T>
-static T _fail(T val, const char *msg)
-{
-    logerror("BJ loader failed: %s", msg);
-    return val;
-}
-
-#define FAIL(ret, msg) _fail(ret, msg)
-#define FAILMSG(msg) do { _fail(0, msg); } while(0)
-
-
-#define UNREACHABLE() unreachable();
-
-static const union {
-    int dummy;
-    char little;  /* true iff machine is little endian */
-} nativeendian = { 1 };
 
 // must fit in 3 bits
 enum Op : u8
@@ -328,6 +341,11 @@ struct BjReader
         , remain(1)
     {}
 
+    ~BjReader()
+    {
+        tmpstr.dealloc(alloc);
+    }
+
     [[nodiscard]] inline bool expect(size_t n)
     {
         return !add_check_overflow(&remain, remain, n);
@@ -338,7 +356,7 @@ struct BjReader
     BlockAllocator& alloc;
 
     //------------------------
-    std::string tmpstr;
+    LVector<char> tmpstr;
 };
 
 
@@ -433,15 +451,18 @@ static bool readstrN(Emit& emit, BjReader& rd, size_t n)
     }
 
     // slow path
-    std::string& s = rd.tmpstr; // is a member to avoid repeated (re-)allocation
-    s.resize(n);
+    assert(n);
+    LVector<char>& s = rd.tmpstr; // is a member to avoid repeated (re-)allocation
+    char * const sp = s.resize(rd.alloc, n);
+    if(!sp)
+        return FAIL(false, "failed to alloc temp string");
     for(size_t i = 0; i < n; ++i)
     {
         if(rd.in.done())
             return FAIL(false, "stream end while reading string");
-        s[i] = rd.in.Take();
+        sp[i] = rd.in.Take();
     }
-    return emit.Str(s.c_str(), n);
+    return emit.Str(sp, n);
 }
 
 

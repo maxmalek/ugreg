@@ -307,17 +307,21 @@ Var Var::clone(TreeMem &dstmem, const TreeMem& srcmem) const
 
 Var * Var::makeArray(TreeMem& mem, size_t n)
 {
-    Var *a;
     if(n > MAXSIZE)
         return NULL;
+    Var *a;
     if(_topbits() == BITS_ARRAY)
     {
         a = _ResizeArray(mem, n, u.a, _size());
+        if(!a && n)
+            return NULL;
         _adjustsize(n);
     }
     else
     {
         a = _NewArray(mem, n);
+        if(!a && n)
+            return NULL;
         _settop(mem, BITS_ARRAY, n);
     }
     return (( u.a = a )); // u.a must be assigned AFTER _settop()!
@@ -325,17 +329,21 @@ Var * Var::makeArray(TreeMem& mem, size_t n)
 
 Var* Var::makeArrayUninitialized_Dangerous(TreeMem& mem, size_t n)
 {
-    Var* a;
     if (n > MAXSIZE)
         return NULL;
+    Var* a;
     if (_topbits() == BITS_ARRAY)
     {
         a = _ResizeArrayNoInitNoDestruct(mem, n, u.a, _size());
+        if(!a && n)
+            return NULL;
         _adjustsize(n);
     }
     else
     {
         a = _NewArrayNoInit(mem, n);
+        if(!a && n)
+            return NULL;
         _settop(mem, BITS_ARRAY, n);
     }
     return ((u.a = a)); // u.a must be assigned AFTER _settop()!
@@ -347,13 +355,18 @@ Var::Map *Var::makeMap(TreeMem& mem, size_t prealloc)
         return NULL;
     if (_topbits() == BITS_MAP)
         return u.m;
+    Var::Map *m = _NewMap(mem, prealloc);
+    if(!m)
+        return NULL;
     _settop(mem, BITS_MAP, 0);
-    return (( u.m = _NewMap(mem, prealloc) ));
+    return (( u.m = m ));
 }
 
 Var::Range* Var::setRange(TreeMem& mem, const Range *ra, size_t n)
 {
     Range *p = _NewRanges(mem, n);
+    if(!p)
+        return NULL;
     if(ra)
         memcpy(p, ra, sizeof(*ra) * n);
     _transmute(mem, TYPE_RANGE);
