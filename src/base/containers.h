@@ -125,11 +125,14 @@ public:
     {
         assert(n > _cap && _sz <= _cap);
         T *dst = (T*)mem.Alloc(n * sizeof(T));
-        mem_construct_move_from(dst, dst + _sz, _ptr); // move old elems over
-        _Destroy(mem, _ptr, _ptr + _sz);               // kill moved-from elems for good
-        mem.Free(_ptr, _cap * sizeof(T));              // free it
-        _ptr = dst;
-        _cap = n;
+        if(dst)
+        {
+            mem_construct_move_from(dst, dst + _sz, _ptr); // move old elems over
+            _Destroy(mem, _ptr, _ptr + _sz);               // kill moved-from elems for good
+            mem.Free(_ptr, _cap * sizeof(T));              // free it
+            _ptr = dst;
+            _cap = n;
+        }
         return dst;
     }
 
@@ -152,12 +155,20 @@ public:
         return p;
     }
 
-    T& push_back(Allocator& mem, T&& x)
+    // return storage location where value was moved into, NULL on failure
+    T *push_back(Allocator& mem, T&& x)
     {
         SZ sz = size();
         T *p = _reserveAtLeast(mem, sz + 1);
-        _sz = sz + 1;
-        return *(_X_PLACEMENT_NEW(p + sz) T(std::move(x)));
+        if(p)
+        {
+            _sz = sz + 1;
+            return (_X_PLACEMENT_NEW(p + sz) T(std::move(x)));
+        }
+
+        T dud = std::move(x);
+        Policy::OnDestroy(mem, dud);
+        return NULL;
     }
 
     void swap(LVector& o)

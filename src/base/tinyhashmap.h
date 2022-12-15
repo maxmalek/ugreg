@@ -104,6 +104,7 @@ public:
                 SZ newcap = _cap + 4; // the hashmap is going to redistribute keys eventually, don't go too big
                 akeys = (StrRef*)mem.Realloc(akeys, _cap * sizeof(*_keys), newcap * sizeof(*_keys));
                 aidx = (SZ*)mem.Realloc(aidx, _cap * sizeof(*_indices), newcap * sizeof(*_indices));
+                // FIXME: handle alloc failure
                 _keys = akeys;
                 _indices = aidx;
                 _cap = newcap;
@@ -380,7 +381,7 @@ public:
     typedef typename KS::size_type SZ;
     struct InsertResult
     {
-        value_type& ref;
+        value_type *ptr; // NULL if insert failed
         bool newly_inserted;
     };
     HashHat()
@@ -401,8 +402,9 @@ public:
 
     InsertResult _insert_always(typename KS::size_type& dst, Vec& vec, Allocator& mem, StrRef k, value_type&& v)
     {
-        typename Vec::value_type& ins = vec.push_back(mem, std::move(v));
-        dst = vec.size(); // store size *after* inserting, that is always != 0
+        typename Vec::value_type *ins = vec.push_back(mem, std::move(v));
+        if(ins)
+            dst = vec.size(); // store size *after* inserting, that is always != 0
         InsertResult ret{ ins, true };
         return ret;
     }
@@ -416,7 +418,7 @@ public:
             value_type& vdst = vec[dst - 1];
             prevval = std::move(vdst);
             vdst = std::move(v);
-            InsertResult ret { vdst, false };
+            InsertResult ret { &vdst, false };
             return ret;
         }
         return _insert_always(dst, vec, mem, k, std::move(v));
@@ -429,7 +431,7 @@ public:
         if (dst)
         {
             value_type& vdst = vec[dst - 1];
-            InsertResult ret { vdst, false };
+            InsertResult ret { &vdst, false };
             return ret;
         }
         return _insert_always(dst, vec, mem, k, std::move(value_type()));
@@ -593,9 +595,10 @@ public:
         _hh.dealloc(mem);
     }
 
-    inline T& at(Allocator& mem, StrRef k)
+    // inserts key; makes room for new value; returns ptr to value
+    inline T *at(Allocator& mem, StrRef k)
     {
-        return insert_new(mem, k).ref;
+        return insert_new(mem, k).ptr;
     }
 
     inline const TVec& values() const

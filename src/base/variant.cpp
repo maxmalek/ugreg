@@ -1056,7 +1056,7 @@ Var* Var::subtreeOrFetch(TreeMem& mem, const char* path, SubtreeQueryFlags qf)
                 ? p->lookup(mem, ps.s, ps.len)
                 : p->lookupNoFetch(mem.lookup(ps.s, ps.len));
             if (!nextp && (qf & SQ_CREATE))
-                nextp = &p->map_unsafe()->putKey(mem, ps.s, ps.len);
+                nextp = p->map_unsafe()->putKey(mem, ps.s, ps.len);
             p = nextp;
             break;
         }
@@ -1135,13 +1135,13 @@ void _VarMap::destroy(TreeMem& mem)
     mem.Free(this, sizeof(*this));
 }
 
-Var& _VarMap::_InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k)
+Var *_VarMap::_InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k)
 {
     // Create key/value if it's not there yet
     _Map::InsertResult r = storage.insert_new(dstmem, k);
     if (r.newly_inserted)
         dstmem.increfS(k); // ... and refcount it if newly inserted
-    return r.ref;
+    return r.ptr;
 }
 
 bool _VarMap::equals(const TreeMem& mymem, const _VarMap& o, const TreeMem& othermem) const
@@ -1200,34 +1200,36 @@ bool _VarMap::isExpired(u64 now) const
 
 
 // TODO: if we don't need a copying merge, make this a consuming merge that moves stuff
-void _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags)
+bool _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags)
 {
     _checkmem(dstmem);
     for(Iterator it = o.begin(); it != o.end(); ++it)
     {
         PoolStr ps = srcmem.getSL(it.key());
-        Var& dst = putKey(dstmem, ps.s, ps.len);
-
+        Var *dst = putKey(dstmem, ps.s, ps.len);
+        if(!dst)
+            return false;
         const Var::Type othertype = it.value().type();
 
         if((mergeflags & MERGE_RECURSIVE) && othertype == Var::TYPE_MAP)
-            dst.makeMap(dstmem)->merge(dstmem, *it.value().u.m, srcmem, mergeflags);
-        else if((mergeflags & MERGE_APPEND_ARRAYS) && othertype == Var::TYPE_ARRAY && dst.type() == Var::TYPE_ARRAY)
+            dst->makeMap(dstmem)->merge(dstmem, *it.value().u.m, srcmem, mergeflags);
+        else if((mergeflags & MERGE_APPEND_ARRAYS) && othertype == Var::TYPE_ARRAY && dst->type() == Var::TYPE_ARRAY)
         {
-            const size_t oldsize = dst._size();
+            const size_t oldsize = dst->_size();
             const size_t addsize = it.value()._size();
             const Var *oa = it.value().array_unsafe();
             // resize destination and skip forward
-            Var *a = dst.makeArray(dstmem, oldsize + addsize) + oldsize;
+            Var *a = dst->makeArray(dstmem, oldsize + addsize) + oldsize;
             for(size_t i = 0; i < addsize; ++i)
                 a[i] = std::move(oa[i].clone(dstmem, srcmem));
         }
         else // One entry replaces the other entirely
         {
-            dst.clear(dstmem);
-            dst = std::move(it.value().clone(dstmem, srcmem)); // TODO: optimize if srcmem==dstmem?
+            dst->clear(dstmem);
+            *dst = std::move(it.value().clone(dstmem, srcmem)); // TODO: optimize if srcmem==dstmem?
         }
     }
+    return true;
 }
 
 void _VarMap::clear(TreeMem& mem)
@@ -1245,13 +1247,31 @@ _VarMap* _VarMap::clone(TreeMem& dstmem, const TreeMem& srcmem) const
 {
     _checkmem(srcmem);
     _VarMap *cp = _NewMap(dstmem, size());
-    cp->_extra = _extra ? _extra->clone(dstmem, *cp) : NULL;
+    if(!cp)
+        return NULL;
+    _VarExtra *xcp = NULL;
+    if(_extra)
+    {
+        xcp = _extra->clone(dstmem, *cp);
+        if(!xcp)
+            goto fail;
+    }
     for(Iterator it = begin(); it != end(); ++it)
     {
         PoolStr k = srcmem.getSL(it.key());
-        cp->_storage.at(dstmem, dstmem.put(k.s, k.len)) = std::move(it.value().clone(dstmem, srcmem));
+        Var *dst = cp->_storage.at(dstmem, dstmem.put(k.s, k.len));
+        if(!dst)
+            goto fail;
+        *dst = std::move(it.value().clone(dstmem, srcmem));
     }
+    cp->_extra = xcp;
     return cp;
+
+fail:
+    cp->destroy(dstmem);
+    if(xcp)
+        _DeleteExtra(dstmem, xcp);
+    return NULL;
 }
 
 /*
@@ -1293,11 +1313,13 @@ Var* _VarMap::fetchOne(const char* key, size_t len)
         {
             acme::upgrade_lock lock(_extra->writemutex);
             // --- WRITE LOCK ON ----
-            Var& dst = putKey(_extra->mem, key, len);
-            dst.clear(_extra->mem);
-            dst = std::move(fv.clone(_extra->mem, *_extra->fetcher));
+            Var *dst = putKey(_extra->mem, key, len);
+            if(!dst)
+                return NULL;
+            dst->clear(_extra->mem);
+            *dst = std::move(fv.clone(_extra->mem, *_extra->fetcher));
             fv.clear(*_extra->fetcher);
-            return &dst;
+            return dst;
             // ----------
         }
     }
@@ -1330,15 +1352,22 @@ bool _VarMap::fetchAll()
             acme::upgrade_lock lock(_extra->writemutex);
             // --- WRITE LOCK ON ----
             clear(_extra->mem);
+            bool ok = true;
             for(Iterator it = m->begin(); it != m->end(); ++it)
             {
                 PoolStr ps = fm.getSL(it.key());
                 StrRef k = _extra->mem.put(ps.s, ps.len);
-                _storage.at(_extra->mem, k) = std::move(it.value().clone(_extra->mem, fm));
+                Var *dst = _storage.at(_extra->mem, k);
+                if(!dst)
+                {
+                    ok = false;
+                    break;
+                }
+                *dst = std::move(it.value().clone(_extra->mem, fm));
             }
             fv.clear(fm);
-            _extra->datavalid = true;
-            return true;
+            _extra->datavalid = ok;
+            return ok;
             // ----------
         }
     }
@@ -1390,18 +1419,18 @@ const Var* _VarMap::get(StrRef k) const
     return const_cast<_VarMap*>(this)->get(k);
 }
 
-Var& _VarMap::putKey(TreeMem& mem, const char* key, size_t len)
+Var *_VarMap::putKey(TreeMem& mem, const char* key, size_t len)
 {
     StrRef k = mem.putNoRefcount(key, len);
     return getOrCreate(mem, k);
 }
 
-Var& _VarMap::getOrCreate(TreeMem& mem, StrRef key)
+Var *_VarMap::getOrCreate(TreeMem& mem, StrRef key)
 {
     return _InsertAndRefcount(mem, _storage, key);
 }
 
-Var& _VarMap::put(TreeMem& mem, StrRef k, Var&& x)
+Var *_VarMap::put(TreeMem& mem, StrRef k, Var&& x)
 {
     _checkmem(mem);
     Var prev;
@@ -1410,7 +1439,7 @@ Var& _VarMap::put(TreeMem& mem, StrRef k, Var&& x)
         mem.increfS(k);
     else
         prev.clear(mem);
-    return ins.ref;
+    return ins.ptr;
 }
 
 _VarMap::Iterator _VarMap::begin() const
@@ -1452,14 +1481,14 @@ VarRef& VarRef::makeArray(size_t n)
 
 VarRef VarRef::operator[](const char* key)
 {
-    Var& sub = v->makeMap(*mem)->putKey(*mem, key, strlen(key));
-    return VarRef(*mem, &sub);
+    Var *sub = v->makeMap(*mem)->putKey(*mem, key, strlen(key));
+    return VarRef(*mem, sub);
 }
 
 VarRef VarRef::operator[](PoolStr ps)
 {
-    Var& sub = v->makeMap(*mem)->putKey(*mem, ps.s, ps.len);
-    return VarRef(*mem, &sub);
+    Var *sub = v->makeMap(*mem)->putKey(*mem, ps.s, ps.len);
+    return VarRef(*mem, sub);
 }
 
 bool VarRef::merge(const VarCRef& o, MergeFlags mergeflags)

@@ -597,7 +597,10 @@ MxError MxStore::_generateHashCache_nolock(VarRef cache, const char* algo)
                 size_t enc = base64enc(hashBase64, hashBase64Len, hashOut, hd->hashsize, false);
                 if(enc)
                 {
-                    mdst->putKey(*cache.mem, hashBase64, enc).setStr(*cache.mem, ups.s, ups.len);
+                    Var *dst = mdst->putKey(*cache.mem, hashBase64, enc);
+                    if(!dst)
+                        return M_LIMIT_EXCEEDED;
+                    dst->setStr(*cache.mem, ups.s, ups.len);
                     ++done;
                 }
             }
@@ -615,7 +618,11 @@ MxError MxStore::_generateHashCache_nolock(VarRef cache, const char* algo)
                 tmp += ' ';
                 tmp += mediumps.s;
                 // don't need the pepper here
-                mdst->putKey(*cache.mem, tmp.c_str(), tmp.length()).setStr(*cache.mem, ups.s, ups.len);
+                Var *dst = mdst->putKey(*cache.mem, tmp.c_str(), tmp.length());
+                if(!dst)
+                    return M_LIMIT_EXCEEDED;
+
+                dst->setStr(*cache.mem, ups.s, ups.len);
                 ++done;
             }
         }
@@ -673,7 +680,10 @@ void MxStore::_Rebuild3pidMap(VarRef dst, VarCRef src, const char* fromkey)
             PoolStr psMxid = src.mem->getSL(mxidRef);
             PoolStr psVal = src.mem->getSL(val->asStrRef());
             // dm[mxid] = val
-            dm->putKey(*dst.mem, psMxid.s, psMxid.len).setStr(*dst.mem, psVal.s, psVal.len);
+            Var *d = dm->putKey(*dst.mem, psMxid.s, psMxid.len);
+            if(!d)
+                return;
+            d->setStr(*dst.mem, psVal.s, psVal.len);
             ++n;
         }
     }

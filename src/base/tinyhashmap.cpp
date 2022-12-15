@@ -18,11 +18,11 @@ void tinyhashmap_api_test()
     m.insert(mem, 42, std::move(Var(u64(6581))), unused);
     assert(unused.isNull());
     M::InsertResult ins = m.insert_new(mem, 42);
-    ins.ref.setFloat(mem, -1.0f);
+    ins.ptr->setFloat(mem, -1.0f);
 
     assert(m.size() == 1);
 
-    m.at(mem, 23) = "blarg";
+    *m.at(mem, 23) = "blarg";
 
     Var *p = m.getp(42);
 

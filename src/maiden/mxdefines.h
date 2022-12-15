@@ -18,6 +18,7 @@ enum MxError
     M_THREEPID_IN_USE,
     M_UNKNOWN,
     M_INVALID_PEPPER,
+    M_LIMIT_EXCEEDED,
 
     // if you change this: keep in sync with array in .cpp file
 };

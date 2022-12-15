@@ -111,14 +111,17 @@ void VM::init(const Executable& ex, const EntryPoint* eps, size_t numep)
 VarRef VM::makeVar(const char* name, size_t len)
 {
     // if there was previously a stackframe under that name, kill it
-    Var& dst = evals.map()->putKey(mem, name, len);
-    if(void *prev = dst.asPtr())
+    Var *dst = evals.map()->putKey(mem, name, len);
+    if(!dst)
+        return VarRef();
+
+    if(void *prev = dst->asPtr())
         _freeStackFrame(prev);
 
     void* p = mem.Alloc(sizeof(StackFrame));
     StackFrame *sf = _X_PLACEMENT_NEW(p) StackFrame;
     sf->store.reserve(1);
-    dst.setPtr(mem, sf);
+    dst->setPtr(mem, sf);
     sf->addAbs(mem, std::move(Var()), 0);
     return VarRef(mem, &sf->store[0]);
 }
@@ -161,7 +164,7 @@ const char *VM::cmd_Lookup(unsigned param)
 }
 
 // FIXME: handle this in [$x] when x is a map
-static void _TryStoreElementViaSubkeys(TreeMem& vmmem, const Var::Map* Lm, Var::Map* newmap, const TreeMem& srcmem, const Var& srcvar)
+static bool _TryStoreElementViaSubkeys(TreeMem& vmmem, const Var::Map* Lm, Var::Map* newmap, const TreeMem& srcmem, const Var& srcvar)
 {
     for (Var::Map::Iterator kit = Lm->begin(); kit != Lm->end(); ++kit)
     {
@@ -170,12 +173,15 @@ static void _TryStoreElementViaSubkeys(TreeMem& vmmem, const Var::Map* Lm, Var::
             PoolStr ps = sub->asString(srcmem);
             if (ps.s)
             {
-                Var& ins = newmap->putKey(vmmem, ps.s, ps.len);
-                ins.clear(vmmem); // overwrite if already present
-                ins = std::move(srcvar.clone(vmmem, srcmem));
+                Var *ins = newmap->putKey(vmmem, ps.s, ps.len);
+                if(!ins)
+                    return false;
+                ins->clear(vmmem); // overwrite if already present
+                *ins = std::move(srcvar.clone(vmmem, srcmem));
             }
         }
     }
+    return true;
 }
 
 #if 0
@@ -462,7 +468,15 @@ const char *VM::cmd_Keysel(unsigned param)
                     StrRef k = it.key();
                     PoolStr ps = e.ref.mem->getSL(k);
                     if(!Lm->get(mem, ps.s, ps.len))
-                        newmap->putKey(mem, ps.s, ps.len) = std::move(it.value().clone(mem, *e.ref.mem));
+                    {
+                        Var *dst = newmap->putKey(mem, ps.s, ps.len);
+                        if(!dst)
+                        {
+                            mm.clear(mem);
+                            return "out of memory";
+                        }
+                        *dst = std::move(it.value().clone(mem, *e.ref.mem));
+                    }
                 }
                 newtop.addRel(mem, std::move(mm), e.key);
             }
@@ -477,14 +491,22 @@ const char *VM::cmd_Keysel(unsigned param)
             {
                 newmap = mm.makeMap(mem);
                 for(Var::Map::Iterator it = src->begin(); it != src->end(); ++it)
-                    _TryStoreElementViaSubkeys(mem, Lm, newmap, *e.ref.mem, it.value());
+                    if(!_TryStoreElementViaSubkeys(mem, Lm, newmap, *e.ref.mem, it.value()))
+                    {
+                        mm.clear(mem);
+                        return "out of memory";
+                    }
             }
             else if(const Var *a = e.ref.v->array())
             {
                 newmap = mm.makeMap(mem);
                 const size_t n = e.ref.v->size();
                 for(size_t i = 0; i < n; ++i)
-                    _TryStoreElementViaSubkeys(mem, Lm, newmap, *e.ref.mem, a[i]);
+                    if(!_TryStoreElementViaSubkeys(mem, Lm, newmap, *e.ref.mem, a[i]))
+                    {
+                        mm.clear(mem);
+                        return "out of memory";
+                    }
             }
             if(newmap)
                 newtop.addRel(mem, std::move(mm), e.key);
@@ -765,9 +787,11 @@ const VarRefs& VM::results() const
 
 StackFrame *VM::storeTop(StrRef s)
 {
+    Var *val = evals.map()->getOrCreate(mem, s);
+    if(!val)
+        return NULL;
     StackFrame *frm = detachTop();
-    Var& val = evals.map()->getOrCreate(mem, s);
-    val.setPtr(mem, frm);
+    val->setPtr(mem, frm);
     return frm;
 }
 

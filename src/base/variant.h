@@ -343,13 +343,13 @@ public:
     _VarMap(TreeMem& mem, size_t prealloc = 0);
     _VarMap(_VarMap&&) noexcept;
 
-    void merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags);
+    bool merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, MergeFlags mergeflags);
     void clear(TreeMem& mem);
     inline bool empty() const { return _storage.empty(); }
     _VarMap* clone(TreeMem& dstmem, const TreeMem& srcmem) const;
     inline size_t size() const { return _storage.size(); }
 
-    Var& getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
+    Var* getOrCreate(TreeMem& mem, StrRef key); // return existing or insert new
           Var* getNoFetch(StrRef key);
     const Var* getNoFetch(StrRef key) const;
           Var* get(const TreeMem& mem, const char* key, size_t len);
@@ -360,9 +360,11 @@ public:
     Var* fetchOne(const char *key, size_t len); // always fetch
     bool fetchAll();                       // always fetch and replace own data
 
-    Var& putKey(TreeMem& mem, const char* key, size_t len);
+    // always returns ptr to valid object unless OOM
+    Var* putKey(TreeMem& mem, const char* key, size_t len);
 
-    Var& put(TreeMem& mem, StrRef k, Var&& x); // increases refcount if new key stored
+    // always returns ptr to valid object unless OOM
+    Var* put(TreeMem& mem, StrRef k, Var&& x); // increases refcount if new key stored
 
     Iterator begin() const;
     inline Iterator end() const { return _storage.end(); }
@@ -389,7 +391,7 @@ private:
     _VarMap(const _VarMap&) = delete;
     _VarMap& operator=(const _VarMap& o) = delete;
 
-    static Var& _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
+    static Var* _InsertAndRefcount(TreeMem& dstmem, _Map& storage, StrRef k);
 
     _Map _storage;
     Extra *_extra; // only allocated when necessary

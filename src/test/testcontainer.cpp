@@ -36,10 +36,10 @@ int main(int argc, char **argv)
         for(unsigned i = 0; i < N; ++i)
         {
             assert(hm.size() == i);
-            hm.at(mem, StrRef(i)+1) = i + 'a';
+            *hm.at(mem, StrRef(i)+1) = i + 'a';
             assert(hm.size()-1 == i);
         }
-        
+
         assert(hm.size() == N);
 
         for (unsigned i = 0; i < N*2; ++i)

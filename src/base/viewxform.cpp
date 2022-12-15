@@ -156,18 +156,28 @@ const char *transformAsMap(TreeMem& mem, StackFrame& newframe, StackFrame* param
         VarCRef r = oldframe.refs[i].ref;
         StrRef k = oldframe.refs[i].key;
         if (r.mem == &mem && mybegin->ref <= r.v && r.v < myend->ref) // if we own the memory, we can just move the thing
-            m->put(mem, k, std::move(*const_cast<Var*>(r.v)));
+        {
+            if(!m->put(mem, k, std::move(*const_cast<Var*>(r.v))))
+                goto oom;
+        }
         else // but if it's in some other memory space, we must clone it
         {
             PoolStr ps = r.mem->getSL(k);
             assert(ps.s);
-            Var& dst = m->putKey(mem, ps.s, ps.len);
-            dst = std::move(r.v->clone(mem, *r.mem));
+            Var *dst = m->putKey(mem, ps.s, ps.len);
+            if(!dst)
+                goto oom;
+
+            *dst = std::move(r.v->clone(mem, *r.mem));
         }
     }
     newframe.store.reserve(1);
     newframe.addAbs(mem, std::move(mp), 0);
     return NULL;
+
+oom:
+    mp.clear(mem);
+    return "out of memory";
 }
 
 const char *transformToKeys(TreeMem& mem, StackFrame& newframe, StackFrame* paramFrames, size_t nparams)

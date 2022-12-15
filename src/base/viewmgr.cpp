@@ -38,13 +38,16 @@ bool Mgr::addViewDef(const char *key, VarCRef v)
     // --- LOCK WRITE ---
     std::unique_lock lock(_mtx);
 
+    Var *dst = _store.map_unsafe()->putKey(*this, key, strlen(key));
+    if(!dst)
+        return false;
+
     // All went well earlier, move it over
     void* p = this->Alloc(sizeof(View));
     View* vp = _X_PLACEMENT_NEW(p) View(*this);
 
     // Make entry & clear if already existing
-    Var& dst = _store.map_unsafe()->putKey(*this, key, strlen(key));
-    if (void* old = dst.asPtr())
+    if (void* old = dst->asPtr())
         deleteView(static_cast<View*>(old));
 
     if(!vp->load(v, true))
@@ -53,7 +56,7 @@ bool Mgr::addViewDef(const char *key, VarCRef v)
         return false;
     }
 
-    dst.setPtr(*this, vp);
+    dst->setPtr(*this, vp);
 
     return true;
 }
