@@ -14,6 +14,11 @@
 #include "jsonstreamwrapper.h"
 #include "util.h"
 
+#include "log.h"
+
+//#define TRACE(...) logdev("BJ: " __VA_ARGS__)
+#define TRACE(...)
+
 namespace bj {
 
 /*
@@ -60,6 +65,13 @@ static const union {
     char little;  /* true iff machine is little endian */
 } nativeendian = { 1 };
 
+static const char * const FrameTypeNames[] =
+{
+    "FRM_ARRAY",
+    "FRM_MAP",
+    "FRM_CTAB",
+    "FRM_SENTINEL"
+};
 
 struct BjEmit
 {
@@ -126,6 +138,7 @@ struct BjEmit
 
     bool Array(size_t size)
     {
+        TRACE("Array(%zu)", size);
         Var v;
         Var * const a = v.makeArray(mem, size);
         if(size && !a)
@@ -134,7 +147,8 @@ struct BjEmit
         bool ret = _emit(std::move(v));
         if(size && ret) // empty arrays don't need to be pushed
         {
-            pushFrame();
+            if(!pushFrame())
+                return false;
             currentFrame.ty = FRM_ARRAY;
             currentFrame.u.a = a;
             currentFrame.idx = 0;
@@ -145,6 +159,7 @@ struct BjEmit
 
     bool Map(size_t size)
     {
+        TRACE("Map(%zu)", size);
         Var v;
         Var::Map * const m = v.makeMap(mem, size);
         if(!m)
@@ -153,7 +168,8 @@ struct BjEmit
         bool ret = _emit(std::move(v));
         if(size && ret) // empty maps don't need to be pushed
         {
-            pushFrame();
+            if(!pushFrame())
+                return false;
             currentFrame.ty = FRM_MAP;
             currentFrame.u.m = m;
             currentFrame.idx = 0;
@@ -164,6 +180,7 @@ struct BjEmit
 
     bool Constants(size_t start, size_t end)
     {
+
         assert(start < end);
         if(start == end)
             return true;
@@ -178,10 +195,16 @@ struct BjEmit
             if(frames[i].ty == FRM_CTAB)
                 return FAIL(false, "nested non-empty constants table");
 
+        TRACE("Constants [%zu .. %zu)", start, end);
+
         // this is the previously initialized/valid region that we're going to overwrite.
         // make it safe to placement-new into it.
         if(constants)
-            Var::ClearArrayRange(mem, constants + start, constants + std::min(end, constantsMax));
+        {
+            const size_t e = std::min(end, constantsMax);
+            TRACE("- clear [%zu .. %zu)", start, e);
+            Var::ClearArrayRange(mem, constants + start, constants + e);
+        }
 
         if(constantsMax < end)
         {
@@ -191,7 +214,8 @@ struct BjEmit
             constants = c;
         }
 
-        pushFrame();
+        if(!pushFrame())
+            return false;
         currentFrame.ty = FRM_CTAB;
         currentFrame.u.a = NULL;
         currentFrame.idx = start;
@@ -202,23 +226,37 @@ struct BjEmit
 
     bool EmitConstant(size_t idx)
     {
+        TRACE("C(%zu), %s", idx, (idx < constantsMax) ? constants[idx].typestr() : "(out of range)");
         return idx < constantsMax
             && _emit(std::move(constants[idx].clone(mem, mem)));
     }
 
-    void pushFrame()
+    [[nodiscard]] bool pushFrame()
     {
-        frames.push_back(mem, std::move(currentFrame));
+        TRACE("-> push new frame on top of %s #%zu", FrameTypeNames[currentFrame.ty], frames.size());
+        return !!frames.push_back(mem, std::move(currentFrame));
     }
     void popFrame()
     {
+        TRACE("<- pop frame %s #%zu, now back to %s #%zu",
+            FrameTypeNames[currentFrame.ty], frames.size(),
+            FrameTypeNames[frames.back().ty], frames.size()-1);
         currentFrame = std::move(frames.pop_back_move());
+    }
+
+    void finishFrames()
+    {
+        // push only frames that are known to be done (size != 0)
+        while(frames.size() && currentFrame.size && currentFrame.idx == currentFrame.size)
+            popFrame();
     }
 
     // consumes v. must clear if failed.
     bool _emit(Var&& v)
     {
         const size_t idx = currentFrame.idx++;
+        TRACE("emit %s (size: %zu) into %s #%zu [%zu/%zu]",
+            v.typestr(), v.size(), FrameTypeNames[currentFrame.ty], frames.size(), idx, currentFrame.size);
         assert(!currentFrame.size || idx < currentFrame.size); // unknown size target has size=0
 
         switch(currentFrame.ty)
@@ -235,8 +273,10 @@ struct BjEmit
                     // remove ref from current key without decreasing refcount,
                     // then use as key without increasing refcount
                     assert(currentFrame.currentKey.type() == Var::TYPE_STRING);
-                    currentFrame.u.m->put(mem, currentFrame.currentKey.asStrRef(), std::move(v));
+                    Var *ins = currentFrame.u.m->put(mem, currentFrame.currentKey.asStrRef(), std::move(v));
                     currentFrame.currentKey.clear(mem);
+                    if(!ins)
+                        goto fail;
                 }
                 else
                 {
@@ -252,14 +292,14 @@ struct BjEmit
                 break;
 
             case FRM_SENTINEL:
+                assert(idx == 0 && currentFrame.idx == 1);
                 outputValue.clear(mem);
                 outputValue = std::move(v);
+                currentFrame.size = currentFrame.idx; // mark frame as done
                 break;
         }
 
-        // done all we wanted? this frame's finished, pop it
-        if(idx+1 == currentFrame.size)
-            popFrame();
+        assert(v.isNull()); // must consume input
 
         return true;
 
@@ -445,12 +485,14 @@ static bool readstrN(Emit& emit, BjReader& rd, size_t n)
 {
     if(rd.in.availBuffered() >= n) // copy directly
     {
+        TRACE("String(%zu) fast", n);
         bool ret = emit.Str((const char*)rd.in.ptr(), n);
         rd.in.advanceBuffered(n);
         return ret;
     }
 
     // slow path
+    TRACE("String(%zu) slow", n);
     assert(n);
     LVector<char>& s = rd.tmpstr; // is a member to avoid repeated (re-)allocation
     char * const sp = s.resize(rd.alloc, n);
@@ -597,6 +639,9 @@ static BjReadResult readval(Emit& emit, BjReader& rd)
                 return FAIL(RD_FAIL, "OP_INT_NEG ended up > 0, should be negative");
             return BjReadResult(emit.Int(neg));
         }
+
+        case OP_VALUE:
+            UNREACHABLE(); // handled above
     }
 
     return FAIL(RD_FAIL, "unhandled OP");
@@ -610,7 +655,10 @@ bool decode_json(VarRef dst, BufferedReadStream& src)
 
     BjReadResult res;
     do
+    {
         res = readval(emit, rd);
+        emit.finishFrames();
+    }
     while(res && (rd.remain -= (res & 1)));
 
     if(res == RD_FAIL)
@@ -788,7 +836,10 @@ size_t WriteState::poolAndEmitStrings()
         ret += putSize(*this, N);
         for(size_t i = 0; i < N; ++i)
         {
-            ref2idx.at(*balloc, strcoll[i].ref) = i;
+            size_t *dst = ref2idx.at(*balloc, strcoll[i].ref);
+            if(!dst)
+                break;
+            *dst = i;
             ret += putStrRaw(*this, strcoll[i].s.c_str(), strcoll[i].s.length());
         }
     }

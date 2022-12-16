@@ -29,8 +29,8 @@ template<
 >
 class LVector : public LVectorBase
 {
-    typedef typename Policy::Allocator Allocator;
 public:
+    typedef typename Policy::Allocator Allocator;
     typedef T value_type;
     typedef SZ size_type;
 
@@ -45,15 +45,16 @@ public:
     }
     LVector(Allocator& mem, SZ sz, ReserveTag)
         : _ptr((T*)(sz ? mem.Alloc(sz * sizeof(T)) : NULL))
-        , _sz(0), _cap(sz)
+        , _sz(0), _cap(_ptr ? sz : 0)
     {
     }
 
     LVector(Allocator& mem, SZ sz, InitTag)
         : _ptr((T*)(sz ? mem.Alloc(sz * sizeof(T)) : NULL))
-        , _sz(sz), _cap(sz)
+        , _sz(_ptr ? sz : 0), _cap(_ptr ? sz : 0)
     {
-        mem_construct_default(_ptr, _ptr + sz);
+        assert(!sz || _ptr);
+        mem_construct_default(_ptr, _ptr + _sz);
     }
 
     LVector(LVector&& o) noexcept
@@ -98,8 +99,9 @@ public:
         if(n > _sz)
         {
             dst = reserve(mem, n);                  // make sure there's enough space
-            if(dst)
-                mem_construct_default(dst + _sz, dst + n); // fill up with valid objects
+            if(!dst)
+                return NULL;
+            mem_construct_default(dst + _sz, dst + n); // fill up with valid objects
         }
         else
         {

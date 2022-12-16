@@ -1237,8 +1237,9 @@ void _VarMap::clear(TreeMem& mem)
     _checkmem(mem);
     for (_Map::iterator it = _storage.begin(); it != _storage.end(); ++it)
     {
+        // FIXME: the loop here should go and instead be handled by key policy
         mem.freeS(it.key());
-        it.value().clear(mem);
+        //it.value().clear(mem); // already handled by policy
     }
     _storage.dealloc(mem);
 }

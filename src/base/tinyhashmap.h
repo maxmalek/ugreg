@@ -377,7 +377,7 @@ class HashHat
 public:
     typedef HashHatKeyStore<u32> KS;
     typedef typename Vec::value_type value_type;
-    typedef typename KS::Allocator Allocator;
+    typedef typename Vec::Allocator Allocator;
     typedef typename KS::size_type SZ;
     struct InsertResult
     {
@@ -470,6 +470,7 @@ public:
         {
         }
 
+        //iterator_T& operator++() { do ++_it; while(!_it.value()); return *this; }
         iterator_T& operator++() { ++_it; return *this; }
         iterator_T operator++(int) { iterator_T tmp = *this; ++(*this); return tmp; }
         friend bool operator== (const iterator_T& a, const iterator_T& b)

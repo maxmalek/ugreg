@@ -329,7 +329,7 @@ private:
 // Note: Methods that don't take TreeMem don't modify the string keys' refcount!
 class _VarMap
 {
-    typedef TinyHashMap<Var /*, typename Var::Policy*/ > _Map; // FIXME: use policy
+    typedef TinyHashMap<Var, Var::Policy> _Map;
     typedef typename _Map::TVec Vec;
     ~_VarMap(); // call destroy() instead
 public:
