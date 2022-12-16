@@ -433,7 +433,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                         logdev("HS found %zu users", n);
                         if (n >= limit)
                         {
-                            logdebug("MxSearchHandler: %zu/%u results from HS, done here", xresults.size(), limit);
+                            logdebug("MxSearchHandler: %zu/%zu results from HS, done here", xresults.size(), limit);
                             writeJson(dst, hsdata.root(), false);
                             return 0;
                         }
@@ -441,7 +441,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                     else
                         logerror("HS didn't send results array! (This is against the spec)");
                 }
-                
+
                 // re-use vars for the search since we don't need those anymore
                 vars.root().v->makeMap(vars)->clear(vars);
                 doSearch(vars.root(), term.c_str(), limit);

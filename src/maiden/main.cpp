@@ -275,7 +275,7 @@ static int main2(MxSources& sources, int argc, char** argv)
         WebServer::StaticInit();
 
         if(!startServers(servers))
-            logerror("Failed to start a server component, exiting", "");
+            bail("Failed to start a server component, exiting", "");
 
         log("Ready; all servers up after %u ms", (unsigned)timer.ms());
 

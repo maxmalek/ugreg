@@ -688,7 +688,7 @@ void MxStore::_Rebuild3pidMap(VarRef dst, VarCRef src, const char* fromkey)
         }
     }
 
-    logdebug("MxStore: Rebuilt 3pid from [%s], %zu entries in %llu ms", fromkey, n, timer.ms());
+    logdebug("MxStore: Rebuilt 3pid from [%s], %zu entries in %u ms", fromkey, n, (unsigned)timer.ms());
 }
 
 void MxStore::onTreeRebuilt(VarCRef src)

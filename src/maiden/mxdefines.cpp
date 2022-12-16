@@ -26,6 +26,6 @@ static const char *mxErrorStrs[] =
 
 const char* mxErrorStr(MxError err)
 {
-    assert(err < Countof(mxErrorStrs));
-    return err < Countof(mxErrorStrs) ? mxErrorStrs[err] : NULL;
+    assert(unsigned(err) < Countof(mxErrorStrs));
+    return unsigned(err) < Countof(mxErrorStrs) ? mxErrorStrs[err] : NULL;
 }

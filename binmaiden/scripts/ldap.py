@@ -5,13 +5,14 @@
 # Output format:
 """
 {
-    "media": { "email": "mail", "msisdn": "phone"},
+    (... some unnecessary entries for debugging...)
     "data": {
         "@user:matrix.org": {
             "mail": "user@example.org",
             "displayname": "Example person",
             "phone": "1234"
         }
+        (...more users...)
     }
 }
 """

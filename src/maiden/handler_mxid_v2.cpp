@@ -340,6 +340,11 @@ int MxidHandler_v2::post_account_register(BufferedWriteStream& dst, mg_connectio
                 // unable to connect is what we'd expect from a downed server
                 errors << resolv.target.host << ": Server looks down from here\n";
                 break; // try next
+
+            case MXGJ_HTTP_ERROR:
+                // unable to connect is what we'd expect from a downed server
+                errors << resolv.target.host << ": Returned HTTP status " << jr.httpstatus << "\n";
+                break; // try next
         }
     }
 

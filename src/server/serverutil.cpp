@@ -62,7 +62,7 @@ static bool loadcfg(DataTree& base, const char* fn)
         std::ostringstream os;
         while (((c = fs.Take())) && i++ < 100)
             os << c;
-        logerror(os.str().c_str());
+        logerror("%s", os.str().c_str());
 
         bail("Exiting.", "");
     }
