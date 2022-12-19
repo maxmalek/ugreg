@@ -7,6 +7,7 @@
 #include "scopetimer.h"
 #include "env.h"
 #include <algorithm>
+#include "subprocess.h"
 
 MxSources::MxSources()
     : _quit(false)
@@ -38,11 +39,13 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std:
 {
     MxSources::Config::InputEntry entry;
     entry.every = 0;
+    entry.check = false;
 
     VarCRef xwhat = x.lookup("exec");
     if(xwhat)
     {
         entry.how = MxSources::Config::IN_EXEC;
+        entry.check = true;
         switch (xwhat.type())
         {
             case Var::TYPE_STRING:
@@ -70,6 +73,9 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std:
             }
             break;
         }
+
+        if(VarCRef xcheck = x.lookup("check"))
+            entry.check = xcheck.asBool();
     }
     else
     {
@@ -86,9 +92,6 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std:
                 logerror("MxSources ERROR: every '%s' is not a valid duration", p);
                 return entry; // still invalid here and will be skipped by caller
             }
-
-    // TODO: --check
-
 
     return entry;
 }
@@ -150,6 +153,70 @@ bool MxSources::initConfig(VarCRef src, VarCRef env)
 
     logdebug("MxSources: %u sources configured", (unsigned)_cfg.list.size());
     logdebug("MxSources: Purge tree every %ju seconds", _cfg.purgeEvery / 1000);
+
+    return _checkAll();
+}
+
+bool MxSources::_checkAll() const
+{
+    size_t N = _cfg.list.size();
+    for(size_t i = 0; i < N; ++i)
+    {
+        const Config::InputEntry& e = _cfg.list[i];
+        if(e.how == Config::IN_EXEC && e.check)
+        {
+            if(!_checkExec(e))
+                return false;
+        }
+    }
+    return true;
+}
+
+bool MxSources::_checkExec(const Config::InputEntry& e) const
+{
+    subprocess_s proc;
+    const char *args[] = { e.args[0], "--check", NULL };
+
+    log("MxSources: Startup-check: \"%s\" --check ...", args[0]);
+
+    // start in sync mode; async isn't needed here
+    if (!createProcess(&proc, args, _envPtrs.data(), subprocess_option_combined_stdout_stderr | subprocess_option_no_window))
+    {
+        logerror("MxSources: Startup-check: Failed to create subprocess: \"%s\" --check", args[0]);
+        return false;
+    }
+
+    // display subproc stdout+stderr
+    {
+        FILE* pout = subprocess_stdout(&proc);
+        size_t bytes;
+        char buf[256];
+        do
+        {
+            bytes = fread(buf, 1, sizeof(buf), pout);
+            fwrite(buf, 1, bytes, stdout);
+        }
+        while (bytes);
+    }
+
+
+    int ret = 0;
+    int err = subprocess_join(&proc, &ret);
+    subprocess_destroy(&proc);
+
+    if (err)
+    {
+        logerror("MxSources: Startup-check: Failed subprocess_join()");
+        return false;
+    }
+
+    if (ret)
+    {
+        logerror("MxSources: Startup-check: Failed with return code %d", ret);
+        return false;
+    }
+
+    log("... OK");
     return true;
 }
 

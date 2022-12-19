@@ -32,6 +32,7 @@ public:
             InputType how;
             std::vector<const char*> args; // actual strings are stored in _argstrs[]
             u64 every;
+            bool check;
         };
         u64 purgeEvery;
         std::string directory;
@@ -58,6 +59,8 @@ public:
     bool save() const;
 
 private:
+    bool _checkAll() const;
+    bool _checkExec(const Config::InputEntry& e) const;
     std::vector<std::string> _argstrs;
     void _loop_th(bool buildAsync);
     void _loop_th_untilPurge();
