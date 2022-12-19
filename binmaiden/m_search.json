@@ -1,0 +1,42 @@
+// Enable an interface to provide certain endpoints of interest that a matrix homeserver would serve.
+// This way we can handle /_matrix/client/*/user_directory/search that usually goes to the matrix server.
+// To use this, you need a reverse proxy to forward /_matrix/client/*/user_directory/search to here;
+// then this endpoint does its thing and forwards the request to the real homeserver.
+
+{"usersearch": {
+    // webserver config
+    "listen": [
+        { "host": "0.0.0.0", "port": 8088, "ssl": false },
+        //{ "host": "0.0.0.0", "port": 8089, "ssl": true }, // requires a valid cert if used
+    ],
+    "cert": "fullchain.pem", // Only used when server listens on SSL port
+    "listen_threads": 0,
+    // search config
+    "fields": {
+        // field => true to search with default params
+        // (field => {...} for extended config is currently not implemented but may be in the future)
+        // All searches are performed unicode-case-insenstitive.
+        "mxid": true,
+        "mail": true,
+        "phone": true,
+        "realname": true,
+    },
+    // If query is not part of a result, add it. Reqired to show mismatched result in Element.
+    // This solves the problem described in https://github.com/matrix-org/matrix-react-sdk/pull/9556
+    "element_hack": true,
+    "displayname": "displayname", // Field to show as the display name
+    //"avatar_url": "mxc://...", // Use this avatar for search results rpovided by our endpoint. Must be MXC URL.
+    
+    // Forward search requests to homeserver. Should be enabled in production.
+    // Results by the HS will be merged into our own; the HS has priority.
+    // If "homeserver" is not present, we're in stand-alone mode:
+    //  => No homeserver is needed, but no authentication is performed.
+    // Set "check" to false to integrate HS search results (if any) but always perform our own search
+    // even if authentication fails. You probably don't want check=false in production.
+    // "timeout" is how long we'll wait until we consider a HS request as failed. Infinite if not present (not recommended).
+    // "homeserver": { "host": "localhost", "port": 8008, "ssl": false, "check": true, "timeout": "2s" },
+
+    // Include a dummy entry with some stats about the search
+    // Should be disabled in production
+    "debug_dummy_result": false,
+}}

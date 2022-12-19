@@ -1,0 +1,49 @@
+// Global data storage and acquisition
+// Required to pull in users.
+// "list" must not be empty otherwise the process refuses to start.
+
+{"sources": {
+    /* Directory name where we store our database upon quitting, and load it when starting.
+     Leave away, set None or "" to not store anything on disk. Use "." to use working directory.
+     If you run multiple instances then each instance needs its own storage directory. */
+    "directory": ".",
+    
+    /* Completely purge & reload the entire user tree every now and then.
+       Fetches all sources as if on program startup, then atomically replaces the tree once everything is loaded.
+       Gets rid of stale entries. Clears hash caches. Comment out to never purge (not recommended). */
+    "purgeEvery": "6h",
+    
+    /* Fetching sources happens as follows:
+    exec: Executes this file/script/program and parses its stdout as JSON.
+          - Can either use a string to exec that file without parameters
+          - Can also use an array to specify file name and parameters
+    load: Load this file as JSON.
+    every: takes a time delay to do this action repeatly
+           (If not present, this is done once on startup, and then every purge)
+    check: By default, each exec'd source is checked during startup to ensure the process will execute cleanly.
+           External scripts can use this to eg. check that all required dependencies are available on the system.
+           For the check, the process is run with --check as its only parameter. If it exits with status 0,
+           the check is considered successful.
+           If one check fails the process will terminate on startup and display a big honking error.
+           (default: true. Set to false to skip the check.)
+    */
+    "list": [
+        // Some examples:
+        // Load a JSON file from disk
+        //{ "load": "example_users.json" },
+        
+        // Call a script that outputs JSON
+        //{ "exec": "example_users.sh", "every": "30m", "check": true },
+        
+        // You can write your own data importer script and call it here.
+        // The expected format is:
+        // { "mxid": { "field": value, ... }, ... }
+        // Where
+        // - "mxid" is the full username (@user:homeserver.tld) of the user
+        // - Field names can be referenced by 3pid and user search.
+        // - Unreferenced fields are ignored.
+        
+        //{ "exec": "3pid/fakeusers", "every": "30m", "check": false },
+        //{ "exec": "3pid/fakestud", "every": "30m", "check": false },
+    ],
+}}

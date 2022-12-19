@@ -144,38 +144,40 @@ bool MxSearchHandler::init(VarCRef cfg)
         if(const u64 *pmaxsize = xmaxsize.asUint())
             searchcfg.maxsize = size_t(*pmaxsize);
 
-    if (VarCRef xproxy = cfg.lookup("check_homeserver"))
-        checkHS = xproxy && xproxy.asBool();
-
-    if (VarCRef xproxy = cfg.lookup("ask_homeserver"))
-        askHS = xproxy && xproxy.asBool();
-
     if (VarCRef xdd = cfg.lookup("debug_dummy_result"))
         searchcfg.debug_dummy_result = xdd && xdd.asBool();
 
     hsTimeout = -1;
-    if(VarCRef xtm = cfg.lookup("ask_homeserver_timeout"))
-        if(const char *stm = xtm.asCString())
-        {
-            u64 tmp;
-            if(strToDurationMS_Safe(&tmp, stm))
-                hsTimeout = int(tmp);
-        }
-
+    askHS = false;
+    checkHS = false;
     if(VarCRef xhs = cfg.lookup("homeserver"))
     {
+        askHS = true;
+        checkHS = true; // true by default, can be disabled if needed
         if(!homeserver.load(xhs))
         {
             logerror("MxSearchHandler: Failed to apply homeserver setting");
             return false;
         }
+
+        if (VarCRef xproxy = xhs.lookup("check"))
+            checkHS = xproxy && xproxy.asBool();
+
+        if(VarCRef xtm = xhs.lookup("timeout"))
+        {
+            bool ok = false;
+            if(const char *stm = xtm.asCString())
+            {
+                u64 tmp;
+                ok = strToDurationMS_Safe(&tmp, stm);
+                if(ok)
+                    hsTimeout = int(tmp);
+            }
+            if(!ok)
+                logerror("MxSearchHandler: homeserver.timeout: Failed to decode time");
+        }
     }
 
-    if(!this->homeserver.isValid())
-    {
-        checkHS = false;
-        askHS = false;
-    }
 
     logdebug("MxSearchHandler: max. client request size = %u", (unsigned)searchcfg.maxsize);
     logdebug("MxSearchHandler: avatar_url = %s", searchcfg.avatar_url.c_str());
