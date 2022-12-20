@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-""" basic LDAP 3pid provider"""
+""" basic LDAP user provider"""
 
 # Output format:
 """
@@ -17,9 +17,7 @@
 }
 """
 
-
-from mod_ldap import LDAPFetcher
-
+# stdlib deps
 from os import environ as env
 import sys
 import json
@@ -27,6 +25,29 @@ import re
 import argparse
 import collections
 from collections.abc import Mapping
+
+# External deps
+import ldap3
+
+# set sane defaults
+ldap3.set_config_parameter("DEFAULT_CLIENT_ENCODING", "utf-8")
+ldap3.set_config_parameter("DEFAULT_SERVER_ENCODING", "utf-8")
+
+"""Simple LDAP fetcher helper"""
+class LDAPFetcher:
+    def __init__(self, host, pw, dn, filter):
+        self.host = host
+        self.dn = dn
+        self.filt = filter
+        self.pwd = pw
+
+    """ Returns a generator expression that produces dicts with all requested search fields"""
+    def fetch(self, base, fields):
+        conn = ldap3.Connection(self.host, user=self.dn, password=self.pwd, lazy=False, read_only=True, auto_range=True, auto_bind=True)
+        # an unsuccessful bind throws an error, so once we're here everything is fine
+        gen = conn.extend.standard.paged_search(base, self.filt, attributes = fields)
+        return (e["attributes"] for e in gen)
+
 
 # Make sure everything is utf-8, especially when piping
 sys.stdout.reconfigure(encoding='utf-8')
@@ -38,13 +59,13 @@ if len(sys.argv) > 1 and sys.argv[1] == "--check":
 # begin parsing cmdline
 ap = argparse.ArgumentParser()
 
-ap.add_argument("--base", type=str, required=True, metavar="LDAP_BASE")
 ap.add_argument("--format", type=str, action="append", metavar="FIELD=EXPR")
+ap.add_argument("--default", type=str, action="append", metavar="FIELD=VALUE")
 ap.add_argument("--regex", nargs=3, type=str, metavar=("FIELD=EXPR", "match", "replace"), action="append")
 ap.add_argument("--output", type=str, action="append", metavar="list,of,extra,fields,returnas=oldname")
 ap.add_argument("--mxid", type=str, metavar="FIELD", default="mxid")
-ap.add_argument("--test", type=str, metavar="JSON-file")
-ap.add_argument("--ldap-dn", type=str, dest="dn")
+ap.add_argument("--ldap-base", type=str, dest="base")
+ap.add_argument("--ldap-binddn", type=str, dest="binddn")
 ap.add_argument("--ldap-pass", type=str, dest="pw")
 ap.add_argument("--ldap-filter", type=str, dest="filter")
 ap.add_argument("--ldap-host", type=str, dest="host")
@@ -55,14 +76,9 @@ del ap
 MXID = args.mxid
 assert(MXID)
 
-# Support supplying a json file with an "env" key for easy testing
-if args.test:
-    with open(args.test) as fh:
-        js = json.load(fh)
-    env = js["env"]
-
 # optional, if not present env vars are used
-ldap_dn = args.dn or env["LDAP_BIND_DN"]
+ldap_base = args.base or env["LDAP_BASE"]
+ldap_binddn = args.binddn or env["LDAP_BIND_DN"]
 ldap_pass = args.pw or env["LDAP_PASS"]
 ldap_filter = args.filter or env["LDAP_SEARCH_FILTER"]
 ldap_host = args.host or env["LDAP_HOST"]
@@ -85,23 +101,24 @@ def fieldlist(s:str):
 
 # Generator functions.
 # Each of these returns a callable F(kv:dict) that, given kv, returns a string that incorporates some of the values in kv.
+# Return string on success, None or throw on failure
 
 def genFieldLookup(expr:str):
     return expr.format_map
 
 def genRegexLookup(expr:str, match:str, replace:str):
     rx = re.compile(match)
-    def f(kv):
-        m = rx.match(expr.format_map(kv))
-        if m:
-            return replace.format(*(m.groups()), **kv) # this can't create new keys when evaluating the replacement
-    return f
+    return lambda kv: replace.format(*(rx.match(expr.format_map(kv)).groups()), **kv) # Throw on failed match
 
 FIELDGEN = {} # generators for field names, in case a key isn't present
+DEFAULTS = {} # default values if field is not present or regex doesn't match
 
 FIELDS = {} # fields to include in the output. key is the key used in the output, value is the name in our work dict
 
-
+for f in args.default:
+    (k, val) = splitexpr(f)
+    DEFAULTS[k] = val
+    
 for f in args.format:
     (k, fmt) = splitexpr(f)
     FIELDGEN[k] = genFieldLookup(fmt)
@@ -118,13 +135,21 @@ for m in args.output:
 
 # behaves like a dict but generates values that don't exist yet
 class Accessor(Mapping):
-    def __init__(self, kv:dict, gen):
+    def __init__(self, kv:dict, gen, defaults:dict):
         self._kv = kv
         self._gen = gen
+        self._defaults = defaults
     def __getitem__(self, k):
         v = self._kv.get(k)
-        if v == None:
-            v = self._gen[k](self) # recursive resolve keys
+        if v is None:
+            try:
+                v = self._gen[k](self) # recursive resolve keys, thows on fail
+            except:
+                pass
+            if v is None:
+                v = self._defaults.get(k, v) # Keep original value if not present
+            if v is None: # None should never end up in the cache (str.format_map() would insert None as "None")
+                raise KeyError() # So instead we just throw, making everything fail until something has a default
             self._kv[k] = v
         return v
     def __iter__(self):
@@ -132,20 +157,23 @@ class Accessor(Mapping):
     def __len__(self):
         return len(self._kv)
 
-# instantiate an Accessor with this as generator to figure out which fields
-# are actually used
+# Helper to figure out which fields are actually used
 class UsedFields(Mapping):
     def __init__(self, gen): # forward to existing generator dict
         self.used = set()
         self.missing = set()
+        self.generated = set()
         self._gen = gen
     def __getitem__(self, k):
         self.used.add(k)
-        g = self._gen.get(k)
-        if not g:
+        try:
+            self._gen[k](self)
+        except:
+            pass
+        if self._gen.get(k):
+            self.generated.add(k)
+        else:
             self.missing.add(k)
-            return self
-        return g
     def __iter__(self):
         return iter(self.used)
     def __len__(self):
@@ -154,17 +182,24 @@ class UsedFields(Mapping):
         pass
 
 used = UsedFields(FIELDGEN)
-dummy = Accessor({}, used)
 for k, f in FIELDS.items():
-    _ = dummy[f]  # Just drop it on the floor
-_ = dummy[MXID] # this is always required
+    _ = used[f] # Just drop it on the floor
+_ = used[MXID] # this is always required
+
+def optional(a, f):
+    try:
+        return a[f]
+    except:
+        return None
 
 # Iterates over LDAP entries and outputs (mxid, data) as key-value pair,
 # where data is formatted according to the selected FIELDS.
 def outputRows(db):
     for e in db:
-        a = Accessor(e, FIELDGEN)
-        yield a[MXID], { k: val for k,f in FIELDS.items() if (val := a[f]) is not None}
+        a = Accessor(kv = e, gen = FIELDGEN, defaults = DEFAULTS)
+        mxid = optional(a, MXID)
+        if mxid:
+            yield mxid, { k: val for k,f in FIELDS.items() if (val := optional(a, f)) is not None}
 
 # This is a "fake dict" used for JSON serialization.
 # The idea is that the json module thinks this is a complete object
@@ -190,15 +225,19 @@ sys.stdout.write("{")
 # -- some debug infos...
 sys.stdout.write("\n\"## [debug] fields missing, fetched from LDAP\": ")
 json.dump(list(used.missing), sys.stdout)
-sys.stdout.write(",\n\"## [debug] fields used\": ")
+sys.stdout.write(",\n\"## [debug] fields generated from input\": ")
+json.dump(list(used.generated), sys.stdout)
+sys.stdout.write(",\n\"## [debug] total fields used\": ")
 json.dump(list(used), sys.stdout)
 sys.stdout.write(",\n\"## [debug] fields included in output\": ")
 json.dump(FIELDS, sys.stdout)
+sys.stdout.write(",\n\"## [debug] field defaults\": ")
+json.dump(DEFAULTS, sys.stdout)
 # -- end debug infos
 
 # -- begin actual data
 sys.stdout.write(",\n\"data\":\n")
-json.dump(OutputFakeDict(LDAPFetcher(host=ldap_host, pw=ldap_pass, dn=ldap_dn, filter=ldap_filter).fetch(args.base, used.missing)),
+json.dump(OutputFakeDict(LDAPFetcher(host=ldap_host, pw=ldap_pass, dn=ldap_binddn, filter=ldap_filter).fetch(ldap_base, used.missing)),
     sys.stdout,
     separators=(",",":"), # Reduce whitespace
     check_circular=False, # Saves some time

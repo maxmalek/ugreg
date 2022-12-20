@@ -1,36 +1,65 @@
-/*
-Example config to pull mxids from LDAP.
-Adapt to your needs, then include during startup:
-$ ./maiden maiden.json my_ldap.json
-
-Note that this uses scripts/ldap.py. If you need anything more fancy, modify that script or make your own.
-*/
+// Example how to configure user sources.
+// maiden has no external depencies; our user list can come from anywhere,
+// either a JSON file or a script that prints JSON.
+// ---
+// Included is a python script that can fetch users from LDAP
+// and do some basic regex matching to create new fields from existing LDAP fields.
+// The list can contain any number of entries in case you have multiple sources for user data,
+// eg. one search base for students and a separate one for employees.
 {
-    "sources": {
-        "list": [
-            { "exec": [ "scripts/ldap.py",
-                "email", // mxid medium under which to register the following data
-                "OU=Users,DC=example,DC=org", // LDAP Base DN
-                "{mail}", // Python formatting expression to build a string from the LDAP fields that come in. Uses str.format() with the LDAP keys
-                "(.+)@example.com", // Regex to select parts of the previously built string. Can capture groups for later. Captures start at index 0.
-                "@{0}:example.com" // Python formatting expression for the final output, capture groups can be accessed numerically. LDAP keys are also available.
-            ]},
-            // Second config for a different group of users
-            { "exec": [ "scripts/ldap.py",
-                "email",
-                "OU=Students,DC=example,DC=org", // Different LDAP base DN
-                "{mail}",
-                "(.+)@stud.example.com", // In this example, Students have different emails
-                "@{0}_stud:example.com" // ... and thus we want different mxids, too
-            ]},
-        ],
-    },
-
-    "env": {
-        "LDAP_HOST": "ldaps://example.com:3269",
-        "LDAP_PASS": "secret",
-        "LDAP_BIND_DN": "CN=My User,OU=Users,DC=example,DC=org",
-        "LDAP_SEARCH_FILTER": "(&(mail=*@*)(!(mail=*.DISABLED))))",
-        "LDAP_SEARCH_FIELDS": "mail", // Space-separated list of LDAP fields to fetch. For use in formatting expressions above.
-    },
+"sources":{
+    "list":[
+        // Can either specify parameters directly...
+        // (On windows this will fail because a .py file is not executable.
+        //  maiden will automatically look for a .bat file and run that instead)
+        
+        // By default, the script uses the field called "mxid" as the matrix ID.
+        // Use --mxid to specify a different field name if necessary
+        // In this example, we fetch the fields matrixUser, displayname, mail from LDAP,
+        // and do no further processing.
+        { "exec": [ "scripts/ldap.py",
+            "--ldap-host", "ldaps://ad.example.com:3269",
+            "--ldap-pass", "secret",
+            "--ldap-binddn", "OU=Users,DC=example,DC=org",
+            "--ldap-base", "CN=My User,OU=Users,DC=example,DC=org",
+            "--ldap-filter", "(&(mail=*@*)(!(mail=*.DISABLED)))",
+            "--mxid", "matrixUser", // By default
+            "--output", "displayname,mail"
+        ]},
+        
+        // In this example the matrix username is derived from the email,
+        // and the displayname is built from other fields that are either generated on the fly
+        // as intermediates or directly fetched from LDAP.
+        // -> Any field that is not generated is fetched from LDAP.
+        // Any regex that does not match (eg. because the email does not end in "@example.com")
+        // causes that user to be skipped and not included in the output.
+        // (The field is already called "mxid" so we don't need --mxid here)
+        { "exec": [ "scripts/ldap.py",
+            "--ldap-host", "ldaps://ad.example.com:3269",
+            "--ldap-pass", "secret",
+            "--ldap-binddn", "OU=Users,DC=example,DC=org",
+            "--ldap-base", "CN=My User,OU=Users,DC=example,DC=org",
+            "--ldap-filter", "(&(mail=*@*)(!(mail=*.DISABLED)))",
+            // Assign intermdiate fields based on Python formatting expressions
+            // See https://docs.python.org/3/library/string.html#formatspec
+            // In short, refer to other fields in {}.
+            "--format", "realname={givenName} {sn}", // <-- Both are fetched from LDAP
+            // realname is generated in the prev line, sAMAccountName is fetched from LDAP
+            "--format", "displayname={realname} ({sAMAccountName})",
+            /*          +-- Assign the final result to this field
+                        |
+                        |     + Match this (this is a python formatting expression)
+                        |     |
+                        |     |        +-- The usual regex   +-- End result:
+                        |     |        |   match with        |   Insert match
+                        v     v        v   a capture         v   group 0     */
+            "--regex", "mxid={mail}", "(.+)@example.com", "@{0}:example.com",
+            "--output", "displayname,mail"
+        ]},
+        
+        // ... or just do this and speficy everything else in the script.
+        // (again, windows will fail to exec .sh files, so the .bat file with the same name is used instead)
+        { "exec": "./example_ldap2.sh" },
+    ]
+}
 }
