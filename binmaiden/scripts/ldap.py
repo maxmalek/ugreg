@@ -115,22 +115,26 @@ DEFAULTS = {} # default values if field is not present or regex doesn't match
 
 FIELDS = {} # fields to include in the output. key is the key used in the output, value is the name in our work dict
 
-for f in args.default:
-    (k, val) = splitexpr(f)
-    DEFAULTS[k] = val
-    
-for f in args.format:
-    (k, fmt) = splitexpr(f)
-    FIELDGEN[k] = genFieldLookup(fmt)
+if args.default:
+    for f in args.default:
+        (k, val) = splitexpr(f)
+        DEFAULTS[k] = val
 
-for (expr, match, replace) in args.regex:
-    (k, fmt) = splitexpr(expr)
-    rx = re.compile(match)
-    FIELDGEN[k] = genRegexLookup(fmt, match, replace)
+if args.format:
+    for f in args.format:
+        (k, fmt) = splitexpr(f)
+        FIELDGEN[k] = genFieldLookup(fmt)
 
-for m in args.output:
-    for (k, saveas) in fieldlist(m):
-        FIELDS[k] = saveas
+if args.regex:
+    for (expr, match, replace) in args.regex:
+        (k, fmt) = splitexpr(expr)
+        rx = re.compile(match)
+        FIELDGEN[k] = genRegexLookup(fmt, match, replace)
+
+if args.output:
+    for m in args.output:
+        for (k, saveas) in fieldlist(m):
+            FIELDS[k] = saveas
 
 
 # behaves like a dict but generates values that don't exist yet
