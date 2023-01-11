@@ -1206,15 +1206,21 @@ bool _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, Me
     for(Iterator it = o.begin(); it != o.end(); ++it)
     {
         PoolStr ps = srcmem.getSL(it.key());
-        Var *dst = putKey(dstmem, ps.s, ps.len);
+        Var *dst = this->putKey(dstmem, ps.s, ps.len);
         if(!dst)
             return false;
+
+        const Var::Type dsttype = dst->type(); // if newly created, this will be null
         const Var::Type othertype = it.value().type();
 
-        if((mergeflags & MERGE_RECURSIVE) && othertype == Var::TYPE_MAP)
-            dst->makeMap(dstmem)->merge(dstmem, *it.value().u.m, srcmem, mergeflags);
-        else if((mergeflags & MERGE_APPEND_ARRAYS) && othertype == Var::TYPE_ARRAY && dst->type() == Var::TYPE_ARRAY)
+        if((mergeflags & MERGE_RECURSIVE) && othertype == Var::TYPE_MAP && dsttype == Var::TYPE_MAP)
         {
+            // Both are maps, merge recursively
+            dst->makeMap(dstmem)->merge(dstmem, *it.value().u.m, srcmem, mergeflags);
+        }
+        else if((mergeflags & MERGE_APPEND_ARRAYS) && othertype == Var::TYPE_ARRAY && dsttype == Var::TYPE_ARRAY)
+        {
+            // Both are arrays, append
             const size_t oldsize = dst->_size();
             const size_t addsize = it.value()._size();
             const Var *oa = it.value().array_unsafe();
@@ -1225,7 +1231,13 @@ bool _VarMap::merge(TreeMem& dstmem, const _VarMap& o, const TreeMem& srcmem, Me
         }
         else // One entry replaces the other entirely
         {
-            dst->clear(dstmem);
+            if(dsttype != Var::TYPE_NULL)
+            {
+                if(mergeflags & MERGE_NO_OVERWRITE)
+                    continue;
+
+                dst->clear(dstmem);
+            }
             *dst = std::move(it.value().clone(dstmem, srcmem)); // TODO: optimize if srcmem==dstmem?
         }
     }

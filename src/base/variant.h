@@ -29,8 +29,10 @@ enum MergeFlags // bitmask!
     MERGE_FLAT           = 0x00,
     MERGE_RECURSIVE      = 0x01,
     MERGE_APPEND_ARRAYS  = 0x02,
+    MERGE_NO_OVERWRITE   = 0x04, // overwrite values only if not exist or null
 };
 inline static MergeFlags operator|(MergeFlags a, MergeFlags b) {return MergeFlags(unsigned(a) | unsigned(b)); }
+inline static MergeFlags& operator|=(MergeFlags& a, MergeFlags b) {return (a = MergeFlags(unsigned(a) | unsigned(b))); }
 
 
 /* A small variant type that encapsulates all primitives available in JSON:
