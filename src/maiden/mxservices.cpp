@@ -150,6 +150,7 @@ bool MxSearchHandler::init(VarCRef cfg)
     hsTimeout = -1;
     askHS = false;
     checkHS = false;
+    prioritizeHS = false;
     if(VarCRef xhs = cfg.lookup("homeserver"))
     {
         askHS = true;
@@ -160,8 +161,11 @@ bool MxSearchHandler::init(VarCRef cfg)
             return false;
         }
 
-        if (VarCRef xproxy = xhs.lookup("check"))
-            checkHS = xproxy && xproxy.asBool();
+        if (VarCRef x = xhs.lookup("check"))
+            checkHS = x && x.asBool();
+
+        if (VarCRef x = xhs.lookup("priority"))
+            prioritizeHS = x && x.asBool();
 
         if(VarCRef xtm = xhs.lookup("timeout"))
         {
@@ -231,7 +235,6 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     dst["limited"] = limited;
 
     const bool useAvatar = !searchcfg.avatar_url.empty();
-    const bool elementHack = searchcfg.element_hack;
 
     if(searchcfg.debug_dummy_result)
     {
@@ -313,7 +316,7 @@ static size_t moveResults(Var *adst, size_t maxsize, VarRef combined, const std:
 // Merge own search results and those of the homeserver together,
 // so that the array order is preserved but duplicates are properly merged and appear only once.
 // res is our search result, hs is the homerserver's
-static void mergeResults(VarRef res, VarCRef hs, size_t limit)
+static void mergeResults(VarRef res, VarCRef hs, size_t limit, bool hsHasPriority)
 {
     if(!hs || hs.type() != Var::TYPE_MAP)
         return;
@@ -330,12 +333,20 @@ static void mergeResults(VarRef res, VarCRef hs, size_t limit)
     logdev("makemapOrNil mymap:");
     Var mymap = makemapOrNil(*res.mem, myresults, order);
 
-    VarRef myref(res.mem, &mymap);
-    VarRef hsref(res.mem, &hsmap);
+    VarRef myref(res.mem, &mymap); // used below
+    VarRef hsref(res.mem, &hsmap); // temporary, only for merging
+
+    DEBUG_LOG("hsmap JSON DUMP:\n%s", dumpjson(hsref, true).c_str());
+    DEBUG_LOG("mymap JSON DUMP:\n%s", dumpjson(myref, true).c_str());
 
     // Since the user_id is now also used as key, this is a de-duplicating merge
-    // HS data is merged into ours, so the HS wins any conflicts
-    myref.merge(hsref, MERGE_RECURSIVE);
+    // HS data is merged into ours, and if prioritized, the HS wins any conflicts
+    MergeFlags mergeflags = MERGE_RECURSIVE;
+    if(!hsHasPriority)
+        mergeflags |= MERGE_NO_OVERWRITE;
+
+    myref.merge(hsref, mergeflags);
+    DEBUG_LOG("merged JSON DUMP:\n%s", dumpjson(myref, true).c_str());
 
     size_t N = std::min(limit, myref.size());
     if(N < myref.size())
@@ -433,7 +444,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                     {
                         const size_t n = xresults.size();
                         logdev("HS found %zu users", n);
-                        if (n >= limit)
+                        if (useHS && n >= limit && prioritizeHS && !searchcfg.element_hack) // Can't take the shortcut when we need to munge results for element
                         {
                             logdebug("MxSearchHandler: %zu/%zu results from HS, done here", xresults.size(), limit);
                             writeJson(dst, hsdata.root(), false);
@@ -450,7 +461,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 
                 // merge HS results on top (HS results win and override our own search results)
                 if(useHS)
-                    mergeResults(vars.root(), hsdata.root(), limit);
+                    mergeResults(vars.root(), hsdata.root(), limit, prioritizeHS);
 
                 writeJson(dst, vars.root(), false);
                 return 0;
