@@ -444,7 +444,43 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                     {
                         const size_t n = xresults.size();
                         logdev("HS found %zu users", n);
-                        if (useHS && n >= limit && prioritizeHS && !searchcfg.element_hack) // Can't take the shortcut when we need to munge results for element
+
+                        if(useHS && n && searchcfg.element_hack)
+                        {
+                            TwoWayCasefoldMatcher fullmatch(term.c_str(), term.length());
+                            Var *a = xresults.v->array_unsafe();
+                            const StrRef user_id = hsdata.lookup("user_id", 7);
+                            for(size_t i = 0; i < n; ++i)
+                            {
+                                VarRef entry(hsdata, &a[i]);
+                                bool found = false;
+                                std::string dn;
+
+                                VarRef xdn = entry["display_name"];
+                                if (xdn.type() == Var::TYPE_STRING)
+                                {
+                                    PoolStr ps = xdn.asString();
+                                    found = fullmatch.match(ps.s, ps.len);
+                                    dn.assign(ps.s, ps.len);
+                                }
+
+                                if(!found && user_id)
+                                    if(VarCRef xid = entry.lookup(user_id))
+                                        if(xid.type() == Var::TYPE_STRING)
+                                        {
+                                            PoolStr ps = xid.asString();
+                                            found = fullmatch.match(ps.s, ps.len);
+                                        }
+
+                                if(!found)
+                                {
+                                    dn += "  // " + term;
+                                    xdn.setStr(dn.c_str(), dn.length());
+                                }
+                            }
+                        }
+
+                        if (useHS && n >= limit && prioritizeHS)
                         {
                             logdebug("MxSearchHandler: %zu/%zu results from HS, done here", xresults.size(), limit);
                             writeJson(dst, hsdata.root(), false);
@@ -459,7 +495,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                 vars.root().v->makeMap(vars)->clear(vars);
                 doSearch(vars.root(), term.c_str(), limit);
 
-                // merge HS results on top (HS results win and override our own search results)
+                // merge HS results in
                 if(useHS)
                     mergeResults(vars.root(), hsdata.root(), limit, prioritizeHS);
 

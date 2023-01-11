@@ -1504,6 +1504,13 @@ VarRef VarRef::operator[](PoolStr ps)
     return VarRef(*mem, sub);
 }
 
+VarRef VarRef::operator[](StrRef ref)
+{
+    assert(ref);
+    Var* sub = v->makeMap(*mem)->getOrCreate(*mem, ref);
+    return VarRef(*mem, sub);
+}
+
 bool VarRef::merge(const VarCRef& o, MergeFlags mergeflags)
 {
     assert(v && o.v);
