@@ -23,7 +23,7 @@ void BrotliWriteStream::finish()
 {
     if(_dst && Tell()) // Only output something if we ever got any data
     {
-        Flush();
+        Flush(); // Compress whatever is left in the buffer
 
         while(!BrotliEncoderIsFinished((BrotliEncoderState*)br))
         {

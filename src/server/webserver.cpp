@@ -249,6 +249,8 @@ int RequestHandler::_onRequest(mg_connection* conn) const
                 const StreamWriteMth writer = s_writer[k.obj.compression];
 
                 status = (this->*writer)(wr, conn, k.obj);
+                if(status >= 400) // is an error code?
+                    wr.setError(); // Make sure the stream destructor doesn't send anything
             }
             if(!status) // 0 means the handler didn't error out
             {
