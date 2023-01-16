@@ -56,7 +56,7 @@ For example, if this is the first config:
 ```json
 {
     "homeserver": { "host":"localhost", "port":8448 },
-    "listen": [ "80" ],
+    "listen": [ 80 ],
     "extra": { "foo": 42 },
 }
 ```
