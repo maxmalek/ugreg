@@ -31,3 +31,4 @@ endif()
 
 add_executable(maiden ${src})
 target_link_libraries(maiden server ${extra_libs})
+postbuild_copy_target_exe(maiden)

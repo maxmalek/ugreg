@@ -10,3 +10,4 @@ set(src
 
 add_executable(ugreg ${src})
 target_link_libraries(ugreg server)
+postbuild_copy_target_exe(ugreg)

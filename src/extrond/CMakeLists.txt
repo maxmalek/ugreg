@@ -16,3 +16,4 @@ set(src
 
 add_executable(extrond ${src})
 target_link_libraries(extrond server)
+postbuild_copy_target_exe(extrond)
