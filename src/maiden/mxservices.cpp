@@ -324,8 +324,6 @@ static void mergeResults(VarRef res, VarCRef hs, size_t limit, bool hsHasPriorit
     std::vector<StrRef> order;
     logdev("makemapOrNil hsmap:");
     Var hsmap = makemapOrNil(*res.mem, hsresults, order);
-    if(hsmap.isNull())
-        return;
 
     // If we're here, HS has found some results. Need to merge properly,
     // possibly de-duplicating in case HS found some of the same users as we did
@@ -339,14 +337,19 @@ static void mergeResults(VarRef res, VarCRef hs, size_t limit, bool hsHasPriorit
     DEBUG_LOG("hsmap JSON DUMP:\n%s", dumpjson(hsref, true).c_str());
     DEBUG_LOG("mymap JSON DUMP:\n%s", dumpjson(myref, true).c_str());
 
-    // Since the user_id is now also used as key, this is a de-duplicating merge
-    // HS data is merged into ours, and if prioritized, the HS wins any conflicts
-    MergeFlags mergeflags = MERGE_RECURSIVE;
-    if(!hsHasPriority)
-        mergeflags |= MERGE_NO_OVERWRITE;
+    if(hsmap.type() == Var::TYPE_MAP)
+    {
+        // Since the user_id is now also used as key, this is a de-duplicating merge
+        // HS data is merged into ours, and if prioritized, the HS wins any conflicts
+        MergeFlags mergeflags = MERGE_RECURSIVE;
+        if(!hsHasPriority)
+            mergeflags |= MERGE_NO_OVERWRITE;
 
-    myref.merge(hsref, mergeflags);
-    DEBUG_LOG("merged JSON DUMP:\n%s", dumpjson(myref, true).c_str());
+        myref.merge(hsref, mergeflags);
+        DEBUG_LOG("merged JSON DUMP:\n%s", dumpjson(myref, true).c_str());
+    }
+    else
+        DEBUG_LOG("HS has no results, skipped merge");
 
     size_t N = std::min(limit, myref.size());
     if(N < myref.size())
