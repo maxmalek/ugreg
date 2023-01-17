@@ -8,6 +8,7 @@ set(BUILD_BINDIR "${CMAKE_SOURCE_DIR}/bin")
 option(BUILD_COPY_BINARIES "Copy binaries to bin/ subdirs after build" TRUE)
 
 include("${CMAKE_SOURCE_DIR}/cmake/utility.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/BuildType.cmake")
 
 
 option(RAPIDJSON_SSE42 "Use SSE 4.2 for parsing" FALSE)

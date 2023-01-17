@@ -39,8 +39,7 @@
 # => resolve displayname = "John Doe"
 
 # Leaving away --default would be incorrect, because then resolving displayname
-# would fail for users that have no phone number, and not be included in the output
-# for that user.
+# would fail for users that have no phone number, and the user would be skipped.
 
 scripts/ldap.py \
 --ldap-host "ldaps://ad.example.com:3269" \
