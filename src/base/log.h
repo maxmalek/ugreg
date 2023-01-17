@@ -19,6 +19,9 @@ enum LogLevel
 #  define ATTR_PRINTF(a) __attribute__ ((format (printf, a, (a)+1)));
 #endif
 
+bool log_openfile(const char *fn);
+void log_closefile();
+
 void log_setConsoleLogLevel(LogLevel level);
 LogLevel log_getConsoleLogLevel();
 void vlogx(LogLevel, int nl, const char *fmt, va_list va);

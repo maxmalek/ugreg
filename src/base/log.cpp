@@ -11,8 +11,11 @@
 
 #include "util.h"
 
-static std::mutex s_mtx;
+static std::mutex s_mtx, s_filemtx;
 #define LOCK_SCOPE() std::unique_lock _lock(s_mtx)
+#define LOCK_FILE() std::unique_lock _lockf(s_filemtx)
+static FILE *s_logfile;
+bool s_atexit;
 
 enum ConsoleColor
 {
@@ -41,6 +44,30 @@ static LogLevel s_consoleLogLevel = LL_DEV;
 #else
 static LogLevel s_consoleLogLevel = LL_NORMAL;
 #endif
+
+bool log_openfile(const char* fn)
+{
+    LOCK_FILE();
+    FILE *f = fopen(fn, "wt");
+    if(!s_atexit)
+    {
+        atexit(log_closefile);
+        s_atexit = true;
+    }
+    if(f)
+        fclose(f);
+    s_logfile = f;
+    return !!f;
+}
+
+void log_closefile()
+{
+    LOCK_FILE();
+    FILE *f = s_logfile;
+    s_logfile = NULL;
+    if(f)
+        fclose(f);
+}
 
 void log_setConsoleLogLevel(LogLevel level)
 {
@@ -152,9 +179,6 @@ static_assert(Countof(colorLUT) == LL_MAX);
 
 static void _valogcolor(unsigned level, ConsoleColor col, int nl, const char *fmt, va_list va)
 {
-    if(level > (unsigned)s_consoleLogLevel)
-        return;
-
     if(col != NONE)
         _log_setcolor(true, col);
     vprintf(fmt, va);
@@ -173,13 +197,27 @@ static ConsoleColor getcolor(unsigned level)
 
 void vlogx(LogLevel level, int nl, const char *fmt, va_list va)
 {
-    va_list vax;
-    va_copy(vax, va);
-    const ConsoleColor color = getcolor(level);
+    if(level > s_consoleLogLevel)
+        return;
 
     {
+        va_list vax;
+        va_copy(vax, va);
+        const ConsoleColor color = getcolor(level);
+
         LOCK_SCOPE();
-        _valogcolor(level, color, nl, fmt, va);
+        _valogcolor(level, color, nl, fmt, vax);
+    }
+
+    // don't keep scope locked for file access
+    if(s_logfile)
+    {
+        LOCK_FILE();
+        if(FILE *f = s_logfile)
+        {
+            vfprintf(f, fmt, va);
+            fputc('\n', f);
+        }
     }
 }
 

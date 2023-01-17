@@ -137,6 +137,13 @@ bool doargs(DataTree& tree, int argc, char** argv, ArgsCallback cb, void *ud)
             if(int(*ploglevel) >= 0)
                 loglevelCfg = int(*ploglevel);
 
+    if(VarCRef xlogfile = tree.root().lookup("logfile"))
+        if(const char *s = xlogfile.asCString())
+            if(*s)
+                if(!log_openfile(s))
+                    logerror("Failed to open log file [%s]", s);
+
+
     unsigned loglevel = loglevelCfg < 0 ? log_getConsoleLogLevel() : loglevelCfg;
     loglevel += loglevelIncr;
     log_setConsoleLogLevel((LogLevel)loglevel);

@@ -7,6 +7,9 @@
     // (If not specified: loglevel = 0 for release builds and 3 for debug builds)
     //"loglevel": 2,
     
+    // log goes to stdout, and can optionally go to a file as well. Disabled if commented out or empty string.
+    //"logfile": "./maiden.log",
+
     // environment variables passed to external processes. Put passwords and stuff here.
     "env": {
         // "MY_ENV_VAR": "whatever",
