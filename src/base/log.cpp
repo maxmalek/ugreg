@@ -49,13 +49,14 @@ bool log_openfile(const char* fn)
 {
     LOCK_FILE();
     FILE *f = fopen(fn, "wt");
+    printf("(Opened log file [%s] -> 0x%p)\n", fn, f);
     if(!s_atexit)
     {
         atexit(log_closefile);
         s_atexit = true;
     }
-    if(f)
-        fclose(f);
+    if(s_logfile)
+        fclose(s_logfile);
     s_logfile = f;
     return !!f;
 }
