@@ -13,4 +13,4 @@ static bool loadcfg(DataTree& base, const char* fn);
 // -> Return 0 to indicate error.
 typedef size_t (*ArgsCallback)(char **argv, size_t idx, void *ud);
 
-bool doargs(DataTree& tree, int argc, char** argv, ArgsCallback cb = 0, void *ud = 0);
+bool doargs(DataTree& tree, size_t argc, char** argv, ArgsCallback cb = 0, void *ud = 0);

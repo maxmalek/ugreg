@@ -73,11 +73,11 @@ static bool loadcfg(DataTree& base, const char* fn)
     return base.root().merge(tree.root(), MERGE_RECURSIVE | MERGE_APPEND_ARRAYS);
 }
 
-bool doargs(DataTree& tree, int argc, char** argv, ArgsCallback cb, void *ud)
+bool doargs(DataTree& tree, size_t argc, char** argv, ArgsCallback cb, void *ud)
 {
     bool parseSwitches = true;
     unsigned loglevelIncr = 0;
-    for (int i = 1; i < argc; )
+    for (size_t i = 1; i < argc; )
     {
         const char *arg = argv[i];
         if(parseSwitches && arg[0] == '-')
