@@ -47,13 +47,13 @@ public:
 
     struct SearchResult
     {
-        std::string str, displayname;
+        std::string mxid, displayname, avatar;
     };
 
     typedef std::vector<SearchResult> SearchResults;
 
     // resolve search matches to actual, ready-to-display search results
-    SearchResults formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term) const;
+    SearchResults formatMatches(TreeMem& mem, const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term, size_t limit, const SearchResults& hsresults) const;
 
     bool load();
     bool save() const;

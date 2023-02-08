@@ -200,7 +200,74 @@ bool MxSearchHandler::init(VarCRef cfg)
     return true;
 }
 
-void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
+// converts json-style dynamically typed data to a proper struct
+static MxSources::SearchResults convertHsResults(VarCRef hsResultsArray, TreeMem& dstmem, TinyHashMap<size_t>& mxid2idx)
+{
+    MxSources::SearchResults ret;
+
+    if(hsResultsArray.type() == Var::TYPE_ARRAY)
+    {
+        size_t hsNum = hsResultsArray.size();
+        ret.reserve(hsNum);
+        mxid2idx.reserve(dstmem, (u32)hsNum);
+        const Var *hsa = hsResultsArray.v->array();
+        for(size_t i = 0; i < hsNum; ++i)
+        {
+            MxSources::SearchResult e;
+            const VarCRef x(hsResultsArray.mem, &hsa[i]);
+            if(VarCRef mxidRef = x.lookup("user_id", 7))
+                if(const char *mxid = mxidRef.asCString())
+                {
+                    e.mxid = mxid;
+
+                    if(VarCRef avatarRef = x.lookup("avatar_url", 10))
+                        if(const char *avatar = avatarRef.asCString())
+                            e.avatar = avatar;
+                    if(VarCRef dispRef = x.lookup("display_name", 12))
+                        if(const char *disp = dispRef.asCString())
+                            e.displayname = disp;
+
+                    *(mxid2idx.insert_new(dstmem, mxidRef.asStrRef()).ptr) = ret.size();
+
+                    ret.push_back(std::move(e));
+                }
+        }
+    }
+
+    return ret;
+}
+
+static MxSources::SearchResults mergeResults(const MxSources::SearchResults& myresults, const MxSources::SearchResults& hsresults, const TinyHashMap<size_t>& hsMxid2idx, const TreeMem& mem)
+{
+    // First, append the HS results (the authoritive source)
+    MxSources::SearchResults res = hsresults;
+
+    // Fix up each HS result if already present or append a new one
+    for(size_t i = 0; i < myresults.size(); ++i)
+    {
+        const MxSources::SearchResult& my = myresults[i];
+        if(StrRef mxidRef = mem.lookup(my.mxid.c_str(), my.mxid.length()))
+            if(const size_t *pidx = hsMxid2idx.getp(mxidRef))
+            {
+                assert(*pidx);
+                MxSources::SearchResult& hs = res[*pidx]; // indexes are the same
+                assert(hs.mxid == my.mxid);
+
+                // Take missing data
+                //if(hs.displayname.empty()) // TODO make: configurable
+                    hs.displayname = my.displayname;
+                if(hs.avatar.empty())
+                    hs.avatar = my.avatar;
+            }
+
+        // Was not there, append
+        res.push_back(my);
+    }
+
+    return res;
+}
+
+void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit, VarCRef hsResultsArray) const
 {
     const std::vector<TwoWayCasefoldMatcher> matchers = mxBuildMatchersForTerm(term);
     {
@@ -215,6 +282,10 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     MxSearch::Matches hits = search.search(matchers, searchcfg.fuzzy, searchcfg.element_hack ? &fullmatch : NULL);
     const size_t totalhits = hits.size();
 
+    // Go throush results provided by HS, if any
+    TinyHashMap<size_t> hsMxid2idx; // map mxid to index in hsresults, for later
+    MxSources::SearchResults hsresults = convertHsResults(hsResultsArray, *dst.mem, hsMxid2idx);
+
     // keep best matches, drop the rest if above the limit
     bool limited = false;
     std::sort(hits.begin(), hits.end());
@@ -224,11 +295,18 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
         limited = true;
     }
 
-    if(hits.size() && hits.size() == limit && searchcfg.debug_dummy_result)
-        hits.pop_back(); // make room for the dummy entry
-
     // resolve matches to something readable
-    MxSources::SearchResults results = _sources.formatMatches(searchcfg, hits.data(), hits.size(), term);
+    MxSources::SearchResults myresults = _sources.formatMatches(*dst.mem, searchcfg, hits.data(), hits.size(), term, limit, hsresults);
+
+    // Now we have up to limit many entries on both sides (HS and ours). Merge both.
+    MxSources::SearchResults results = mergeResults(myresults, hsresults, hsMxid2idx, *dst.mem);
+
+    // Clip again if too many
+    if(results.size() > limit)
+    {
+        results.resize(limit);
+        limited = true;
+    }
 
     dst.makeMap().v->map()->clear(*dst.mem); // make sure it's an empty map
 
@@ -238,6 +316,9 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
 
     if(searchcfg.debug_dummy_result)
     {
+        if(hits.size() && hits.size() == limit)
+            hits.pop_back(); // make room for the dummy entry
+
         std::ostringstream os;
         os << "SEARCH[" << term << "] DEBUG: " << totalhits << " hits, limit " << limit
            << ", " << matchers.size() << " matchers: ";
@@ -246,7 +327,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
 
         MxSources::SearchResult dummy;
         dummy.displayname = os.str();
-        dummy.str = "@debug_dummy_result:localhost"; // matrix spec requires this to exist
+        dummy.mxid = "@debug_dummy_result:localhost"; // matrix spec requires this to exist
         results.insert(results.begin(), std::move(dummy));
     }
 
@@ -256,11 +337,15 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit) const
     {
         VarRef d = ra.at(i).makeMap();
         MxSources::SearchResult& r = results[i];
+
+        VarRef mxid = d["user_id"];
+        StrRef mxidRef = mxid.setStr(r.mxid.c_str(), r.mxid.length());
+
         if (useAvatar)
             d["avatar_url"] = searchcfg.avatar_url.c_str();
         if (!r.displayname.empty())
             d["display_name"] = r.displayname.c_str();
-        d["user_id"] = r.str.c_str();
+        d["user_id"] = r.mxid.c_str();
     }
 }
 
@@ -408,6 +493,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 
                 DataTree hsdata(DataTree::TINY);
                 bool useHS = false;
+                VarCRef xhsResultsArray;
                 if(askHS)
                 {
                     // forward client request
@@ -445,6 +531,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                     VarRef xresults = hsdata.root().lookup("results");
                     if(xresults && xresults.type() == Var::TYPE_ARRAY)
                     {
+                        xhsResultsArray = xresults;
                         const size_t n = xresults.size();
                         logdev("HS found %zu users", n);
 
@@ -452,6 +539,8 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                         {
                             TwoWayCasefoldMatcher fullmatch(term.c_str(), term.length());
                             Var *a = xresults.v->array_unsafe();
+
+                            // FIXME: move this elsewhere
                             const StrRef user_id = hsdata.lookup("user_id", 7);
                             for(size_t i = 0; i < n; ++i)
                             {
@@ -496,7 +585,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 
                 // re-use vars for the search since we don't need those anymore
                 vars.root().v->makeMap(vars)->clear(vars);
-                doSearch(vars.root(), term.c_str(), limit);
+                doSearch(vars.root(), term.c_str(), limit, xhsResultsArray);
 
                 // merge HS results in
                 if(useHS)

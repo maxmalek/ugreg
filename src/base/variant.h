@@ -441,6 +441,7 @@ public:
     const u64* asUint() const { return v->asUint(); }
     PoolStr asString() const { return v->asString(*mem); } // (does not convert to string)
     const char* asCString() const { return v->asCString(*mem); }
+    StrRef asStrRef() const { return v->asStrRef(); }
     const double* asFloat() const { return v->asFloat(); };
     bool asBool() const { return v->asBool(); }
     const Var::Range* asRange() const { return v->asRange(); }
@@ -487,7 +488,7 @@ public:
     inline VarRef& operator=(const char *s) { v->setStr(*mem, s);   return *this; }
     inline VarRef& operator=(void *p)       { v->setPtr(*mem, p);   return *this; }
 
-    inline void setStr(const char *s, size_t len) { v->setStr(*mem, s, len); }
+    inline StrRef setStr(const char *s, size_t len) { return v->setStr(*mem, s, len); }
 
 private:
     // Template resolution comes before (implicit) cast, so we don't accidentally convert
@@ -525,6 +526,7 @@ public:
     const u64* asUint() const { return v->asUint(); }
     PoolStr asString() const { return v->asString(*mem); } // (does not convert to string)
     const char* asCString() const { return v->asCString(*mem); }
+    StrRef asStrRef() const { return v->asStrRef(); }
     const double* asFloat() const { return v->asFloat(); };
     bool asBool() const { return v->asBool(); }
     const Var::Range *asRange() const { return v->asRange(); }

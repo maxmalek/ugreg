@@ -538,10 +538,17 @@ void MxSources::_Loop_th(MxSources* self, bool buildAsync)
     logdebug("MxSources: Background thread exiting");
 }
 
-MxSources::SearchResults MxSources::formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term) const
+MxSources::SearchResults MxSources::formatMatches(TreeMem& mem, const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term,  size_t limit, const SearchResults& hsresults) const
 {
+    TinyHashMap<size_t> hitToIdx;
+    for(size_t i = 0; i < n; ++i)
+    {
+        TinyHashMap<size_t>::InsertResult ins = hitToIdx.insert_new(mem, matches[i].key);
+        *ins.ptr = 0;
+    }
+
     ScopeTimer timer;
-    std::vector<SearchResult> res;
+    SearchResults res;
     res.reserve(n);
 
     {
@@ -561,7 +568,7 @@ MxSources::SearchResults MxSources::formatMatches(const MxSearchConfig& scfg, co
                     assert(mxid.s); // we just got the map key. this must exist.
 
                     SearchResult sr;
-                    sr.str.assign(mxid.s, mxid.len);
+                    sr.mxid.assign(mxid.s, mxid.len);
 
                     if (const Var* xdn = um->get(displaynameRef))
                         if (const char* dn = xdn->asCString(*locked.ref.mem))

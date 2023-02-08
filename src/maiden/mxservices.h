@@ -38,7 +38,7 @@ public:
     URLTarget homeserver;
 
 protected:
-    void doSearch(VarRef dst, const char* term, size_t limit) const;
+    void doSearch(VarRef dst, const char* term, size_t limit, const VarCRef hsResultsArray) const;
 
 private:
     MxSources& _sources;
