@@ -31,7 +31,6 @@ public:
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
     bool checkHS;
     bool askHS;
-    bool prioritizeHS;
     int hsTimeout;
     MxSearchConfig searchcfg;
     MxSearch search;

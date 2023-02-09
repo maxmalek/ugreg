@@ -540,13 +540,6 @@ void MxSources::_Loop_th(MxSources* self, bool buildAsync)
 
 MxSources::SearchResults MxSources::formatMatches(TreeMem& mem, const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term,  size_t limit, const SearchResults& hsresults) const
 {
-    TinyHashMap<size_t> hitToIdx;
-    for(size_t i = 0; i < n; ++i)
-    {
-        TinyHashMap<size_t>::InsertResult ins = hitToIdx.insert_new(mem, matches[i].key);
-        *ins.ptr = 0;
-    }
-
     ScopeTimer timer;
     SearchResults res;
     res.reserve(n);
