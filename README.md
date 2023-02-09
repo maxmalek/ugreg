@@ -1,7 +1,22 @@
+# What's in this repo?
+
+- [maiden](src/maiden) - A search accelerator for matrix homeservers
+- [extrond](src/extrond) - Provides a REST interface to control [Extron SMP 351](https://www.extron.com/product/smp351) machines over the network.
+  Can be extended to support other devices via telnet or similar.
+
+
+Unfinished, do not use:
+
+- [ugreg](src/ugreg) - A JSON aggregator, "database" and cache intended for use in front of slow backends
+
+
+All projects use the same underlying shared code so they are bunched together in one repo, sorry.
+
 # Building
 
 Everything in this repo is developed in Visual Studio on Windows and deployed on Linux.
 It's fairly portable code so other OSes should work too, but this is untested.
+The code itself is mostly C++'03 but uses some C++'17 STL things so C++'17 is needed to build it.
 
 
 Starting in the repo root, build like any other cmake project:
@@ -33,6 +48,10 @@ cmake-gui ..
 ```
 
 and change settings as you like.
+
+Upon building, binaries are copied to their respective dirs under `bin/*`,
+so you can simply run them from there or zip up the entire directory and deploy it to a target machine -- the dependencies are all there.
+
 
 
 # Running
@@ -72,7 +91,7 @@ and this is the second one that gets applied after the first:
 }
 ```
 
-then we end up with:
+then we end up with this config in memory:
 
 ```json
 {
@@ -90,7 +109,6 @@ With this merging in place you can load only the configs you need, and also spli
 and another private config with passwords and stuff that you can protect via ansible-vault or similar.
 
 Each project expects to be started in its working directory (`bin/<project>/`) in its default config, in case it uses external files like scripts and such.
-
 
 ## Common switches
 
