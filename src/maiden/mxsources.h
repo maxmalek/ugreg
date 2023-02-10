@@ -45,15 +45,8 @@ public:
     DataTree::LockedCRef lockedCRef() const { return _merged.lockedCRef(); }
     DataTree::LockedRef  lockedRef()        { return _merged.lockedRef(); }
 
-    struct SearchResult
-    {
-        std::string mxid, displayname, avatar;
-    };
-
-    typedef std::vector<SearchResult> SearchResults;
-
     // resolve search matches to actual, ready-to-display search results
-    SearchResults formatMatches(TreeMem& mem, const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term, size_t limit, const SearchResults& hsresults) const;
+    MxSearchResults formatMatches(TreeMem& mem, const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term) const;
 
     bool load();
     bool save() const;

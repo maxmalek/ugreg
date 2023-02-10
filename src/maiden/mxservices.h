@@ -31,15 +31,17 @@ public:
     virtual int onRequest(BufferedWriteStream& dst, struct mg_connection* conn, const Request& rq) const override;
     bool checkHS;
     bool askHS;
+    bool overrideAvatar;
+    bool overrideDisplayname;
     int hsTimeout;
     MxSearchConfig searchcfg;
     MxSearch search;
     URLTarget homeserver;
 
-protected:
-    void doSearch(VarRef dst, const char* term, size_t limit, const VarCRef hsResultsArray) const;
-
 private:
+    void doSearch(VarRef dst, const char* term, size_t limit, const VarCRef hsResultsArray) const;
+    MxSearchResults mergeResults(const MxSearchResults& myresults, const MxSearchResults& hsresults) const;
+
     MxSources& _sources;
 };
 

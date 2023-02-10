@@ -30,6 +30,12 @@ struct MxSearchConfig
     bool debug_dummy_result = false;
 };
 
+struct MxSearchResult
+{
+    std::string mxid, displayname, avatar;
+};
+
+typedef std::vector<MxSearchResult> MxSearchResults;
 
 class MxSearch : public EvTreeRebuilt
 {

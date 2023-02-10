@@ -538,10 +538,10 @@ void MxSources::_Loop_th(MxSources* self, bool buildAsync)
     logdebug("MxSources: Background thread exiting");
 }
 
-MxSources::SearchResults MxSources::formatMatches(TreeMem& mem, const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term,  size_t limit, const SearchResults& hsresults) const
+MxSearchResults MxSources::formatMatches(TreeMem& mem, const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term) const
 {
     ScopeTimer timer;
-    SearchResults res;
+    MxSearchResults res;
     res.reserve(n);
 
     {
@@ -560,14 +560,14 @@ MxSources::SearchResults MxSources::formatMatches(TreeMem& mem, const MxSearchCo
                     PoolStr mxid = locked.ref.mem->getSL(key);
                     assert(mxid.s); // we just got the map key. this must exist.
 
-                    SearchResult sr;
+                    MxSearchResult sr;
                     sr.mxid.assign(mxid.s, mxid.len);
 
                     if (const Var* xdn = um->get(displaynameRef))
                         if (const char* dn = xdn->asCString(*locked.ref.mem))
                             sr.displayname = dn;
 
-                    if (scfg.element_hack && !matches[i].full)
+                    if (scfg.element_hack && !matches[i].full && term)
                         sr.displayname = sr.displayname + "  // " + term;
 
                     res.push_back(std::move(sr));

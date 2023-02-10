@@ -39,4 +39,10 @@
     // Include a dummy entry with some stats about the search
     // Should be disabled in production
     "debug_dummy_result": false,
+    
+    // By default, the homeserver is always right.
+    // In case both homeserver and maiden find a user but they disagree about some fields that will be displayed to the user,
+    // use this override whatever the homeserver says so that maiden always wins.
+    "overrideDisplayname": true,
+    "overrideAvatar": false, // If true, use the globally configured avatar_url for every user returned by the search
 }}

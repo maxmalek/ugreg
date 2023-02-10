@@ -76,7 +76,7 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
 
 MxSearchHandler::MxSearchHandler(MxSources& sources)
     : RequestHandler(ClientPrefix, MimeType), search(searchcfg), _sources(sources)
-    , checkHS(true), askHS(true), hsTimeout(0)
+    , checkHS(true), askHS(true), overrideAvatar(false), overrideDisplayname(false), hsTimeout(0)
 {
 }
 
@@ -85,6 +85,7 @@ MxSearchHandler::~MxSearchHandler()
     _sources.removeListener(&this->search);
 }
 
+inline static const char *yesno(bool x) { return x ? "yes" : "no"; }
 bool MxSearchHandler::init(VarCRef cfg)
 {
     if(VarCRef xfields = cfg.lookup("fields"))
@@ -147,6 +148,12 @@ bool MxSearchHandler::init(VarCRef cfg)
     if (VarCRef xdd = cfg.lookup("debug_dummy_result"))
         searchcfg.debug_dummy_result = xdd && xdd.asBool();
 
+    if (VarCRef xdd = cfg.lookup("overrideDisplayname"))
+        overrideDisplayname = xdd && xdd.asBool();
+
+    if (VarCRef xdd = cfg.lookup("overrideAvatar"))
+        overrideAvatar = xdd && xdd.asBool();
+
     hsTimeout = -1;
     askHS = false;
     checkHS = false;
@@ -187,19 +194,20 @@ bool MxSearchHandler::init(VarCRef cfg)
     logdebug("MxSearchHandler: searching %u fields:", (unsigned)searchcfg.fields.size());
     for(MxSearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
         logdebug(" + %s", it->first.c_str());
-    logdebug("MxSearchHandler: Ask homeserver: %s", askHS ? "yes" : "no");
+    logdebug("MxSearchHandler: Ask homeserver: %s", yesno(askHS));
     logdebug("MxSearchHandler: Ask homeserver timeout: %d ms", hsTimeout);
-    logdebug("MxSearchHandler: Check homeserver: %s", checkHS ? "yes" : "no");
-    logdebug("MxSearchHandler: debug_dummy_result: %s", searchcfg.debug_dummy_result ? "yes" : "no");
+    logdebug("MxSearchHandler: Check homeserver: %s", yesno(checkHS));
+    logdebug("MxSearchHandler: debug_dummy_result: %s", yesno(searchcfg.debug_dummy_result));
+    logdebug("MxSearchHandler: Override displayname: %s, avatar: %s", yesno(overrideDisplayname), yesno(overrideAvatar));
 
     _sources.addListener(&this->search);
     return true;
 }
 
 // converts json-style dynamically typed data to a proper struct
-static MxSources::SearchResults convertHsResults(VarCRef hsResultsArray)
+static MxSearchResults convertHsResults(VarCRef hsResultsArray)
 {
-    MxSources::SearchResults ret;
+    MxSearchResults ret;
 
     if(hsResultsArray.type() == Var::TYPE_ARRAY)
     {
@@ -214,7 +222,7 @@ static MxSources::SearchResults convertHsResults(VarCRef hsResultsArray)
                 PoolStr mxid = mxidRef.asString();
                 if(mxid.s)
                 {
-                    MxSources::SearchResult e;
+                    MxSearchResult e;
                     e.mxid.assign(mxid.s, mxid.len);
 
                     if(VarCRef avatarRef = x.lookup("avatar_url", 10))
@@ -233,7 +241,7 @@ static MxSources::SearchResults convertHsResults(VarCRef hsResultsArray)
     return ret;
 }
 
-static MxSources::SearchResults mergeResults(const MxSources::SearchResults& myresults, const MxSources::SearchResults& hsresults)
+MxSearchResults MxSearchHandler::mergeResults(const MxSearchResults& myresults, const MxSearchResults& hsresults) const
 {
     // avoid O(n^2)
     typedef std::unordered_map<std::string_view, size_t> Str2Idx;
@@ -242,24 +250,27 @@ static MxSources::SearchResults mergeResults(const MxSources::SearchResults& myr
         mxid2idx[hsresults[i].mxid] = i;
 
     // First, append the HS results (the authoritive source)
-    MxSources::SearchResults res = hsresults;
+    MxSearchResults res = hsresults;
+
+    const bool overrideAvatar = this->overrideAvatar;
+    const bool overrideDisplayname = this->overrideDisplayname;
 
     // Fix up each HS result if already present or append a new one
     // Both lists are kind-of ordered by match quality, so keep that order if possible
     for(size_t i = 0; i < myresults.size(); ++i)
     {
-        const MxSources::SearchResult& my = myresults[i];
+        const MxSearchResult& my = myresults[i];
         
         Str2Idx::iterator it = mxid2idx.find(my.mxid);
         if(it != mxid2idx.end())
         {
-            MxSources::SearchResult& hs = res[it->second]; // indexes are the same
+            MxSearchResult& hs = res[it->second]; // indexes are the same
             assert(hs.mxid == my.mxid);
 
-            // Take missing data
-            //if(hs.displayname.empty()) // TODO make: configurable
+            // Fill in missing data, or override if configured to do so
+            if(overrideDisplayname || hs.displayname.empty())
                 hs.displayname = my.displayname;
-            if(hs.avatar.empty())
+            if(overrideAvatar || hs.avatar.empty())
                 hs.avatar = my.avatar;
         }
 
@@ -286,7 +297,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit, VarCR
     const size_t totalhits = hits.size();
 
     // Go throush results provided by HS, if any
-    MxSources::SearchResults hsresults = convertHsResults(hsResultsArray);
+    MxSearchResults hsresults = convertHsResults(hsResultsArray);
 
     // keep best matches, drop the rest if above the limit
     bool limited = false;
@@ -298,10 +309,10 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit, VarCR
     }
 
     // resolve matches to something readable
-    MxSources::SearchResults myresults = _sources.formatMatches(*dst.mem, searchcfg, hits.data(), hits.size(), term, limit, hsresults);
+    MxSearchResults myresults = _sources.formatMatches(*dst.mem, searchcfg, hits.data(), hits.size(), term);
 
     // Now we have up to limit many entries on both sides (HS and ours). Merge both.
-    MxSources::SearchResults results = mergeResults(myresults, hsresults);
+    MxSearchResults results = mergeResults(myresults, hsresults);
 
     // Clip again if too many
     if(results.size() > limit)
@@ -327,7 +338,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit, VarCR
         for (size_t i = 0; i < matchers.size(); ++i)
             os << '[' << matchers[i].needle() << ']';
 
-        MxSources::SearchResult dummy;
+        MxSearchResult dummy;
         dummy.displayname = os.str();
         dummy.mxid = "@debug_dummy_result:localhost"; // matrix spec requires this to exist
         results.insert(results.begin(), std::move(dummy));
@@ -338,7 +349,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit, VarCR
     for (size_t i = 0; i < results.size(); ++i)
     {
         VarRef d = ra.at(i).makeMap();
-        MxSources::SearchResult& r = results[i];
+        const MxSearchResult& r = results[i];
 
         VarRef mxid = d["user_id"];
         StrRef mxidRef = mxid.setStr(r.mxid.c_str(), r.mxid.length());
