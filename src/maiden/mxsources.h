@@ -46,7 +46,7 @@ public:
     DataTree::LockedRef  lockedRef()        { return _merged.lockedRef(); }
 
     // resolve search matches to actual, ready-to-display search results
-    MxSearchResults formatMatches(TreeMem& mem, const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term) const;
+    MxSearchResults formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n) const;
 
     bool load();
     bool save() const;

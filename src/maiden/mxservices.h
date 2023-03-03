@@ -39,8 +39,15 @@ public:
     URLTarget homeserver;
 
 private:
-    void doSearch(VarRef dst, const char* term, size_t limit, const VarCRef hsResultsArray) const;
+    struct MxSearchResultsEx
+    {
+        MxSearchResults results;
+        bool limited;
+    };
+    MxSearchResultsEx doSearch(const char* term, size_t limit, const VarCRef hsResultsArray) const;
+    void translateResults(VarRef dst, const MxSearchResultsEx& results) const;
     MxSearchResults mergeResults(const MxSearchResults& myresults, const MxSearchResults& hsresults) const;
+    static void _ApplyElementHack(MxSearchResults& results, const std::string& term);
 
     MxSources& _sources;
 };

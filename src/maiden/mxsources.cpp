@@ -538,7 +538,7 @@ void MxSources::_Loop_th(MxSources* self, bool buildAsync)
     logdebug("MxSources: Background thread exiting");
 }
 
-MxSearchResults MxSources::formatMatches(TreeMem& mem, const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n, const char* term) const
+MxSearchResults MxSources::formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n) const
 {
     ScopeTimer timer;
     MxSearchResults res;
@@ -566,9 +566,6 @@ MxSearchResults MxSources::formatMatches(TreeMem& mem, const MxSearchConfig& scf
                     if (const Var* xdn = um->get(displaynameRef))
                         if (const char* dn = xdn->asCString(*locked.ref.mem))
                             sr.displayname = dn;
-
-                    if (scfg.element_hack && !matches[i].full && term)
-                        sr.displayname = sr.displayname + "  // " + term;
 
                     res.push_back(std::move(sr));
                 }

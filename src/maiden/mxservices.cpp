@@ -127,8 +127,8 @@ bool MxSearchHandler::init(VarCRef cfg)
         }
     }
 
-    if (VarCRef xfuzzy = cfg.lookup("fuzzy"))
-        searchcfg.fuzzy = xfuzzy && xfuzzy.asBool();
+    /*if (VarCRef xfuzzy = cfg.lookup("fuzzy"))
+        searchcfg.fuzzy = xfuzzy && xfuzzy.asBool();*/
 
     if (VarCRef xeh = cfg.lookup("element_hack"))
         searchcfg.element_hack = xeh && xeh.asBool();
@@ -189,7 +189,7 @@ bool MxSearchHandler::init(VarCRef cfg)
     logdebug("MxSearchHandler: max. client request size = %u", (unsigned)searchcfg.maxsize);
     logdebug("MxSearchHandler: avatar_url = %s", searchcfg.avatar_url.c_str());
     logdebug("MxSearchHandler: displayname = %s", searchcfg.displaynameField.c_str());
-    logdebug("MxSearchHandler: fuzzy global search = %d", searchcfg.fuzzy);
+    //logdebug("MxSearchHandler: fuzzy global search = %d", searchcfg.fuzzy);
     logdebug("MxSearchHandler: Element substring HACK = %d", searchcfg.element_hack);
     logdebug("MxSearchHandler: searching %u fields:", (unsigned)searchcfg.fields.size());
     for(MxSearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
@@ -269,7 +269,10 @@ MxSearchResults MxSearchHandler::mergeResults(const MxSearchResults& myresults, 
 
             // Fill in missing data, or override if configured to do so
             if(overrideDisplayname || hs.displayname.empty())
+            {
+                DEBUG_LOG("Override displayname '%s' with '%s'", hs.displayname.c_str(), my.displayname.c_str());
                 hs.displayname = my.displayname;
+            }
             if(overrideAvatar || hs.avatar.empty())
                 hs.avatar = my.avatar;
         }
@@ -281,7 +284,24 @@ MxSearchResults MxSearchHandler::mergeResults(const MxSearchResults& myresults, 
     return res;
 }
 
-void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit, VarCRef hsResultsArray) const
+// Workaround for https://github.com/matrix-org/matrix-react-sdk/pull/9556
+void MxSearchHandler::_ApplyElementHack(MxSearchResults& results, const std::string& term)
+{
+    TwoWayCasefoldMatcher fullmatch(term.c_str(), term.length());
+    const std::string suffix = "  // " + term;
+
+    const size_t N = results.size();
+    for(size_t i = 0; i < N; ++i)
+    {
+        MxSearchResult& sr = results[i];
+        bool found = fullmatch.match(sr.displayname.c_str(), sr.displayname.length())
+                  || fullmatch.match(sr.mxid.c_str(), sr.mxid.length());
+        if(!found)
+            sr.displayname += suffix; // trick element's substring check for the search term into always succeeding
+    }
+}
+
+MxSearchHandler::MxSearchResultsEx MxSearchHandler::doSearch(const char* term, size_t limit, VarCRef hsResultsArray) const
 {
     const std::vector<TwoWayCasefoldMatcher> matchers = mxBuildMatchersForTerm(term);
     {
@@ -292,8 +312,7 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit, VarCR
         logdebug("%s", os.str().c_str());
     }
 
-    TwoWayCasefoldMatcher fullmatch(term, strlen(term));
-    MxSearch::Matches hits = search.search(matchers, searchcfg.fuzzy, searchcfg.element_hack ? &fullmatch : NULL);
+    MxSearch::Matches hits = search.search(matchers);
     const size_t totalhits = hits.size();
 
     // Go throush results provided by HS, if any
@@ -309,23 +328,17 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit, VarCR
     }
 
     // resolve matches to something readable
-    MxSearchResults myresults = _sources.formatMatches(*dst.mem, searchcfg, hits.data(), hits.size(), term);
+    MxSearchResults myresults = _sources.formatMatches(searchcfg, hits.data(), hits.size());
 
     // Now we have up to limit many entries on both sides (HS and ours). Merge both.
-    MxSearchResults results = mergeResults(myresults, hsresults);
+    MxSearchResultsEx rx = { mergeResults(myresults, hsresults), false };
 
     // Clip again if too many
-    if(results.size() > limit)
+    if(rx.results.size() > limit)
     {
-        results.resize(limit);
+        rx.results.resize(limit);
         limited = true;
     }
-
-    dst.makeMap().v->map()->clear(*dst.mem); // make sure it's an empty map
-
-    dst["limited"] = limited;
-
-    const bool useGlobalAvatar = !searchcfg.avatar_url.empty();
 
     if(searchcfg.debug_dummy_result)
     {
@@ -341,20 +354,32 @@ void MxSearchHandler::doSearch(VarRef dst, const char* term, size_t limit, VarCR
         MxSearchResult dummy;
         dummy.displayname = os.str();
         dummy.mxid = "@debug_dummy_result:localhost"; // matrix spec requires this to exist
-        results.insert(results.begin(), std::move(dummy));
+        rx.results.insert(rx.results.begin(), std::move(dummy));
     }
 
-    VarRef ra = dst["results"].makeArray(results.size());
+    rx.limited = limited;
+    return rx;
+}
 
-    for (size_t i = 0; i < results.size(); ++i)
+void MxSearchHandler::translateResults(VarRef dst, const MxSearchResultsEx& rx) const
+{
+    dst.makeMap().v->map()->clear(*dst.mem); // make sure it's an empty map
+
+    dst["limited"] = rx.limited;
+    const bool useGlobalAvatar = !searchcfg.avatar_url.empty();
+
+
+    VarRef ra = dst["results"].makeArray(rx.results.size());
+
+    for (size_t i = 0; i < rx.results.size(); ++i)
     {
         VarRef d = ra.at(i).makeMap();
-        const MxSearchResult& r = results[i];
+        const MxSearchResult& r = rx.results[i];
 
         VarRef mxid = d["user_id"];
         StrRef mxidRef = mxid.setStr(r.mxid.c_str(), r.mxid.length());
 
-        if(!r.avatar.empty())
+        if (!r.avatar.empty())
             d["avatar_url"] = r.avatar.c_str();
         else if (useGlobalAvatar)
             d["avatar_url"] = searchcfg.avatar_url.c_str();
@@ -445,51 +470,18 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                         xhsResultsArray = xresults;
                         const size_t n = xresults.size();
                         logdev("HS found %zu users", n);
-
-                        if(useHS && n && searchcfg.element_hack)
-                        {
-                            TwoWayCasefoldMatcher fullmatch(term.c_str(), term.length());
-                            Var *a = xresults.v->array_unsafe();
-
-                            // FIXME: move this elsewhere
-                            const StrRef user_id = hsdata.lookup("user_id", 7);
-                            for(size_t i = 0; i < n; ++i)
-                            {
-                                VarRef entry(hsdata, &a[i]);
-                                bool found = false;
-                                std::string dn;
-
-                                VarRef xdn = entry["display_name"];
-                                if (xdn.type() == Var::TYPE_STRING)
-                                {
-                                    PoolStr ps = xdn.asString();
-                                    found = fullmatch.match(ps.s, ps.len);
-                                    dn.assign(ps.s, ps.len);
-                                }
-
-                                if(!found && user_id)
-                                    if(VarCRef xid = entry.lookup(user_id))
-                                        if(xid.type() == Var::TYPE_STRING)
-                                        {
-                                            PoolStr ps = xid.asString();
-                                            found = fullmatch.match(ps.s, ps.len);
-                                        }
-
-                                if(!found)
-                                {
-                                    dn += "  // " + term;
-                                    xdn.setStr(dn.c_str(), dn.length());
-                                }
-                            }
-                        }
                     }
                     else
                         logerror("HS didn't send results array! (This is against the spec)");
                 }
 
+                MxSearchResultsEx rx = doSearch(term.c_str(), limit, xhsResultsArray);
+
+                if(searchcfg.element_hack)
+                    _ApplyElementHack(rx.results, term);
+
                 // re-use vars for the search since we don't need those anymore
-                vars.root().v->makeMap(vars)->clear(vars);
-                doSearch(vars.root(), term.c_str(), limit, xhsResultsArray);
+                translateResults(vars.root(), rx);
 
                 writeJson(dst, vars.root(), false);
                 return 0;
