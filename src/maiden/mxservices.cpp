@@ -322,13 +322,10 @@ MxSearchHandler::MxSearchResultsEx MxSearchHandler::doSearch(const char* term, s
     bool limited = false;
     std::sort(hits.begin(), hits.end());
     if(hits.size() > limit)
-    {
-        hits.resize(limit);
         limited = true;
-    }
 
     // resolve matches to something readable
-    MxSearchResults myresults = _sources.formatMatches(searchcfg, hits.data(), hits.size());
+    MxSearchResults myresults = _sources.formatMatches(searchcfg, hits.data(), hits.size(), hsresults, limit);
 
     // Now we have up to limit many entries on both sides (HS and ours). Merge both.
     MxSearchResultsEx rx = { mergeResults(myresults, hsresults), false };

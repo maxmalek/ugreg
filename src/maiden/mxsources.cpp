@@ -7,6 +7,7 @@
 #include "scopetimer.h"
 #include "env.h"
 #include <algorithm>
+#include <unordered_set>
 #include "subprocess.h"
 
 MxSources::MxSources()
@@ -538,37 +539,71 @@ void MxSources::_Loop_th(MxSources* self, bool buildAsync)
     logdebug("MxSources: Background thread exiting");
 }
 
-MxSearchResults MxSources::formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n) const
+static void formatOneMatch(MxSearchResults& res, const TreeMem& mem, const StrRef displaynameRef, const Var::Map* const m, StrRef key)
+{
+    if (const Var* user = m->get(key))
+        if (const Var::Map* um = user->map())
+        {
+            PoolStr mxid = mem.getSL(key);
+            assert(mxid.s); // we just got the map key. this must exist.
+
+            MxSearchResult sr;
+            sr.mxid.assign(mxid.s, mxid.len);
+
+            if (const Var* xdn = um->get(displaynameRef))
+                if (const char* dn = xdn->asCString(mem))
+                    sr.displayname = dn;
+
+            res.push_back(std::move(sr));
+        }
+}
+
+MxSearchResults MxSources::formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n,
+    const MxSearchResults& hsresults, size_t limit) const
 {
     ScopeTimer timer;
     MxSearchResults res;
-    res.reserve(n);
+    res.reserve(limit ? limit : (n + hsresults.size()));
+
+    std::unordered_set<StrRef> hsrefLUT;
+    std::vector<StrRef> hsrefVec;
+    hsrefVec.reserve(hsresults.size());
 
     {
         DataTree::LockedCRef locked = this->lockedCRef();
         //---------------------------------------
 
+        // First, take the existing entries in hsresults and translate them to
+        // a stringpool ID. if that succeeds, there's likely a duplicate.
+        for(size_t i = 0; i < hsresults.size(); ++i)
+        {
+            const MxSearchResult& sr = hsresults[i];
+            const StrRef ref = locked.ref.mem->lookup(sr.mxid.c_str(), sr.mxid.length());
+            if(ref)
+            {
+                hsrefLUT.insert(ref);
+                hsrefVec.push_back(ref);
+            }
+        }
+        DEBUG_LOG("MxSources::formatMatches() hsrefLUT size = %zu", hsrefLUT.size());
+
+        // The field name is always the same ID so we can get that early to speed things up
         const StrRef displaynameRef = locked.ref.mem->lookup(scfg.displaynameField.c_str(), scfg.displaynameField.length());
+        
+        // This is the global search map: { mxid => { "displayname" = "...", ... } }
         const Var::Map* const m = locked.ref.v->map();
 
-        for (size_t i = 0; i < n; ++i)
+        // Do the users from hsresults first, so they end up first in the list.
+        // This entures that later when HS's and our results are merged, duplicates
+        // appear at the start, so that merging them works
+        for(size_t i = 0; i < hsrefVec.size(); ++i) // intentionally not limiting here!
+            formatOneMatch(res, *locked.ref.mem, displaynameRef, m, hsrefVec[i]);
+
+        for (size_t i = 0; i < n && res.size() < limit; ++i)
         {
             const StrRef key = matches[i].key;
-            if (const Var* user = m->get(key))
-                if (const Var::Map* um = user->map())
-                {
-                    PoolStr mxid = locked.ref.mem->getSL(key);
-                    assert(mxid.s); // we just got the map key. this must exist.
-
-                    MxSearchResult sr;
-                    sr.mxid.assign(mxid.s, mxid.len);
-
-                    if (const Var* xdn = um->get(displaynameRef))
-                        if (const char* dn = xdn->asCString(*locked.ref.mem))
-                            sr.displayname = dn;
-
-                    res.push_back(std::move(sr));
-                }
+            if(hsrefLUT.find(key) == hsrefLUT.end())
+                formatOneMatch(res, *locked.ref.mem, displaynameRef, m, key);
         }
     }
 

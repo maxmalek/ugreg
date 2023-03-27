@@ -45,9 +45,12 @@ public:
     DataTree::LockedCRef lockedCRef() const { return _merged.lockedCRef(); }
     DataTree::LockedRef  lockedRef()        { return _merged.lockedRef(); }
 
-    // resolve search matches to actual, ready-to-display search results
-    MxSearchResults formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n) const;
-
+    // resolve search matches to actual, ready-to-display search results.
+    // The homeserver's search results are prioritized and will appear first in the returned list.
+    // Returns up to limit results.
+    MxSearchResults formatMatches(const MxSearchConfig& scfg, const MxSearch::Match* matches, size_t n,
+        const MxSearchResults& hsresults, size_t limit) const;
+    
     bool load();
     bool save() const;
 
