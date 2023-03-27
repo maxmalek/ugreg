@@ -209,7 +209,7 @@ static MxSearchResults convertHsResults(VarCRef hsResultsArray)
 {
     MxSearchResults ret;
 
-    if(hsResultsArray.type() == Var::TYPE_ARRAY)
+    if(hsResultsArray && hsResultsArray.type() == Var::TYPE_ARRAY)
     {
         size_t hsNum = hsResultsArray.size();
         ret.reserve(hsNum);
@@ -260,7 +260,7 @@ MxSearchResults MxSearchHandler::mergeResults(const MxSearchResults& myresults, 
     for(size_t i = 0; i < myresults.size(); ++i)
     {
         const MxSearchResult& my = myresults[i];
-        
+
         Str2Idx::iterator it = mxid2idx.find(my.mxid);
         if(it != mxid2idx.end())
         {
