@@ -60,7 +60,8 @@ int mxMatchAndScore_Exact(const char *haystack, size_t haylen, const TwoWayCasef
     {
         int bestmatch = 0;
         const char *begin = haystack;
-        for(;;)
+        const char * const end = haystack + haylen;
+        while(begin < end)
         {
             // like strstr() but faster and doesn't stop on \0
             const char *match = matchers[i].match(begin, haylen);
