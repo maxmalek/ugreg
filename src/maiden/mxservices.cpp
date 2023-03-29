@@ -285,17 +285,29 @@ MxSearchResults MxSearchHandler::mergeResults(const MxSearchResults& myresults, 
 }
 
 // Workaround for https://github.com/matrix-org/matrix-react-sdk/pull/9556
+#include "utf8casefold.h"
 void MxSearchHandler::_ApplyElementHack(MxSearchResults& results, const std::string& term)
 {
     TwoWayCasefoldMatcher fullmatch(term.c_str(), term.length());
     const std::string suffix = "  // " + term;
+    std::vector<unsigned char> tmp;
 
     const size_t N = results.size();
     for(size_t i = 0; i < N; ++i)
     {
         MxSearchResult& sr = results[i];
-        bool found = fullmatch.match(sr.displayname.c_str(), sr.displayname.length())
-                  || fullmatch.match(sr.mxid.c_str(), sr.mxid.length());
+        bool found = fullmatch.match(sr.mxid.c_str(), sr.mxid.length());
+
+        if (!found)
+        {
+            tmp.clear();
+            const size_t dnlen = sr.displayname.length();
+            tmp.reserve(dnlen + 1);
+            utf8casefoldcopy(tmp, sr.displayname.c_str(), dnlen);
+            tmp.push_back(0);
+            found = fullmatch.match((const char*)tmp.data(), tmp.size() - 1); // don't include \0
+        }
+
         if(!found)
             sr.displayname += suffix; // trick element's substring check for the search term into always succeeding
     }
