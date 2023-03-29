@@ -20,6 +20,7 @@
         "mail": true,
         "phone": true,
         "realname": true,
+        "extra": true,
     },
     // If query is not part of a result, add it. Reqired to show mismatched result in Element.
     // This solves the problem described in https://github.com/matrix-org/matrix-react-sdk/pull/9556
