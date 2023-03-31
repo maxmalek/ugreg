@@ -43,7 +43,16 @@
     
     // By default, the homeserver is always right.
     // In case both homeserver and maiden find a user but they disagree about some fields that will be displayed to the user,
-    // use this override whatever the homeserver says so that maiden always wins.
+    // use this to override whatever the homeserver says so that maiden always wins.
     "overrideDisplayname": true,
     "overrideAvatar": false, // If true, use the globally configured avatar_url for every user returned by the search
+
+    // List of passwords that maiden will accept as authorization instead of a HS token.
+    // Note that this is only effective if homeserver.check == true!
+    // If one of these is supplied in the request header as "Authorization: Bearer ...", we forego checking
+    // the HS entirely and just return our own results.
+    // Right now the value needs to be 'true', but in the future more per-key configration may be be possible.
+    "accessKeys": {
+        //"DEBUG_TEST_AUTH": true,
+    },
 }}

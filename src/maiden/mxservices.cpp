@@ -185,6 +185,26 @@ bool MxSearchHandler::init(VarCRef cfg)
         }
     }
 
+    if(VarCRef xa = cfg.lookup("accessKeys"))
+    {
+        if(const Var::Map *m = xa.v->map())
+        {
+            for(Var::Map::Iterator it = m->begin(); it != m->end(); ++it)
+            {
+                PoolStr ks = xa.mem->getSL(it.key());
+                const Var& val = it.value();
+                if(ks.len)
+                {
+                    AccessKeyConfig &kc = accessKeys[std::string(ks.s, ks.s + ks.len)];
+                    kc.enabled = val.asBool();
+                    DEBUG_LOG("MxSearchHandler: Add accessKey [%s], enabled = %u", ks.s, kc.enabled);
+                }
+            }
+        }
+        else
+            logerror("MxSearchHandler: accessKeys is present but not map, ignoring");
+    }
+
 
     logdebug("MxSearchHandler: max. client request size = %u", (unsigned)searchcfg.maxsize);
     logdebug("MxSearchHandler: avatar_url = %s", searchcfg.avatar_url.c_str());
@@ -441,47 +461,61 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                 VarCRef xhsResultsArray;
                 if(askHS)
                 {
+                    bool askThisTime = true;
+
                     // forward client request
                     Var hvar;
                     VarRef headers(vars, &hvar);
                     // without auth, this is going to fail because the HS will say no
                     if(!rq.authorization.empty())
-                        headers["Authorization"] = rq.authorization.c_str();
-
-                    URLTarget hs = this->homeserver;
-                    hs.path = ClientPrefix + rq.query; // forward URL as-is
-                    ScopeTimer tm;
-                    MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), hs, vars.root(), headers, hsTimeout);
-                    logdev("mxRequestJson done after %u ms, result = %u", (unsigned)tm.ms(), jr.code);
-                    headers.clear();
-                    useHS = jr.code == MXGJ_OK && !hsdata.root().lookup("error");
-                    if(checkHS)
                     {
-                        if(jr.code != MXGJ_OK)
+                        AccessKeyMap::const_iterator it = accessKeys.find(rq.authorization);
+                        if(it != accessKeys.end() && it->second.enabled)
                         {
-                            std::string err = jr.getErrorMsg();
-                            logerror("-> %s", err.c_str());
-                            mg_send_http_error(conn, 500, "Homeserver did not send usable JSON. Internally reported error:\n%s", err.c_str());
-                            return 500;
+                            askThisTime = false;
+                            DEBUG_LOG("MxSearchHandler: Found authorization in accessKeys, skipping HS check");
                         }
-                        if(!useHS)
-                        {
-                            std::string jsonerr = dumpjson(hsdata.root());
-                            mg_send_http_error(conn, jr.httpstatus, "%s", jsonerr.c_str());
-                            return jr.httpstatus;
-                        }
+
+                        if(askThisTime)
+                            headers["Authorization"] = rq.authorization.c_str();
                     }
 
-                    // If the HS sends enough hits there is no need to perform a search
-                    VarRef xresults = hsdata.root().lookup("results");
-                    if(xresults && xresults.type() == Var::TYPE_ARRAY)
+                    if(askThisTime)
                     {
-                        xhsResultsArray = xresults;
-                        const size_t n = xresults.size();
-                        logdev("HS found %zu users", n);
+                        URLTarget hs = this->homeserver;
+                        hs.path = ClientPrefix + rq.query; // forward URL as-is
+                        ScopeTimer tm;
+                        MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), hs, vars.root(), headers, hsTimeout);
+                        logdev("mxRequestJson done after %u ms, result = %u", (unsigned)tm.ms(), jr.code);
+                        headers.clear();
+                        useHS = jr.code == MXGJ_OK && !hsdata.root().lookup("error");
+                        if(checkHS)
+                        {
+                            if(jr.code != MXGJ_OK)
+                            {
+                                std::string err = jr.getErrorMsg();
+                                logerror("-> %s", err.c_str());
+                                mg_send_http_error(conn, 500, "Homeserver did not send usable JSON. Internally reported error:\n%s", err.c_str());
+                                return 500;
+                            }
+                            if(!useHS)
+                            {
+                                std::string jsonerr = dumpjson(hsdata.root());
+                                mg_send_http_error(conn, jr.httpstatus, "%s", jsonerr.c_str());
+                                return jr.httpstatus;
+                            }
+                        }
+
+                        VarRef xresults = hsdata.root().lookup("results");
+                        if(xresults && xresults.type() == Var::TYPE_ARRAY)
+                        {
+                            xhsResultsArray = xresults;
+                            const size_t n = xresults.size();
+                            logdev("HS found %zu users", n);
+                        }
+                        else
+                            logerror("HS didn't send results array! (This is against the spec)");
                     }
-                    else
-                        logerror("HS didn't send results array! (This is against the spec)");
                 }
 
                 MxSearchResultsEx rx = doSearch(term.c_str(), limit, xhsResultsArray);

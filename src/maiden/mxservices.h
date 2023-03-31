@@ -38,6 +38,14 @@ public:
     MxSearch search;
     URLTarget homeserver;
 
+    struct AccessKeyConfig
+    {
+        bool enabled;
+    };
+
+    typedef std::map<std::string, AccessKeyConfig> AccessKeyMap;
+    AccessKeyMap accessKeys;
+
 private:
     struct MxSearchResultsEx
     {
