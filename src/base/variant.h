@@ -279,10 +279,12 @@ public:
     // -> failing to usethis properly will caused memory leaks, crashes, and generally UB.
     // read the code *carefully* before calling this!
     Var* makeArrayUninitialized_Dangerous(TreeMem& mem, size_t n);
+    inline void clear_Dangerous() { meta = 0; }
 
 private:
     int numericCompare(const Var& b) const; // -1 if less, 0 if eq, +1 if greater
     bool _compareExactDifferentMem(const TreeMem& mymem, const Var& o, const TreeMem& othermem) const;
+    void _clearDataRec(TreeMem& mem);
 };
 
 // -------------------------------------------------
@@ -332,9 +334,10 @@ private:
 class _VarMap
 {
     typedef TinyHashMap<Var, Var::Policy> _Map;
-    typedef typename _Map::TVec Vec;
     ~_VarMap(); // call destroy() instead
 public:
+    typedef typename _Map::TVec Vec;
+
     // there's rarely any reason to change things while iterating,
     // so we'll make the const_iterator the default unless explicitly specified
     typedef _Map::const_iterator Iterator;
@@ -388,6 +391,8 @@ public:
 
     bool check(const Accessor& a) const;
     //void ensureData(u64 now) const;
+
+    Vec unlinkStorage(TreeMem& mem);
 
 private:
     _VarMap(const _VarMap&) = delete;

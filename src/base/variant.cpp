@@ -128,6 +128,86 @@ inline static size_t _RangeLen(_VarRange *ra)
     return ra[-1].first;
 }
 
+struct ClearHelper
+{
+    ClearHelper(TreeMem& mem) : _mem(mem) {}
+
+    ~ClearHelper()
+    {
+        while(!todo.empty())
+        {
+            const Entry e = todo.back();
+            todo.pop_back();
+            if(e.p)
+            {
+                for(size_t i = 0; i < e.n; ++i)
+                    clear(e.p[i]);
+                _mem.Free(e.p, sizeof(*e.p) * e.cap);
+            }
+        }
+    }
+    // clear any external storage associated with a Var.
+    // does absolutely minimal work. don't call this twice. yes, this leaves dangling pointers behind.
+    // not a problem when called from Var::_transmute().
+    void clear(Var& v)
+    {
+        // add recursive types to deletion list, clear everything else normally
+        switch(v._topbits())
+        {
+            case Var::BITS_STRING:
+                _mem.freeS(v.u.s);
+                break;
+            case Var::BITS_ARRAY:
+                add(v.array_unsafe(), v._size());
+                v.clear_Dangerous();
+                break;
+            case Var::BITS_MAP:
+                add(*v.map_unsafe());
+                v.u.m->destroy(_mem); // still need to delete the _VarMap object
+                [[fallthrough]];
+            case Var::BITS_OTHER:
+                if(v.meta == Var::TYPE_RANGE)
+                    _DeleteRanges(_mem, v.u.ra);
+                break;
+        }
+    }
+
+private:
+
+    struct Entry
+    {
+        Var *p;
+        size_t n;
+        size_t cap;
+    };
+
+    std::vector<Entry> todo;
+    TreeMem& _mem;
+
+    void add(Var *p, size_t n)
+    {
+        Entry e { p, n, n };
+        todo.push_back(e);
+    }
+    void add(typename _VarMap::Vec&& vec)
+    {
+        const size_t cap = vec.capacity(); // must get this before detaching
+        const size_t n = vec.size();
+        Entry e { vec.detach(), n, cap };
+        todo.push_back(e);
+    }
+    void add(_VarMap& m)
+    {
+        add(m.unlinkStorage(_mem));
+    }
+};
+
+void Var::_clearDataRec(TreeMem& mem)
+{
+    ClearHelper c(mem);
+    c.clear(*this);
+}
+
 
 Var::Var()
     : meta(TYPE_NULL)
@@ -223,25 +303,7 @@ void Var::_settop(TreeMem& mem, Topbits top, size_t size)
 
 void Var::_transmute(TreeMem& mem, size_t newmeta)
 {
-    switch(_topbits())
-    {
-        case BITS_STRING:
-            mem.freeS(u.s);
-            break;
-        case BITS_ARRAY:
-            _DeleteArray(mem, u.a, _size());
-            break;
-        case BITS_MAP:
-            u.m->destroy(mem);
-            break;
-        case BITS_OTHER:
-            if(meta == TYPE_RANGE)
-            {
-                _DeleteRanges(mem, u.ra);
-                u.ra = NULL;
-            }
-            break;
-    }
+    this->_clearDataRec(mem);
 
     meta = newmeta;
 }
@@ -1478,6 +1540,11 @@ void _VarMap::setExtra(Extra* extra)
 bool _VarMap::check(const Accessor& a) const
 {
     return !_extra ||_extra->check(a);
+}
+
+typename _VarMap::Vec _VarMap::unlinkStorage(TreeMem& mem)
+{
+    return _storage.unlink(mem);
 }
 
 VarRef& VarRef::makeMap(size_t prealloc)

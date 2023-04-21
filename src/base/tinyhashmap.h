@@ -47,11 +47,11 @@ struct _HashHatPolicyBase
     }
 };
 
-template<typename SZ>
+template<typename SZ, typename Policy>
 class HashHatKeyStore
 {
 public:
-    typedef BlockAllocator Allocator;
+    typedef typename Policy::Allocator Allocator;
     typedef SZ size_type;
 
     struct Bucket
@@ -280,7 +280,8 @@ public:
 
     void dealloc(Allocator& mem)
     {
-        clear(mem);
+        for(SZ i = 0; i < _buckets.size(); ++i)
+            _buckets[i].dealloc(mem);
         _buckets.dealloc(mem);
     }
 
@@ -375,9 +376,10 @@ template<typename Vec>
 class HashHat
 {
 public:
-    typedef HashHatKeyStore<u32> KS;
+    typedef typename Vec::Policy Policy;
+    typedef HashHatKeyStore<u32, Policy> KS;
     typedef typename Vec::value_type value_type;
-    typedef typename Vec::Allocator Allocator;
+    typedef typename Policy::Allocator Allocator;
     typedef typename KS::size_type SZ;
     struct InsertResult
     {
@@ -459,7 +461,7 @@ public:
 
         iterator_T() : _a(NULL) {}
 
-        iterator_T(T* a, KS::const_iterator it) // iterator into valid storage
+        iterator_T(T* a, typename KS::const_iterator it) // iterator into valid storage
             : _it(it), _a(a)
         {
         }
@@ -487,7 +489,7 @@ public:
         T& value() { assert(_it.value()); return _a[_it.value() - 1]; }
         const T& value() const { assert(_it.value()); return _a[_it.value() - 1]; }
 
-        KS::const_iterator _it;
+        typename KS::const_iterator _it;
         T *_a;
     };
 
@@ -515,7 +517,7 @@ public:
 private:
     typedef HashHat<TVec> HH;
     typedef typename TVec::size_type SZ;
-    typedef typename HH::Allocator Allocator;
+    typedef typename Policy::Allocator Allocator;
     HashHat<TVec> _hh;
     TVec _vec;
 
@@ -605,6 +607,14 @@ public:
     inline const TVec& values() const
     {
         return _vec;
+    }
+
+    // drop keys, return values as vec
+    TVec unlink(Allocator& mem)
+    {
+        _hh.dealloc(mem);
+        TVec ret = std::move(_vec);
+        return ret;
     }
 };
 

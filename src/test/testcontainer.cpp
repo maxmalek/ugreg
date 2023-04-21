@@ -56,6 +56,19 @@ int main(int argc, char **argv)
 
     hm.dealloc(mem);
 
+    {
+        TreeMem tm(TreeMem::SMALL);
+        Var big;
+        Var *x = &big;
+        // nest very deeply
+        for(size_t i = 0; i < 100000; ++i)
+            x = x->makeMap(tm)->putKey(tm, "x", 1);
+        // this will blow the stack when clearing is implemented as a simple recursive clear
+        big.clear(tm);
+    }
+
+    puts("All good");
+
     return 0;
 }
 

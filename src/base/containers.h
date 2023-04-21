@@ -25,11 +25,12 @@ struct LVectorBase
 template<
     typename T,
     typename SZ = size_t,
-    typename Policy = ContainerDefaultPolicy<T>
+    typename _Policy = ContainerDefaultPolicy<T>
 >
 class LVector : public LVectorBase
 {
 public:
+    typedef _Policy Policy;
     typedef typename Policy::Allocator Allocator;
     typedef T value_type;
     typedef SZ size_type;
@@ -140,6 +141,8 @@ public:
 
     inline bool empty() const { return !_sz; }
     inline SZ size() const { return _sz; }
+    inline SZ capacity() const { return _cap; }
+    inline size_t memSize() const { return size_t(_cap) * sizeof(T); }
     inline T *data() { return _ptr; }
     inline const T *data() const { return _ptr; }
     inline iterator begin() { return _ptr; }
