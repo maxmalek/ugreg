@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <vector>
 #include "webserver.h"
 #include "datatree.h"
 #include "mxstore.h"
@@ -33,10 +34,8 @@ public:
     bool askHS;
     bool overrideAvatar;
     bool overrideDisplayname;
-    int hsTimeout;
     MxSearchConfig searchcfg;
     MxSearch search;
-    URLTarget homeserver;
 
     struct ServerConfig
     {
@@ -44,6 +43,9 @@ public:
         int timeout;
         std::string authToken;
     };
+
+    ServerConfig homeserver;
+    std::vector<ServerConfig> otherServers;
 
     struct AccessKeyConfig
     {

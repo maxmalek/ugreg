@@ -76,14 +76,57 @@ int MxWellknownHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn,
 
 MxSearchHandler::MxSearchHandler(MxSources& sources)
     : RequestHandler(ClientPrefix, MimeType), search(searchcfg), _sources(sources)
-    , checkHS(true), askHS(true), overrideAvatar(false), overrideDisplayname(false), hsTimeout(0)
+    , checkHS(true), askHS(true), overrideAvatar(false), overrideDisplayname(false)
 {
+    homeserver.timeout = 0;
 }
 
 MxSearchHandler::~MxSearchHandler()
 {
     _sources.removeListener(&this->search);
 }
+
+static bool initOneServer(MxSearchHandler::ServerConfig& srv, VarCRef x)
+{
+    if(!srv.target.load(x))
+    {
+        logerror("MxSearchHandler: Failed to apply server setting");
+        return false;
+    }
+
+    srv.timeout = -1;
+    if(VarCRef xtm = x.lookup("timeout"))
+    {
+        bool ok = false;
+        if(const char *stm = xtm.asCString())
+        {
+            u64 tmp;
+            ok = strToDurationMS_Safe(&tmp, stm);
+            if(ok)
+                srv.timeout = int(tmp);
+        }
+        if(!ok)
+        {
+            logerror("MxSearchHandler: server.timeout: Failed to decode time");
+            return false;
+        }
+    }
+
+    srv.authToken.clear();
+    if(VarCRef xtok = x.lookup("token"))
+    {
+        if(const char *tok = xtok.asCString())
+            srv.authToken = tok;
+        else
+        {
+            logerror("MxSearchHandler: server.token: Expected string");
+            return false;
+        }
+    }
+
+    return true;
+}
+
 
 inline static const char *yesno(bool x) { return x ? "yes" : "no"; }
 bool MxSearchHandler::init(VarCRef cfg)
@@ -154,14 +197,13 @@ bool MxSearchHandler::init(VarCRef cfg)
     if (VarCRef xdd = cfg.lookup("overrideAvatar"))
         overrideAvatar = xdd && xdd.asBool();
 
-    hsTimeout = -1;
     askHS = false;
     checkHS = false;
     if(VarCRef xhs = cfg.lookup("homeserver"))
     {
         askHS = true;
         checkHS = true; // true by default, can be disabled if needed
-        if(!homeserver.load(xhs))
+        if(!initOneServer(homeserver, xhs))
         {
             logerror("MxSearchHandler: Failed to apply homeserver setting");
             return false;
@@ -169,20 +211,24 @@ bool MxSearchHandler::init(VarCRef cfg)
 
         if (VarCRef x = xhs.lookup("check"))
             checkHS = x && x.asBool();
+    }
 
-        if(VarCRef xtm = xhs.lookup("timeout"))
+    if(VarCRef xos = cfg.lookup("other_servers"))
+    {
+        if(xos.type() == Var::TYPE_ARRAY)
         {
-            bool ok = false;
-            if(const char *stm = xtm.asCString())
-            {
-                u64 tmp;
-                ok = strToDurationMS_Safe(&tmp, stm);
-                if(ok)
-                    hsTimeout = int(tmp);
-            }
-            if(!ok)
-                logerror("MxSearchHandler: homeserver.timeout: Failed to decode time");
+            size_t n = xos.size();
+            otherServers.resize(n);
+            const Var *a = xos.v->array();
+            for(size_t i = 0; i < n; ++i)
+                if(!initOneServer(otherServers[i], VarCRef(xos.mem, a)))
+                {
+                    logerror("MxSearchHanfler: Failed to apply other_servers[%u] setting", (unsigned)i);
+                    return false;
+                }
         }
+        else
+            logerror("MxSearchHandler: other_servers is present but not array, can't load");
     }
 
     if(VarCRef xa = cfg.lookup("accessKeys"))
@@ -215,10 +261,11 @@ bool MxSearchHandler::init(VarCRef cfg)
     for(MxSearchConfig::Fields::iterator it = searchcfg.fields.begin(); it != searchcfg.fields.end(); ++it)
         logdebug(" + %s", it->first.c_str());
     logdebug("MxSearchHandler: Ask homeserver: %s", yesno(askHS));
-    logdebug("MxSearchHandler: Ask homeserver timeout: %d ms", hsTimeout);
+    logdebug("MxSearchHandler: Ask homeserver timeout: %d ms", homeserver.timeout);
     logdebug("MxSearchHandler: Check homeserver: %s", yesno(checkHS));
     logdebug("MxSearchHandler: debug_dummy_result: %s", yesno(searchcfg.debug_dummy_result));
     logdebug("MxSearchHandler: Override displayname: %s, avatar: %s", yesno(overrideDisplayname), yesno(overrideAvatar));
+    logdebug("MxSearchHandler: Forward requests to %u other servers", (unsigned)otherServers.size());
 
     _sources.addListener(&this->search);
     return true;
@@ -482,10 +529,10 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 
                     if(askThisTime)
                     {
-                        URLTarget hs = this->homeserver;
+                        URLTarget hs = this->homeserver.target;
                         hs.path = ClientPrefix + rq.query; // forward URL as-is
                         ScopeTimer tm;
-                        MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), hs, vars.root(), headers, hsTimeout);
+                        MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), hs, vars.root(), headers, this->homeserver.timeout);
                         logdev("mxRequestJson done after %u ms, result = %u", (unsigned)tm.ms(), jr.code);
                         headers.clear();
                         useHS = jr.code == MXGJ_OK && !hsdata.root().lookup("error");

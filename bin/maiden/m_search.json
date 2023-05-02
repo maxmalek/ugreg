@@ -42,8 +42,8 @@
     // This is intended to forward to another instance of maiden with a static access key,
     // but it can be any homeserver that we've got a valid login token for.
     // Recommended to use SSL for this because we're sending the token over the network in plaintext.
-    "otherServers": [
-        { "host": "matrix.example.org", "port": "8089", "ssl": true, "timeout": "2s", "token": "ACCESS_KEY" },
+    "other_servers": [
+        { "host": "192.168.0.105", "port": 8088, "ssl": false, "timeout": "2s", "token": "localnet-test-4321" },
     ],
 
     // Include a dummy entry with some stats about the search
