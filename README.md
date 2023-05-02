@@ -127,7 +127,8 @@ all that's needed to populate the internal database is a script that outputs JSO
 - `/_matrix/client/*/user_directory/search` goes to maiden
 - Anything else goes to the homeserver
 
-so you'll need a a reverse proxy like nginx in front of your synapse/dendrite/... install.
+so you'll need a a reverse proxy like nginx or Traefik in front of your synapse/dendrite/... install. See below.
+
 
 A reasonable set of configs to start is:
 
@@ -144,6 +145,22 @@ You can add
 Then either change `m_import.json` to configure where your user database comes from, or specify this in a private config.
 See `example_ldap.json` for how this is done.
 
+---
+
+Example nginx config snippet for reverse proxying:
+```
+location ~ /_matrix/client/[0-9a-z]+/user_directory/search {
+    resolver 127.0.0.1 valid=5s;
+    # where maiden is listening
+    set $backend "127.0.0.1:8088";
+    proxy_pass http://$backend;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+}
+```
+
+Note that depending on the version of the matrix spec, the regex will match *r0* or *v3*. Maiden handles both.
 
 ## ugreg
 

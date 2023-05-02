@@ -37,6 +37,15 @@
     // "timeout" is how long we'll wait until we consider a HS request as failed. Infinite if not present (not recommended).
     // "homeserver": { "host": "localhost", "port": 8008, "ssl": false, "check": true, "timeout": "2s" },
 
+    // Optionally contact other homeservers and integrate their search results. (This is NOT federated search!)
+    // The token to use to authenticate must be specified manually for each server.
+    // This is intended to forward to another instance of maiden with a static access key,
+    // but it can be any homeserver that we've got a valid login token for.
+    // Recommended to use SSL for this because we're sending the token over the network in plaintext.
+    "otherServers": [
+        { "host": "matrix.example.org", "port": "8089", "ssl": true, "timeout": "2s", "token": "ACCESS_KEY" },
+    ],
+
     // Include a dummy entry with some stats about the search
     // Should be disabled in production
     "debug_dummy_result": false,

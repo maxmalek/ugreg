@@ -38,6 +38,13 @@ public:
     MxSearch search;
     URLTarget homeserver;
 
+    struct ServerConfig
+    {
+        URLTarget target;
+        int timeout;
+        std::string authToken;
+    };
+
     struct AccessKeyConfig
     {
         bool enabled;
