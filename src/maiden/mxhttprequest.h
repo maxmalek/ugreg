@@ -24,4 +24,4 @@ struct MxGetJsonResult
 };
 
 mg_connection* mxConnectTo(const URLTarget& target, char* errbuf, size_t errbufsz);
-MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& target, const VarCRef& data = VarCRef(), const VarCRef& headers = VarCRef(), int timeoutMS = -1, size_t maxsize = 0);
+MxGetJsonResult mxSendRequest(RequestType rqt, VarRef dst, const URLTarget& target, RequestFormat fmt, const VarCRef& data = VarCRef(), const VarCRef& headers = VarCRef(), int timeoutMS = -1, size_t maxsize = 0);

@@ -127,7 +127,6 @@ static bool initOneServer(MxSearchHandler::ServerConfig& srv, VarCRef x)
     return true;
 }
 
-
 inline static const char *yesno(bool x) { return x ? "yes" : "no"; }
 bool MxSearchHandler::init(VarCRef cfg)
 {
@@ -380,6 +379,12 @@ void MxSearchHandler::_ApplyElementHack(MxSearchResults& results, const std::str
     }
 }
 
+const MxSearchHandler::AccessKeyConfig* MxSearchHandler::checkAccessKey(const std::string& token) const
+{
+    AccessKeyMap::const_iterator it = accessKeys.find(token);
+    return it != accessKeys.end() ? &it->second : NULL;
+}
+
 MxSearchHandler::MxSearchResultsEx MxSearchHandler::doSearch(const char* term, size_t limit, VarCRef hsResultsArray) const
 {
     const std::vector<TwoWayCasefoldMatcher> matchers = mxBuildMatchersForTerm(term);
@@ -506,7 +511,25 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                 DataTree hsdata(DataTree::TINY);
                 bool useHS = false;
                 VarCRef xhsResultsArray;
-                if(askHS)
+                bool raw = false;
+                bool forwardRequest = askHS;
+
+                if(const AccessKeyConfig *acfg = checkAccessKey(rq.authorization))
+                {
+                    // We're in relay mode -- don't go to the HS.
+                    // Someone with special authorization is asking, so we just provide
+                    // from our own cache, without massaging the results in any way.
+                    if(acfg->enabled)
+                    {
+                        raw = true;
+                        forwardRequest = false;
+                    }
+                    // else we send the known-bad key to the HS, that's going to refuse it as usual,
+                    // and an eventual attacker will be none the wiser.
+                    // ie. we don't send a specialized error message about a disabled key on purpose.
+                }
+
+                if(forwardRequest)
                 {
                     bool askThisTime = true;
 
@@ -532,7 +555,7 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                         URLTarget hs = this->homeserver.target;
                         hs.path = ClientPrefix + rq.query; // forward URL as-is
                         ScopeTimer tm;
-                        MxGetJsonResult jr = mxRequestJson(RQ_POST, hsdata.root(), hs, vars.root(), headers, this->homeserver.timeout);
+                        MxGetJsonResult jr = mxSendRequest(RQ_POST, hsdata.root(), hs, RQFMT_JSON | RQFMT_BJ, vars.root(), headers, this->homeserver.timeout);
                         logdev("mxRequestJson done after %u ms, result = %u", (unsigned)tm.ms(), jr.code);
                         headers.clear();
                         useHS = jr.code == MXGJ_OK && !hsdata.root().lookup("error");
@@ -565,15 +588,23 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                     }
                 }
 
+                assert(!term.empty());
+
                 MxSearchResultsEx rx = doSearch(term.c_str(), limit, xhsResultsArray);
 
-                if(searchcfg.element_hack)
+                if(!raw && searchcfg.element_hack)
                     _ApplyElementHack(rx.results, term);
 
                 // re-use vars for the search since we don't need those anymore
                 translateResults(vars.root(), rx);
 
-                writeJson(dst, vars.root(), false);
+                // send in json, unless the requesting client supports BJ (relay mode)
+                serialize::Format fmt = serialize::JSON;
+                if(rq.fmt & RQFMT_BJ)
+                    fmt = serialize::BJ;
+
+                serialize::save(dst, vars.root(), fmt);
+
                 return 0;
             }
         }

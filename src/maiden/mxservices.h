@@ -65,6 +65,7 @@ private:
     void translateResults(VarRef dst, const MxSearchResultsEx& results) const;
     MxSearchResults mergeResults(const MxSearchResults& myresults, const MxSearchResults& hsresults) const;
     static void _ApplyElementHack(MxSearchResults& results, const std::string& term);
+    const AccessKeyConfig *checkAccessKey(const std::string& token) const;
 
     MxSources& _sources;
 };

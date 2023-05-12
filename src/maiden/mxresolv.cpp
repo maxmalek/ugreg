@@ -156,7 +156,7 @@ MxResolvList lookupHomeserverForHost(const char* host, u64 timeoutMS, size_t max
     target.path = what;
     target.ssl = true;
 
-    MxGetJsonResult jr = mxRequestJson(RQ_GET, tmp.root(),target, VarCRef(), VarCRef(), (int)timeoutMS, maxsize);
+    MxGetJsonResult jr = mxSendRequest(RQ_GET, tmp.root(), target, RQFMT_JSON, VarCRef(), VarCRef(), (int)timeoutMS, maxsize);
     if(jr.code == MXGJ_OK)
     {
         MxResolvResult res;

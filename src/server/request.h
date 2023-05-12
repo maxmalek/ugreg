@@ -51,11 +51,14 @@ inline static RequestFlags operator|(RequestFlags a, RequestFlags b) { return Re
 inline static RequestFlags& operator|=(RequestFlags& a, RequestFlags b) { return (a = RequestFlags(unsigned(a) | unsigned(b))); }
 
 
-enum RequestFormat
+enum RequestFormat // bitmask
 {
     RQFMT_DEFAULT = 0,
-    RQFMT_JSON,
+    RQFMT_JSON    = 0x01,
+    RQFMT_BJ      = 0x02,
 };
+inline static RequestFormat operator|(RequestFormat a, RequestFormat b) { return RequestFormat(unsigned(a) | unsigned(b)); }
+inline static RequestFormat& operator|=(RequestFormat& a, RequestFormat b) { return (a = RequestFormat(unsigned(a) | unsigned(b))); }
 
 static const char* RequestFormatName[] =
 {

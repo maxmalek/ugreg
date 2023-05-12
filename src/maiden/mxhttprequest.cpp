@@ -42,19 +42,45 @@ static void formatHeaders(std::ostringstream& os, const VarCRef& hdrs)
     }
 }
 
-static void formatGet(std::ostringstream& os, const URLTarget& target, const VarCRef& hdrs)
+static void appendList(std::ostringstream& os, bool& first, const char *item)
+{
+    if(first)
+    {
+        os << ", ";
+        first = false;
+    }
+    os << item;
+}
+
+static void formatAccept(std::ostringstream& os, RequestFormat fmt)
+{
+    os << "Accept: ";
+    if(fmt == RQFMT_DEFAULT)
+        os << "*/*";
+    else
+    {
+        bool first = true;
+        if(fmt & RQFMT_JSON)
+            appendList(os, first, "application/json");
+        if(fmt & RQFMT_BJ)
+            appendList(os, first, "application/prs.bj");
+    }
+    os << "\r\n";
+}
+
+static void formatGet(std::ostringstream& os, const URLTarget& target, const VarCRef& hdrs, RequestFormat fmt)
 {
     assert(!target.path.empty());
     assert(!target.host.empty());
     os << "GET " << target.path << " HTTP/1.1\r\n"
         << "Host: " << target.host << "\r\n"
-        << "Connection: close\r\n"
-        << "Accept: application/json\r\n";
+        << "Connection: close\r\n";
+    formatAccept(os, fmt);
     formatHeaders(os, hdrs);
     os << "\r\n";
 }
 
-static void formatPost(std::ostringstream& os, const URLTarget& target, const VarCRef& hdrs)
+static void formatPost(std::ostringstream& os, const URLTarget& target, const VarCRef& hdrs, RequestFormat fmt)
 {
     assert(!target.path.empty());
     assert(!target.host.empty());
@@ -62,8 +88,9 @@ static void formatPost(std::ostringstream& os, const URLTarget& target, const Va
         << "Host: " << target.host << "\r\n"
         << "Connection: close\r\n"
         << "Content-Type: application/json\r\n"
-        << "Accept: application/json\r\n"
         << "Transfer-Encoding: chunked\r\n";
+
+    formatAccept(os, fmt);
     formatHeaders(os, hdrs);
     os << "\r\n";
 }
@@ -77,7 +104,7 @@ static void sendHeaderAndBody(mg_connection *c, const VarCRef& data, const char 
     writeJson(out, data, false);
 }
 
-MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& target, const VarCRef& data, const VarCRef& headers, int timeoutMS, size_t maxsize)
+MxGetJsonResult mxSendRequest(RequestType rqt, VarRef dst, const URLTarget& target, RequestFormat fmt, const VarCRef& data, const VarCRef& headers, int timeoutMS, size_t maxsize)
 {
     char errbuf[1024] = { 0 };
     MxGetJsonResult ret = {MXGJ_CONNECT_FAILED, -1};
@@ -90,10 +117,10 @@ MxGetJsonResult mxRequestJson(RequestType rqt, VarRef dst, const URLTarget& targ
             default: assert(false); [[fallthrough]];
             case RQ_GET:
                 assert(!data);
-                formatGet(os, target, headers);
+                formatGet(os, target, headers, fmt);
                 break;
             case RQ_POST:
-                formatPost(os, target, headers);
+                formatPost(os, target, headers, fmt);
                 break; 
         }
 

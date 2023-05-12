@@ -46,6 +46,33 @@ static CompressionType parseEncoding(const char *enc)
     return c;
 }
 
+static const bool inlist(const char *list, const char *item)
+{
+    const char *p = list;
+    for(;;)
+    {
+        p = strstr(p, item);
+        if(!p)
+            return false;
+        const char next = p[strlen(item)];
+        if(!next || next == ',' || next == ';')
+            return true;
+    }
+}
+
+// Accept: text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8
+static RequestFormat parseAccept(const char *enc)
+{
+    RequestFormat f = RQFMT_DEFAULT;
+
+    if(inlist(enc, "application/json"))
+        f |= RQFMT_JSON;
+    if(inlist(enc, "application/prs.bj")) // I'm just making this up. (See RFC 2048, RFC 6838)
+        f |= RQFMT_BJ;
+
+    return f;
+}
+
 static bool parseAndApplyVars(Request& r, const char *vars)
 {
     char tmp[8 * 1024];
@@ -72,6 +99,8 @@ static bool parseAndApplyVars(Request& r, const char *vars)
         }
         else if(!strcmp(hd[i].name, "json"))
             r.fmt = RQFMT_JSON;
+        else if(!strcmp(hd[i].name, "bj"))
+            r.fmt = RQFMT_BJ;
     }
     return true;
 }
@@ -145,6 +174,10 @@ bool Request::parse(const mg_request_info* info, size_t skipFromQuery)
         if (!mg_strcasecmp("Authorization", k))
         {
             authorization = v;
+        }
+        if (!mg_strcasecmp("Accept", k)) // which MIME type the client prefers to see
+        {
+            fmt |= parseAccept(v);
         }
     }
 
