@@ -59,13 +59,17 @@ private:
     struct MxSearchResultsEx
     {
         MxSearchResults results;
-        bool limited;
+        bool limited = false;
+        int errcode = 0;
+        std::string errstr;
     };
     MxSearchResultsEx doSearch(const char* term, size_t limit, const VarCRef hsResultsArray) const;
     void translateResults(VarRef dst, const MxSearchResultsEx& results) const;
     MxSearchResults mergeResults(const MxSearchResults& myresults, const MxSearchResults& hsresults) const;
     static void _ApplyElementHack(MxSearchResults& results, const std::string& term);
     const AccessKeyConfig *checkAccessKey(const std::string& token) const;
+
+    static MxSearchResultsEx QueryOneServer(const ServerConfig& sv, const std::string& query, VarCRef requestVars);
 
     MxSources& _sources;
 };

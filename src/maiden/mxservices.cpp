@@ -471,6 +471,46 @@ void MxSearchHandler::translateResults(VarRef dst, const MxSearchResultsEx& rx) 
     }
 }
 
+MxSearchHandler::MxSearchResultsEx MxSearchHandler::QueryOneServer(const ServerConfig& sv, const std::string& query, VarCRef requestVars)
+{
+    MxSearchResultsEx ret;
+    DataTree hsdata(DataTree::TINY); // stores json reply from server and serves as allocator for some temp things
+
+    {
+        Var hvar;
+        VarRef headers(&hsdata, &hvar);
+        headers["Authorization"].setStr(sv.authToken.c_str(), sv.authToken.length());
+
+        URLTarget hs = sv.target;
+        hs.path = ClientPrefix + query; // forward URL as-is
+        ScopeTimer tm;
+        MxGetJsonResult jr = mxSendRequest(RQ_POST, hsdata.root(), hs, RQFMT_JSON | RQFMT_BJ, requestVars, headers, sv.timeout);
+        logdev("mxRequestJson done after %u ms, result = %u", (unsigned)tm.ms(), jr.code);
+        headers.clear();
+
+        if(jr.code != MXGJ_OK)
+        {
+            std::string err = jr.getErrorMsg();
+            ret.errstr += "Server did not send usable JSON. Internally reported error:\n" + err + "\n";
+            ret.errcode = 500;
+        }
+        if(hsdata.root().lookup("error"))
+        {
+            std::string jsonerr = dumpjson(hsdata.root());
+            ret.errstr += "Server sent valid JSON but reported an error:\n" + jsonerr + "\n";
+            ret.errcode = jr.httpstatus;
+        }
+    }
+
+    VarRef xresults = hsdata.root().lookup("results");
+    if(xresults && xresults.type() == Var::TYPE_ARRAY)
+        ret.results = convertHsResults(xresults);
+    else
+        logerror("Server [%s] didn't send results array! (This is against the spec)", sv.target.host.c_str());
+
+    return ret;
+}
+
 int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, const Request& rq) const
 {
     if(rq.type != RQ_POST)
@@ -529,6 +569,8 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                     // ie. we don't send a specialized error message about a disabled key on purpose.
                 }
 
+                MxSearchResultsEx hsresults;
+
                 if(forwardRequest)
                 {
                     bool askThisTime = true;
@@ -552,39 +594,37 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 
                     if(askThisTime)
                     {
-                        URLTarget hs = this->homeserver.target;
-                        hs.path = ClientPrefix + rq.query; // forward URL as-is
-                        ScopeTimer tm;
-                        MxGetJsonResult jr = mxSendRequest(RQ_POST, hsdata.root(), hs, RQFMT_JSON | RQFMT_BJ, vars.root(), headers, this->homeserver.timeout);
-                        logdev("mxRequestJson done after %u ms, result = %u", (unsigned)tm.ms(), jr.code);
-                        headers.clear();
-                        useHS = jr.code == MXGJ_OK && !hsdata.root().lookup("error");
-                        if(checkHS)
-                        {
-                            if(jr.code != MXGJ_OK)
-                            {
-                                std::string err = jr.getErrorMsg();
-                                logerror("-> %s", err.c_str());
-                                mg_send_http_error(conn, 500, "Homeserver did not send usable JSON. Internally reported error:\n%s", err.c_str());
-                                return 500;
-                            }
-                            if(!useHS)
-                            {
-                                std::string jsonerr = dumpjson(hsdata.root());
-                                mg_send_http_error(conn, jr.httpstatus, "%s", jsonerr.c_str());
-                                return jr.httpstatus;
-                            }
-                        }
+                        // forward to our HS as-is
+                        ServerConfig homeserverWithAuth = homeserver;
+                        homeserverWithAuth.authToken = rq.authorization;
+                        hsresults = QueryOneServer(homeserverWithAuth, rq.query, vars.root());
 
-                        VarRef xresults = hsdata.root().lookup("results");
-                        if(xresults && xresults.type() == Var::TYPE_ARRAY)
+                        if(hsresults.errcode)
                         {
-                            xhsResultsArray = xresults;
-                            const size_t n = xresults.size();
-                            logdev("HS found %zu users", n);
+                            mg_send_http_error(conn, hsresults.errcode, "%s", hsresults.errstr.c_str());
+                            return hsresults.errcode;
                         }
-                        else
-                            logerror("HS didn't send results array! (This is against the spec)");
+                    }
+
+                    if(!otherServers.empty())
+                    {
+                        // Start all external requests in parallel
+                        std::vector<std::future<MxSearchResultsEx> > otherServerResults;
+                        for(size_t i = 0; i < otherServers.size(); ++i)
+                            otherServerResults.push_back(std::async(std::launch::async, QueryOneServer, otherServers[i], rq.query, vars.root()));
+
+                        for(size_t i = 0; i < otherServerResults.size(); ++i)
+                        {
+                            MxSearchResultsEx sr = otherServerResults[i].get();
+                            if(!sr.errcode)
+                            {
+                                for(size_t k = 0; k < sr.results.size(); ++k)
+                                    hsresults.results.push_back(std::move(sr.results[k]));
+                            }
+                            else
+                                logerror("MxSearchHandler: Relayed to server [%s] but the request failed, err = %d, msg: %s",
+                                    otherServers[i].target.host.c_str(), sr.errcode, sr.errstr.c_str());
+                        }
                     }
                 }
 
