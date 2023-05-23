@@ -385,7 +385,7 @@ const MxSearchHandler::AccessKeyConfig* MxSearchHandler::checkAccessKey(const st
     return it != accessKeys.end() ? &it->second : NULL;
 }
 
-MxSearchHandler::MxSearchResultsEx MxSearchHandler::doSearch(const char* term, size_t limit, VarCRef hsResultsArray) const
+MxSearchHandler::MxSearchResultsEx MxSearchHandler::doSearch(const char* term, size_t limit, const MxSearchResults& hsresults) const
 {
     const std::vector<TwoWayCasefoldMatcher> matchers = mxBuildMatchersForTerm(term);
     {
@@ -398,9 +398,6 @@ MxSearchHandler::MxSearchResultsEx MxSearchHandler::doSearch(const char* term, s
 
     MxSearch::Matches hits = search.search(matchers);
     const size_t totalhits = hits.size();
-
-    // Go throush results provided by HS, if any
-    MxSearchResults hsresults = convertHsResults(hsResultsArray);
 
     // keep best matches, drop the rest if above the limit
     bool limited = false;
@@ -428,7 +425,7 @@ MxSearchHandler::MxSearchResultsEx MxSearchHandler::doSearch(const char* term, s
 
         std::ostringstream os;
         os << "SEARCH[" << term << "] DEBUG: " << totalhits << " hits, limit " << limit
-           << ", " << matchers.size() << " matchers: ";
+            << ", " << matchers.size() << " matchers: ";
         for (size_t i = 0; i < matchers.size(); ++i)
             os << '[' << matchers[i].needle() << ']';
 
@@ -440,6 +437,57 @@ MxSearchHandler::MxSearchResultsEx MxSearchHandler::doSearch(const char* term, s
 
     rx.limited = limited;
     return rx;
+}
+
+void MxSearchHandler::doScoredMerge(MxSearchResultsEx& myresults, const MxSearchResults& extra, size_t limit, const char *term) const
+{
+    struct ScoredResult
+    {
+        ScoredResult(const MxSearchResult& r) : res(r), score(0) {}
+        ScoredResult(MxSearchResult&& r) : res(std::move(r)), score(0) {}
+        MxSearchResult res;
+        int score;
+
+        inline bool operator<(const ScoredResult& o) const
+        {
+            return score > o.score; // higher score first
+        }
+    };
+
+    if(extra.empty())
+        return;
+
+    std::vector<ScoredResult> sr;
+    sr.reserve(myresults.results.size() + extra.size());
+
+    for(size_t i = 0; i < myresults.results.size(); ++i)
+        sr.push_back(std::move(myresults.results[i]));
+    myresults.results.clear();
+
+    for(size_t i = 0; i < extra.size(); ++i)
+        sr.push_back(extra[i]);
+
+    // FIXME: construct this only once (caller scope?)
+    const std::vector<TwoWayCasefoldMatcher> matchers = mxBuildMatchersForTerm(term);
+    for(size_t i = 0; i < sr.size(); ++i)
+    {
+        ScoredResult& r = sr[i];
+        sr[i].score =
+              mxMatchAndScore_Exact(r.res.mxid.c_str(), r.res.mxid.length(), matchers.data(), matchers.size())
+            + mxMatchAndScore_Exact(r.res.displayname.c_str(), r.res.displayname.length(), matchers.data(), matchers.size());
+    }
+
+    std::sort(sr.begin(), sr.end());
+
+    size_t upto = sr.size();
+    if(limit && limit < upto)
+    {
+        upto = limit;
+        myresults.limited = true;
+    }
+
+    for(size_t i = 0; i < upto; ++i)
+        myresults.results[i] = std::move(sr[i].res);
 }
 
 void MxSearchHandler::translateResults(VarRef dst, const MxSearchResultsEx& rx) const
@@ -570,35 +618,31 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                 }
 
                 MxSearchResultsEx hsresults;
+                MxSearchResults relayresults;
 
                 if(forwardRequest)
                 {
-                    bool askThisTime = true;
+                    bool useAccessKey = false;
 
-                    // forward client request
-                    Var hvar;
-                    VarRef headers(vars, &hvar);
                     // without auth, this is going to fail because the HS will say no
                     if(!rq.authorization.empty())
                     {
                         AccessKeyMap::const_iterator it = accessKeys.find(rq.authorization);
                         if(it != accessKeys.end() && it->second.enabled)
                         {
-                            askThisTime = false;
+                            useAccessKey = true;
                             DEBUG_LOG("MxSearchHandler: Found authorization in accessKeys, skipping HS check");
                         }
-
-                        if(askThisTime)
-                            headers["Authorization"] = rq.authorization.c_str();
                     }
 
-                    if(askThisTime)
+                    // If we don't have a special access key, forward to the HS as-is
+                    if(!useAccessKey)
                     {
-                        // forward to our HS as-is
                         ServerConfig homeserverWithAuth = homeserver;
                         homeserverWithAuth.authToken = rq.authorization;
                         hsresults = QueryOneServer(homeserverWithAuth, rq.query, vars.root());
 
+                        // HS says no -- user not authenticated?
                         if(hsresults.errcode)
                         {
                             mg_send_http_error(conn, hsresults.errcode, "%s", hsresults.errstr.c_str());
@@ -606,7 +650,11 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                         }
                     }
 
-                    if(!otherServers.empty())
+                    // Also relay to other servers only if it's a regular search.
+                    // If an access key is present then it's probably already a relay search,
+                    // and we don't want to end up in a never-ending circle of searches
+                    // in case there's a misconfigured instance somewhere.
+                    if(!useAccessKey && !otherServers.empty())
                     {
                         // Start all external requests in parallel
                         std::vector<std::future<MxSearchResultsEx> > otherServerResults;
@@ -618,8 +666,10 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                             MxSearchResultsEx sr = otherServerResults[i].get();
                             if(!sr.errcode)
                             {
+                                logdebug("MxSearchHandler: Relayed to [%s] and got %u results back",
+                                    otherServers[i].target.host.c_str(), (unsigned)sr.results.size());
                                 for(size_t k = 0; k < sr.results.size(); ++k)
-                                    hsresults.results.push_back(std::move(sr.results[k]));
+                                    relayresults.push_back(std::move(sr.results[k]));
                             }
                             else
                                 logerror("MxSearchHandler: Relayed to server [%s] but the request failed, err = %d, msg: %s",
@@ -630,7 +680,9 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
 
                 assert(!term.empty());
 
-                MxSearchResultsEx rx = doSearch(term.c_str(), limit, xhsResultsArray);
+                MxSearchResultsEx rx = doSearch(term.c_str(), limit, hsresults.results);
+
+                doScoredMerge(rx, relayresults, limit, term.c_str());
 
                 if(!raw && searchcfg.element_hack)
                     _ApplyElementHack(rx.results, term);

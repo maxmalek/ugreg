@@ -594,7 +594,7 @@ MxSearchResults MxSources::formatMatches(const MxSearchConfig& scfg, const MxSea
         const Var::Map* const m = locked.ref.v->map();
 
         // Do the users from hsresults first, so they end up first in the list.
-        // This entures that later when HS's and our results are merged, duplicates
+        // This ensures that later when HS's and our results are merged, duplicates
         // appear at the start, so that merging them works
         for(size_t i = 0; i < hsrefVec.size(); ++i) // intentionally not limiting here!
             formatOneMatch(res, *locked.ref.mem, displaynameRef, m, hsrefVec[i]);
