@@ -46,10 +46,6 @@ set(src
     viewxform.h
     fetcher.cpp
     fetcher.h
-    co.cpp
-    co.h
-    mt.cpp
-    mt.h
     luafuncs.cpp
     luafuncs.h
     rng.cpp

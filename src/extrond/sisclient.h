@@ -6,8 +6,7 @@
 #include <future>
 #include <list>
 #include "types.h"
-#include "sissocket.h" 
-#include "co.h"
+#include "sissocket.h"
 #include "variant.h"
 #include "sisdevice.h"
 #include "sisluafunc.h"
@@ -112,7 +111,7 @@ private:
 
     SISSocket socket;
     u64 timeInState;
-    u64 stateMaxTime; // fail current 
+    u64 stateMaxTime; // fail current
     SISClientConfig cfg;
     State state, nextState;
     //CoroRunner tasks;

@@ -3,7 +3,6 @@
 #include <string.h>
 #include <mutex>
 #include <utility>
-#include "minicoro.h"
 #include "util.h"
 #include "luafuncs.h"
 

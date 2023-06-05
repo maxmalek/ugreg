@@ -72,11 +72,9 @@ set(src
     luaalloc.h
     subprocess.h
     strpool.h
-    argh.h
     impls.cpp
     upgrade_mutex.cpp
     upgrade_mutex.h
-    minicoro.h
     ascon-sponge.h
     fts_fuzzy_match.h
 )
