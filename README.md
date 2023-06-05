@@ -50,8 +50,9 @@ cmake-gui ..
 and change settings as you like.
 
 Upon building, binaries are copied to their respective dirs under `bin/*`,
-so you can simply run them from there or zip up the entire directory and deploy it to a target machine -- the dependencies are all there.
+so you can simply run them from there or zip up the respective directory and deploy it to a target machine -- data files and dependencies are all there.
 
+If you're on windows, you may have to put some [OpenSSL DLLs](https://slproweb.com/products/Win32OpenSSL.html) alongside the executables.
 
 
 # Running
@@ -115,57 +116,51 @@ Each project expects to be started in its working directory (`bin/<project>/`) i
 - `-v` for verbose logging, each added `v` makes it more verbose
 - `--` to end processing switches
 
-## Maiden
 
-*maiden* is a search accelerator for matrix homeservers, and intended to eventually replace [ma1sd](https://github.com/ma1uta/ma1sd) as an identity server.
+# Sub-projects
 
-Right now only LDAP is supported out-of-the-box but any other backend can be added easily;
-all that's needed to populate the internal database is a script that outputs JSON
-(LDAP support is implemented in the same way to avoid hard dependecies).
+### Maiden
 
-*maiden* is intended to be reverse-proxy-wedged before your public matrix homeserver, so that
-- `/_matrix/client/*/user_directory/search` goes to maiden
-- Anything else goes to the homeserver
-
-so you'll need a a reverse proxy like nginx or Traefik in front of your synapse/dendrite/... install. See below.
+See [maiden](src/maiden/README.md).
 
 
-A reasonable set of configs to start is:
+### extrond
 
-```sh
-./maiden m_base.json m_import.json m_search.json
-```
+See [extrond](src/extrond/README.md).
 
-You can add
+### ugreg
 
-- `m_wellknown.json` if you need quick & dirty hosting of `.well-known/...` -- Needs a valid SSL cert because matrix clients expect HTTPS on this endpoint!
-- `m_identity.json` to enable the identity server
-  - **WARNING: THIS IS UNFINISHED, DO NOT USE**
+Unfinished. Do not use.
 
-Then either change `m_import.json` to configure where your user database comes from, or specify this in a private config.
-See `example_ldap.json` for how this is done.
+See [ugreg](src/ugreg/README.md).
 
----
+----------------------------------------------------------
 
-Example nginx config snippet for reverse proxying:
-```
-location ~ /_matrix/client/[0-9a-z]+/user_directory/search {
-    resolver 127.0.0.1 valid=5s;
-    # where maiden is listening
-    set $backend "127.0.0.1:8088";
-    proxy_pass http://$backend;
 
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $remote_addr;
-}
-```
+## Library dependencies
 
-Note that depending on the version of the matrix spec, the regex will match *r0* or *v3*. Maiden handles both.
+### Included
 
-## ugreg
+For reference. All necessary files are in the repo, but may need to be updated occasionally in case bugs or compatibility problems surface:
 
-TODO
+- [civetweb](https://civetweb.github.io/civetweb/) - The embedded web server
+- [Lua](https://www.lua.org/) - Embedded scripting language
+- [rapidjson](https://rapidjson.org/) - JSON parser
+- [brotli](https://github.com/google/brotli) - Compression
+- [miniz](https://github.com/richgel999/miniz/) - Compression
+- [zstd](https://github.com/facebook/zstd) - Compression
+- A subset of [TomCrypt](https://www.libtom.net/LibTomCrypt/) for hash functions and base64 de-/encoding
+- [subprocess.h](https://github.com/sheredom/subprocess.h) to spawn processes
+- [upgrade_mutex](https://github.com/HowardHinnant/upgrade_mutex) because even C++17 does not have such a thing
+- Bits and pieces from:
+  - [mattiasgustavsson/libs](https://github.com/mattiasgustavsson/libs): **strpool.h** efficient string storage to reduce memory and enable O(1) string comparisons
+  - [lib_fts](https://github.com/forrestthewoods/lib_fts): **fts_fuzzy_match.h for** fuzzy search
+  - [safe_numerics.h](https://src.chromium.org/viewvc/chrome/trunk/src/base/safe_numerics.h?revision=177264&pathrev=177264) originally from the Chromium source code
+  - The sponge function from the [ascon](https://github.com/ascon/ascon-c) family of hash function, privately shared by [github.com/Ferdi265](https://github.com/Ferdi265). Used as RNG.
+  - [tinypile](https://github.com/fgenesis/tinypile/tree/wip): Lua allocator, portable malloca(), UTF-8 casefolding data
 
-## extrond
+### External libs
 
-TODO
+- For civetweb:
+  - [OpenSSL](https://openssl.org)
+  - Alternatively [mbedTLS](https://github.com/Mbed-TLS/mbedtls), but support for this is not as good
