@@ -44,11 +44,9 @@ static void formatHeaders(std::ostringstream& os, const VarCRef& hdrs)
 
 static void appendList(std::ostringstream& os, bool& first, const char *item)
 {
-    if(first)
-    {
+    if(!first)
         os << ", ";
-        first = false;
-    }
+    first = false;
     os << item;
 }
 

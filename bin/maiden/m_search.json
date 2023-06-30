@@ -43,7 +43,7 @@
     // but it can be any homeserver that we've got a valid login token for.
     // Recommended to use SSL for this because we're sending the token over the network in plaintext.
     "other_servers": [
-        { "host": "192.168.0.105", "port": 8088, "ssl": false, "timeout": "2s", "token": "localnet-test-4321" },
+        //{ "host": "192.168.0.105", "port": 8088, "ssl": false, "timeout": "2s", "token": "localnet-test-4321" },
     ],
 
     // Include a dummy entry with some stats about the search
