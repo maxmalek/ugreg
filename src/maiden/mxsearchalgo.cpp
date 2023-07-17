@@ -5,12 +5,8 @@
 #include <ctype.h>
 #include "fts_fuzzy_match.h"
 
-// TODO: this should be using some variation of two-way string matching
-// see https://git.musl-libc.org/cgit/musl/tree/src/string/memmem.c
-
 // How to score exact matches?
 // If we search for a term and a word starts with it, it's obviously a better match than if it's somewhere in the middle.
-
 
 static bool splitsWords(unsigned char c)
 {
@@ -51,7 +47,6 @@ MxMatcherList mxBuildMatchersForTerm(const char *term)
     }
     return ret;
 }
-
 
 int mxMatchAndScore_Exact(const char *haystack, size_t haylen, const TwoWayCasefoldMatcher *matchers, size_t nummatchers)
 {

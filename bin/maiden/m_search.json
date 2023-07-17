@@ -42,8 +42,12 @@
     // This is intended to forward to another instance of maiden with a static access key,
     // but it can be any homeserver that we've got a valid login token for.
     // Recommended to use SSL for this because we're sending the token over the network in plaintext.
+	// The token is directly sent in a HTTP "Authorization: " header, means you need to specify the rest.
+	// See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Authorization
+	// Synapse uses "Bearer syt_...", which you could use when there's a user for the search on the remote HS.
+	// Alternatively, use "Access ..." and use a key that's entered in the remote accessKeys (see below).
     "other_servers": [
-        //{ "host": "192.168.0.105", "port": 8088, "ssl": false, "timeout": "2s", "token": "localnet-test-4321" },
+        //{ "host": "192.168.0.105", "port": 8088, "ssl": false, "timeout": "2s", "token": "Access localnet-test-4321" },
     ],
 
     // Include a dummy entry with some stats about the search
@@ -56,12 +60,13 @@
     "overrideDisplayname": true,
     "overrideAvatar": false, // If true, use the globally configured avatar_url for every user returned by the search
 
-    // List of passwords that maiden will accept as authorization instead of a HS token.
+    // List of passwords that maiden will accept as authorization.
     // Note that this is only effective if homeserver.check == true!
-    // If one of these is supplied in the request header as "Authorization: Bearer ...", we forego checking
+    // If one of these is supplied in the request header as "Authorization: Access ...", we forego checking
     // the HS entirely and just return our own results.
     // Right now the value needs to be 'true', but in the future more per-key configration may be be possible.
     "accessKeys": {
         //"DEBUG_TEST_AUTH": true,
+		//"localnet-test-4321": true, // See m_relay.json for this
     },
 }}

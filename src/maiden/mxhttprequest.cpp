@@ -58,10 +58,10 @@ static void formatAccept(std::ostringstream& os, RequestFormat fmt)
     else
     {
         bool first = true;
-        if(fmt & RQFMT_JSON)
-            appendList(os, first, "application/json");
         if(fmt & RQFMT_BJ)
             appendList(os, first, "application/prs.bj");
+        if(fmt & RQFMT_JSON)
+            appendList(os, first, "application/json");
     }
     os << "\r\n";
 }

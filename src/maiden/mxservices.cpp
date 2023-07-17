@@ -381,7 +381,9 @@ void MxSearchHandler::_ApplyElementHack(MxSearchResults& results, const std::str
 
 const MxSearchHandler::AccessKeyConfig* MxSearchHandler::checkAccessKey(const std::string& token) const
 {
-    AccessKeyMap::const_iterator it = accessKeys.find(token);
+    if(strncmp(token.c_str(), "Access ", 7))
+        return NULL;
+    AccessKeyMap::const_iterator it = accessKeys.find(token.c_str() + 7); // skip "Access "
     return it != accessKeys.end() ? &it->second : NULL;
 }
 
@@ -597,84 +599,80 @@ int MxSearchHandler::onRequest(BufferedWriteStream& dst, mg_connection* conn, co
                 }
 
                 DataTree hsdata(DataTree::TINY);
-                bool useHS = false;
                 VarCRef xhsResultsArray;
                 bool raw = false;
-                bool forwardRequest = askHS;
+                bool forwardRequestToHS = askHS;
+                bool forwardRequestToOthers = false;
 
-                if(const AccessKeyConfig *acfg = checkAccessKey(rq.authorization))
+                const AccessKeyConfig * const acfg = checkAccessKey(rq.authorization);
+                if(acfg)
                 {
+                    raw = true;
+
                     // We're in relay mode -- don't go to the HS.
                     // Someone with special authorization is asking, so we just provide
                     // from our own cache, without massaging the results in any way.
                     if(acfg->enabled)
                     {
-                        raw = true;
-                        forwardRequest = false;
+                        forwardRequestToHS = false;
+                        DEBUG_LOG("Accepting key [%s], ignoring HS", rq.authorization.c_str());
                     }
                     // else we send the known-bad key to the HS, that's going to refuse it as usual,
                     // and an eventual attacker will be none the wiser.
                     // ie. we don't send a specialized error message about a disabled key on purpose.
+                    else if(!askHS)
+                    {
+                        // ... However, if there is no HS to ask, error out here.
+                        mg_send_http_error(conn, 401, "Unauthorized");
+                        return 401;
+                    }
                 }
+                else
+                    forwardRequestToOthers = true;
 
                 MxSearchResultsEx hsresults;
+
+                if(forwardRequestToHS)
+                {
+                    // without a valid Bearer token, this is going to fail because the HS will say no
+                    ServerConfig homeserverWithAuth = homeserver;
+                    homeserverWithAuth.authToken = rq.authorization;
+                    hsresults = QueryOneServer(homeserverWithAuth, rq.query, vars.root());
+
+                    // HS says no -- user not authenticated?
+                    if(!acfg && checkHS && hsresults.errcode)
+                    {
+                        mg_send_http_error(conn, hsresults.errcode, "%s", hsresults.errstr.c_str());
+                        return hsresults.errcode;
+                    }
+                }
+
                 MxSearchResults relayresults;
 
-                if(forwardRequest)
+                // Also relay to other servers only if it's a regular search.
+                // If an access key is present then it's probably already a relay search,
+                // and we don't want to end up in a never-ending circle of searches
+                // in case there's a misconfigured instance somewhere.
+                if(!acfg && !otherServers.empty())
                 {
-                    bool useAccessKey = false;
+                    // Start all external requests in parallel
+                    std::vector<std::future<MxSearchResultsEx> > otherServerResults;
+                    for(size_t i = 0; i < otherServers.size(); ++i)
+                        otherServerResults.push_back(std::async(std::launch::async, QueryOneServer, otherServers[i], rq.query, vars.root()));
 
-                    // without auth, this is going to fail because the HS will say no
-                    if(!rq.authorization.empty())
+                    for(size_t i = 0; i < otherServerResults.size(); ++i)
                     {
-                        AccessKeyMap::const_iterator it = accessKeys.find(rq.authorization);
-                        if(it != accessKeys.end() && it->second.enabled)
+                        MxSearchResultsEx sr = otherServerResults[i].get();
+                        if(!sr.errcode)
                         {
-                            useAccessKey = true;
-                            DEBUG_LOG("MxSearchHandler: Found authorization in accessKeys, skipping HS check");
+                            logdebug("MxSearchHandler: Relayed to [%s] and got %u results back",
+                                otherServers[i].target.host.c_str(), (unsigned)sr.results.size());
+                            for(size_t k = 0; k < sr.results.size(); ++k)
+                                relayresults.push_back(std::move(sr.results[k]));
                         }
-                    }
-
-                    // If we don't have a special access key, forward to the HS as-is
-                    if(!useAccessKey)
-                    {
-                        ServerConfig homeserverWithAuth = homeserver;
-                        homeserverWithAuth.authToken = rq.authorization;
-                        hsresults = QueryOneServer(homeserverWithAuth, rq.query, vars.root());
-
-                        // HS says no -- user not authenticated?
-                        if(hsresults.errcode)
-                        {
-                            mg_send_http_error(conn, hsresults.errcode, "%s", hsresults.errstr.c_str());
-                            return hsresults.errcode;
-                        }
-                    }
-
-                    // Also relay to other servers only if it's a regular search.
-                    // If an access key is present then it's probably already a relay search,
-                    // and we don't want to end up in a never-ending circle of searches
-                    // in case there's a misconfigured instance somewhere.
-                    if(!useAccessKey && !otherServers.empty())
-                    {
-                        // Start all external requests in parallel
-                        std::vector<std::future<MxSearchResultsEx> > otherServerResults;
-                        for(size_t i = 0; i < otherServers.size(); ++i)
-                            otherServerResults.push_back(std::async(std::launch::async, QueryOneServer, otherServers[i], rq.query, vars.root()));
-
-                        for(size_t i = 0; i < otherServerResults.size(); ++i)
-                        {
-                            MxSearchResultsEx sr = otherServerResults[i].get();
-                            if(!sr.errcode)
-                            {
-                                logdebug("MxSearchHandler: Relayed to [%s] and got %u results back",
-                                    otherServers[i].target.host.c_str(), (unsigned)sr.results.size());
-                                for(size_t k = 0; k < sr.results.size(); ++k)
-                                    relayresults.push_back(std::move(sr.results[k]));
-                            }
-                            else
-                                logerror("MxSearchHandler: Relayed to server [%s] but the request failed, err = %d, msg: %s",
-                                    otherServers[i].target.host.c_str(), sr.errcode, sr.errstr.c_str());
-                        }
+                        else
+                            logerror("MxSearchHandler: Relayed to server [%s] but the request failed, err = %d, msg: %s",
+                                otherServers[i].target.host.c_str(), sr.errcode, sr.errstr.c_str());
                     }
                 }
 

@@ -99,6 +99,12 @@ static MxSources::Config::InputEntry parseInputEntry(VarCRef x, std::vector<std:
 
 bool MxSources::initConfig(VarCRef src, VarCRef env)
 {
+    if(!src)
+    {
+        logerror("MxSources: No sources configured. Operating in stand-alone mode");
+        return true;
+    }
+
     _updateEnv(env);
 
     VarCRef xlist = src.lookup("list");
@@ -117,8 +123,8 @@ bool MxSources::initConfig(VarCRef src, VarCRef env)
 
     if(_cfg.list.empty())
     {
-        logerror("MxSources: Source list is empty");
-        return false;
+        logerror("MxSources: Source list is empty. Operating in stand-alone mode");
+        return true;
     }
 
     // fixup all pointers
@@ -224,6 +230,12 @@ bool MxSources::_checkExec(const Config::InputEntry& e) const
 void MxSources::initPopulate(bool buildAsync)
 {
     assert(!_th.joinable());
+    
+    if(_cfg.list.empty())
+    {
+        logerror("MxSources: No sources present, skipping init");
+        return;
+    }
 
     if(!buildAsync)
     {

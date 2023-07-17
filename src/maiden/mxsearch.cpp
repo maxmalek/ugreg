@@ -73,7 +73,7 @@ void MxSearch::rebuildCache(VarCRef src)
             {
                 MutStr ms;
                 ms.len = tmp.size();
-                ms.s = (char*)_stralloc.Alloc(ms.len);
+                ms.s = (char*)_stralloc.Alloc(ms.len); // terminating \0 not included since it's not needed
                 memcpy(ms.s, tmp.data(), ms.len);
                 stringmem += ms.len;
                 _strings.push_back(ms);
@@ -100,6 +100,7 @@ MxSearch::Matches MxSearch::search(const MxMatcherList& matchers) const
     for(size_t i = 0; i < N; ++i)
     {
         int score = mxMatchAndScore_Exact(_strings[i].s, _strings[i].len, matchers.data(), matchers.size());
+        // Beware! This requires strings to be \0-terminated, which they are NOT!
         //if(fuzzy)
         //    score += mxMatchAndScore_Fuzzy(_strings[i].s, matchers.data(), matchers.size());
         if(score > 0)
